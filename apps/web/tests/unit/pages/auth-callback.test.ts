@@ -38,6 +38,8 @@ describe('auth callback page', () => {
     state.supabase = { auth: authMocks };
     state.route = { query: { returnTo: '/oauth/consent?authorization_id=auth-123' } };
     navigateToMock.mockClear();
+    authMocks.getSession.mockClear();
+    authMocks.onAuthStateChange.mockClear();
     authMocks.getSession.mockResolvedValue({
       data: { session: { access_token: 'token-123' } },
       error: null,
@@ -93,6 +95,27 @@ describe('auth callback page', () => {
     await flushPromises();
 
     expect(wrapper.text()).toContain('bad session');
+  });
+
+  it('surfaces OAuth callback errors without attempting a session lookup', async () => {
+    state.route = {
+      query: {
+        error: 'access_denied',
+        error_description: 'User denied the request',
+      },
+    };
+
+    const wrapper = mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Sign-in failed.');
+    expect(wrapper.text()).toContain('User denied the request');
+    expect(authMocks.getSession).not.toHaveBeenCalled();
   });
 
   it('defaults to the root path when returnTo is missing', async () => {

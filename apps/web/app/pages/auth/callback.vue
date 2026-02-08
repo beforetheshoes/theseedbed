@@ -26,9 +26,32 @@ const error = ref('');
 const resolveReturnTo = () =>
   typeof route.query.returnTo === 'string' && route.query.returnTo ? route.query.returnTo : '/';
 
+const resolveOAuthError = () => {
+  const code = typeof route.query.error === 'string' ? route.query.error : '';
+  const description =
+    typeof route.query.error_description === 'string' ? route.query.error_description : '';
+
+  if (description) {
+    return description;
+  }
+
+  if (code) {
+    return `Authentication failed (${code}).`;
+  }
+
+  return '';
+};
+
 onMounted(async () => {
   if (!supabase) {
     error.value = 'Supabase client is not available.';
+    return;
+  }
+
+  const oauthError = resolveOAuthError();
+  if (oauthError) {
+    message.value = 'Sign-in failed.';
+    error.value = oauthError;
     return;
   }
 

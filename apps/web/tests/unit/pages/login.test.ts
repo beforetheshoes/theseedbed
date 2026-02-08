@@ -136,6 +136,23 @@ describe('login page', () => {
     });
   });
 
+  it('starts Google OAuth sign-in', async () => {
+    const wrapper = mount(LoginPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await wrapper.get('[data-test="login-google"]').trigger('click');
+
+    expect(authMocks.signInWithOAuth).toHaveBeenCalledWith({
+      provider: 'google',
+      options: {
+        redirectTo: expect.any(String),
+      },
+    });
+  });
+
   it('shows an error when Supabase is unavailable for magic links', async () => {
     state.supabase = null;
 
@@ -164,6 +181,20 @@ describe('login page', () => {
     await wrapper.get('[data-test="login-apple"]').trigger('click');
 
     expect(wrapper.text()).toContain('Apple down');
+  });
+
+  it('shows an error when Google OAuth fails', async () => {
+    authMocks.signInWithOAuth.mockResolvedValueOnce({ error: { message: 'Google down' } });
+
+    const wrapper = mount(LoginPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await wrapper.get('[data-test="login-google"]').trigger('click');
+
+    expect(wrapper.text()).toContain('Google down');
   });
 
   it('falls back when Supabase client is missing', async () => {
