@@ -165,7 +165,13 @@ def _assert_insert_and_delete(
 
 @pytest.fixture(scope="session")
 def db_url() -> str:
-    return _get_db_url()
+    url = _get_db_url()
+    try:
+        with psycopg.connect(url, connect_timeout=1) as conn:
+            conn.execute("select 1;")
+    except psycopg.OperationalError:
+        pytest.skip("Local Supabase/Postgres not reachable; run `supabase start`.")
+    return url
 
 
 @pytest.fixture(scope="session")

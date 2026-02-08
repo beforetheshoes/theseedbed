@@ -5,6 +5,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 
+_STAGING_SUPABASE_URL = "https://kypwcksvicrbrrwscdze.supabase.co"
+_PROD_SUPABASE_URL = "https://aaohmjvcsgyqqlxomegu.supabase.co"
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -12,7 +15,16 @@ class Settings:
     supabase_jwt_audience: str | None
     supabase_jwt_secret: str | None
     supabase_jwks_cache_ttl_seconds: int
+    supabase_service_role_key: str | None
+    supabase_storage_covers_bucket: str
+    public_highlight_max_chars: int
     api_version: str
+    cors_allowed_origins: tuple[str, ...] = (
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    )
 
 
 _dotenv_loaded = False
@@ -79,6 +91,25 @@ def _normalize_supabase_url(value: str) -> str:
     return value.rstrip("/")
 
 
+def _normalize_env(value: str | None) -> str | None:
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+    return normalized
+
+
+def _fallback_supabase_url_for_env(env_label: str | None) -> str | None:
+    # Defensive fallback: if hosting forgets to pass SUPABASE_URL, infer it from
+    # SUPABASE_ENV. URLs aren't secrets and are stable per environment.
+    if env_label in {"staging", "stage"}:
+        return _STAGING_SUPABASE_URL
+    if env_label in {"prod", "production"}:
+        return _PROD_SUPABASE_URL
+    return None
+
+
 def _parse_ttl_seconds() -> int:
     default_ttl = 300
     raw_ttl = os.getenv("SUPABASE_JWKS_CACHE_TTL_SECONDS")
@@ -90,24 +121,63 @@ def _parse_ttl_seconds() -> int:
         return default_ttl
 
 
+def _parse_cors_origins() -> tuple[str, ...]:
+    raw_origins = os.getenv("CORS_ALLOW_ORIGINS", "").strip()
+    if not raw_origins:
+        return (
+            "http://localhost:3000",
+            "http://127.0.0.1:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3001",
+        )
+    return tuple(origin.strip() for origin in raw_origins.split(",") if origin.strip())
+
+
+def _parse_public_highlight_max_chars() -> int:
+    raw_value = os.getenv("PUBLIC_HIGHLIGHT_MAX_CHARS", "").strip()
+    if not raw_value:
+        return 280
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return 280
+    return max(value, 1)
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Settings are cached; call reset_settings_cache when env values change."""
     _load_dotenv()
-    supabase_url = _normalize_supabase_url(os.getenv("SUPABASE_URL", "").strip())
+    raw_url = os.getenv("SUPABASE_URL", "").strip()
+    if not raw_url:
+        env_label = _normalize_env(os.getenv("SUPABASE_ENV"))
+        raw_url = _fallback_supabase_url_for_env(env_label) or ""
+    supabase_url = _normalize_supabase_url(raw_url)
     audience: str | None = os.getenv("SUPABASE_JWT_AUDIENCE", "authenticated").strip()
     if not audience:
         audience = None
     jwt_secret: str | None = os.getenv("SUPABASE_JWT_SECRET", "").strip()
     if not jwt_secret:
         jwt_secret = None
+    service_role_key: str | None = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not service_role_key:
+        service_role_key = None
     ttl_seconds = _parse_ttl_seconds()
+    covers_bucket = os.getenv("SUPABASE_STORAGE_COVERS_BUCKET", "covers").strip()
+    if not covers_bucket:
+        covers_bucket = "covers"
+    public_highlight_max_chars = _parse_public_highlight_max_chars()
+    cors_allowed_origins = _parse_cors_origins()
     api_version = os.getenv("API_VERSION", "0.1.0").strip()
     return Settings(
         supabase_url=supabase_url,
         supabase_jwt_audience=audience,
         supabase_jwt_secret=jwt_secret,
         supabase_jwks_cache_ttl_seconds=ttl_seconds,
+        supabase_service_role_key=service_role_key,
+        supabase_storage_covers_bucket=covers_bucket,
+        public_highlight_max_chars=public_highlight_max_chars,
+        cors_allowed_origins=cors_allowed_origins,
         api_version=api_version,
     )
 

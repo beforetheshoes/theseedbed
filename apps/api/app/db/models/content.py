@@ -11,6 +11,7 @@ from app.db.base import Base
 
 content_visibility_enum = ENUM(
     "private",
+    "unlisted",
     "public",
     name="content_visibility",
     create_type=False,

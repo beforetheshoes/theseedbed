@@ -36,7 +36,7 @@ def test_notes_table_schema() -> None:
     assert table.columns["title"].type.length == 255
     assert isinstance(table.columns["body"].type, sa.Text)
     assert isinstance(table.columns["visibility"].type, sa.Enum)
-    assert table.columns["visibility"].type.enums == ["private", "public"]
+    assert table.columns["visibility"].type.enums == ["private", "unlisted", "public"]
     assert table.columns["visibility"].server_default is not None
 
     created_at_type = cast(sa.DateTime, table.columns["created_at"].type)
@@ -89,7 +89,7 @@ def test_highlights_table_schema() -> None:
     ]
     assert isinstance(table.columns["location_sort"].type, sa.Numeric)
     assert isinstance(table.columns["visibility"].type, sa.Enum)
-    assert table.columns["visibility"].type.enums == ["private", "public"]
+    assert table.columns["visibility"].type.enums == ["private", "unlisted", "public"]
     assert table.columns["visibility"].server_default is not None
 
     created_at_type = cast(sa.DateTime, table.columns["created_at"].type)
@@ -135,7 +135,7 @@ def test_reviews_table_schema_and_constraints() -> None:
     assert isinstance(table.columns["body"].type, sa.Text)
     assert isinstance(table.columns["rating"].type, sa.SmallInteger)
     assert isinstance(table.columns["visibility"].type, sa.Enum)
-    assert table.columns["visibility"].type.enums == ["private", "public"]
+    assert table.columns["visibility"].type.enums == ["private", "unlisted", "public"]
     assert table.columns["visibility"].server_default is not None
 
     created_at_type = cast(sa.DateTime, table.columns["created_at"].type)

@@ -19,12 +19,20 @@ This is a suggested order of execution based on dependencies and risk.
 
 ## 3) Auth
 
+### Phase A (blocking app feature work)
+
+- #4 Configure Supabase Auth with Apple OAuth provider (Google deferred)
+- #5 Verify and harden magic link (passwordless) login
 - #6 Disable email/password sign-in in Supabase Auth
-- #4 Configure Supabase Auth with Apple and Google OAuth providers
-- #5 Configure and test magic link (passwordless) login
-- #25 Enable and configure Supabase OAuth 2.1 server mode
 - #26 Implement OAuth consent page in Nuxt
+
+### Phase B (auth hardening)
+
+- #25 Enable and configure Supabase OAuth 2.1 server mode
 - #27 Require client_id claim in all API requests
+
+### Phase C (defer-ready security hardening)
+
 - #28 Implement rate limiting per (client_id, user_id)
 
 ## 4) API features
@@ -67,3 +75,5 @@ This is a suggested order of execution based on dependencies and risk.
 ## Notes
 
 - #3 (Supabase staging/production projects) is done. Hosting wiring is tracked separately in #44.
+- Google OIDC is intentionally deferred to a follow-up issue after Apple + magic-link auth is stable.
+- Passkeys/WebAuthn are a post-MVP discovery task and not in the current auth execution phase.
