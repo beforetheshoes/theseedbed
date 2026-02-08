@@ -37,6 +37,9 @@ def test_work_table_schema() -> None:
         "description",
         "first_publish_year",
         "default_cover_url",
+        "default_cover_set_by",
+        "default_cover_set_at",
+        "default_cover_storage_path",
         "created_at",
         "updated_at",
     }
@@ -57,6 +60,9 @@ def test_edition_table_schema_and_indexes() -> None:
         "language",
         "format",
         "cover_url",
+        "cover_set_by",
+        "cover_set_at",
+        "cover_storage_path",
         "created_at",
         "updated_at",
     }

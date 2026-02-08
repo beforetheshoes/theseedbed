@@ -8,18 +8,24 @@ import httpx
 import sqlalchemy as sa
 
 from app.core.config import Settings
-from app.db.models.bibliography import Edition
+from app.db.models.bibliography import Edition, Work
 from app.services.covers import cache_edition_cover_from_url
 
 
 class FakeSession:
     def __init__(self) -> None:
         self.scalar_values: list[Any] = []
+        self.get_values: list[Any] = []
         self.committed = False
 
     def scalar(self, _stmt: sa.Select[Any]) -> Any:
         if self.scalar_values:
             return self.scalar_values.pop(0)
+        return None
+
+    def get(self, _model: object, _id: object) -> Any:
+        if self.get_values:
+            return self.get_values.pop(0)
         return None
 
     def commit(self) -> None:
@@ -66,8 +72,16 @@ def test_cache_cover_downloads_uploads_and_updates_edition() -> None:
         format=None,
         cover_url=None,
     )
+    work = Work(
+        id=edition.work_id,
+        title="Book",
+        description=None,
+        first_publish_year=None,
+        default_cover_url=None,
+    )
     session = FakeSession()
     session.scalar_values = [edition]
+    session.get_values = [work]
 
     def download_handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"
@@ -98,6 +112,7 @@ def test_cache_cover_downloads_uploads_and_updates_edition() -> None:
     assert edition.cover_url.startswith(
         "https://example.supabase.co/storage/v1/object/public/covers/openlibrary/"
     )
+    assert work.default_cover_url == edition.cover_url
     assert session.committed is True
 
 

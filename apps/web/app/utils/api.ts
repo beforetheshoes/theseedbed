@@ -59,6 +59,8 @@ export const apiRequest = async <T>(
   const baseUrl = getApiBaseUrl();
   const token = await getAccessToken();
 
+  const isFormData = typeof FormData !== 'undefined' && options?.body instanceof FormData;
+
   const url = new globalThis.URL(`${baseUrl}${path}`);
   for (const [key, value] of Object.entries(options?.query ?? {})) {
     if (value === undefined || value === null || value === '') {
@@ -70,10 +72,14 @@ export const apiRequest = async <T>(
   const response = await globalThis.fetch(url.toString(), {
     method: options?.method ?? 'GET',
     headers: {
-      'Content-Type': 'application/json',
       Authorization: `Bearer ${token}`,
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     },
-    body: options?.body ? JSON.stringify(options.body) : undefined,
+    body: options?.body
+      ? isFormData
+        ? (options.body as FormData)
+        : JSON.stringify(options.body)
+      : undefined,
   });
 
   const payload = (await response.json()) as Envelope<T>;
