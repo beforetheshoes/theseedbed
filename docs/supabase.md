@@ -104,6 +104,21 @@ supabase link --project-ref <production-ref>
 supabase config push
 ```
 
+## Staging workflow (migrations-first)
+
+Staging deploys break when the API runs ahead of the Supabase schema. The workflow is:
+
+1) Create a Supabase SQL migration in `supabase/migrations/`.
+2) Create a matching Alembic revision in `apps/api/alembic/versions/` (CI uses Alembic to build the test DB).
+3) Apply migrations to staging before deploying API changes:
+
+```bash
+supabase link --project-ref kypwcksvicrbrrwscdze
+supabase db push
+```
+
+4) Then merge/deploy API to staging.
+
 ## Deployment
 
 Hosting uses Vercel for web and Render for the API.
