@@ -1,6 +1,6 @@
 <template>
-  <div class="min-h-screen bg-slate-950/5 text-slate-900">
-    <section class="mx-auto flex w-full max-w-lg flex-col gap-6 px-6 py-12">
+  <PageShell maxWidth="md">
+    <section class="mx-auto flex w-full max-w-lg flex-col gap-6">
       <Card class="shadow-lg">
         <template #title>
           <div class="flex items-center gap-3 text-2xl font-semibold">
@@ -54,15 +54,12 @@
               data-test="login-magic-link"
               @click="sendMagicLink"
             />
-            <p v-if="status" class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-              {{ status }}
-            </p>
-            <p v-if="error" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {{ error }}
-            </p>
-            <p v-if="!supabase" class="rounded-md bg-amber-50 px-3 py-2 text-sm text-amber-700">
-              Supabase client is not configured. Check environment variables.
-            </p>
+            <InlineAlert v-if="status" :message="status" />
+            <InlineAlert v-if="error" tone="error" :message="error" />
+            <InlineAlert
+              v-if="!supabase"
+              message="Supabase client is not configured. Check environment variables."
+            />
             <p v-if="showDebug" class="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
               Preview debug: supabaseUrl={{ debugStatus.url ? 'set' : 'missing' }},
               supabaseAnonKey={{ debugStatus.anonKey ? 'set' : 'missing' }}, client={{
@@ -73,7 +70,7 @@
         </template>
       </Card>
     </section>
-  </div>
+  </PageShell>
 </template>
 
 <script setup lang="ts">
@@ -82,6 +79,8 @@ import { useRoute, useRuntimeConfig, useSupabaseClient } from '#imports';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
 import InputText from 'primevue/inputtext';
+import InlineAlert from '~/components/InlineAlert.vue';
+import PageShell from '~/components/PageShell.vue';
 
 const supabase = useSupabaseClient();
 const config = useRuntimeConfig();
