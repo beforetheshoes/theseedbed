@@ -3,7 +3,11 @@ import PrimeVue from 'primevue/config';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
-  route: { fullPath: '/books/work-1', params: { workId: 'work-1' } },
+  // Use a reactive route so the page-level `watch(workId)` can be covered in tests.
+  route: (() => {
+    const { reactive } = require('vue');
+    return reactive({ fullPath: '/books/work-1', params: { workId: 'work-1' } });
+  })(),
 }));
 
 const apiRequest = vi.hoisted(() => vi.fn());
@@ -112,7 +116,8 @@ describe('book detail page', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-08T00:00:00.000Z'));
     apiRequest.mockReset();
-    state.route = { fullPath: '/books/work-1', params: { workId: 'work-1' } };
+    state.route.fullPath = '/books/work-1';
+    state.route.params.workId = 'work-1';
   });
 
   it('shows not-in-library view when by-work returns 404', async () => {
@@ -410,6 +415,334 @@ describe('book detail page', () => {
         visibility: 'public',
       }),
     });
+  });
+
+  it('renders core content without waiting on section loaders', async () => {
+    let resolveSessions: any = null;
+    const sessionsPromise = new Promise((resolve) => {
+      resolveSessions = resolve;
+    });
+
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [{ id: 'author-1', name: 'Author A' }],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') {
+        return sessionsPromise as any;
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return new Promise(() => undefined) as any;
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        return new Promise(() => undefined) as any;
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        return new Promise(() => undefined) as any;
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Book A');
+    expect(wrapper.text()).toContain('Author A');
+    expect(wrapper.text()).toContain('Loading sessions...');
+
+    resolveSessions?.({ items: [] });
+    await flushPromises();
+    expect(wrapper.text()).toContain('No sessions yet.');
+  });
+
+  it('shows per-section error and retry only re-requests the failed section', async () => {
+    const counts: Record<string, number> = {};
+    const count = (url: string) => {
+      counts[url] = (counts[url] || 0) + 1;
+    };
+
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      count(url);
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') {
+        if ((counts[url] || 0) === 1) throw new Error('boom');
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Book A');
+    expect(wrapper.text()).toContain('Unable to load sessions.');
+
+    expect(counts['/api/v1/library/items/item-1/sessions']).toBe(1);
+    expect(counts['/api/v1/library/items/item-1/notes']).toBe(1);
+    expect(counts['/api/v1/library/items/item-1/highlights']).toBe(1);
+    expect(counts['/api/v1/me/reviews']).toBe(1);
+
+    await wrapper.get('[data-test="sessions-retry"]').trigger('click');
+    await flushPromises();
+
+    expect(counts['/api/v1/library/items/item-1/sessions']).toBe(2);
+    expect(counts['/api/v1/library/items/item-1/notes']).toBe(1);
+    expect(counts['/api/v1/library/items/item-1/highlights']).toBe(1);
+    expect(counts['/api/v1/me/reviews']).toBe(1);
+  });
+
+  it('surfaces review load errors and allows retry', async () => {
+    let reviewCalls = 0;
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        reviewCalls += 1;
+        if (reviewCalls === 1) throw new ApiClientErrorMock('Nope', 'forbidden', 403);
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Nope');
+    expect(reviewCalls).toBe(1);
+
+    await wrapper.get('[data-test="review-retry"]').trigger('click');
+    await flushPromises();
+
+    expect(reviewCalls).toBe(2);
+    expect(wrapper.text()).not.toContain('Nope');
+  });
+
+  it('refetches when the route workId changes', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/works/work-2' && method === 'GET') {
+        return { id: 'work-2', title: 'Book B', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-2' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+
+      // The per-section loaders should never run for work-2 because it is not in the library.
+      if (url.startsWith('/api/v1/library/items/') || url === '/api/v1/me/reviews') {
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Book A');
+
+    state.route.fullPath = '/books/work-2';
+    state.route.params.workId = 'work-2';
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/works/work-2');
+    expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.text()).toContain('This book is not in your library yet.');
+  });
+
+  it('ignores stale core responses when workId changes mid-request', async () => {
+    let resolveWork1: any = null;
+    const work1Promise = new Promise((resolve) => {
+      resolveWork1 = resolve;
+    });
+
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') return work1Promise as any;
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+
+      if (url === '/api/v1/works/work-2' && method === 'GET') {
+        return { id: 'work-2', title: 'Book B', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-2' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+
+      if (url.startsWith('/api/v1/library/items/') || url === '/api/v1/me/reviews') {
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+
+    // Trigger a route change while the initial `/works/work-1` request is still pending.
+    state.route.fullPath = '/books/work-2';
+    state.route.params.workId = 'work-2';
+
+    resolveWork1?.({
+      id: 'work-1',
+      title: 'Book A',
+      description: null,
+      cover_url: null,
+      authors: [],
+    });
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.text()).not.toContain('Book A');
+  });
+
+  it('abandons in-flight section loaders when workId changes', async () => {
+    let resolveSessions: any = null;
+    let resolveNotes: any = null;
+    let resolveHighlights: any = null;
+    let resolveReviews: any = null;
+
+    const sessionsPromise = new Promise((resolve) => {
+      resolveSessions = resolve;
+    });
+    const notesPromise = new Promise((resolve) => {
+      resolveNotes = resolve;
+    });
+    const highlightsPromise = new Promise((resolve) => {
+      resolveHighlights = resolve;
+    });
+    const reviewsPromise = new Promise((resolve) => {
+      resolveReviews = resolve;
+    });
+
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET')
+        return sessionsPromise as any;
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET')
+        return notesPromise as any;
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return highlightsPromise as any;
+      if (url === '/api/v1/me/reviews' && method === 'GET') return reviewsPromise as any;
+
+      if (url === '/api/v1/works/work-2' && method === 'GET') {
+        return { id: 'work-2', title: 'Book B', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-2' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Book A');
+
+    // Change workId while section loaders are still pending.
+    state.route.fullPath = '/books/work-2';
+    state.route.params.workId = 'work-2';
+    await flushPromises();
+    expect(wrapper.text()).toContain('Book B');
+
+    // Resolve the previous work's section loaders after the route change.
+    resolveSessions?.({ items: [] });
+    resolveNotes?.({ items: [] });
+    resolveHighlights?.({ items: [] });
+    resolveReviews?.({ items: [] });
+    await flushPromises();
+
+    // Still on the new work (not in library), so the old section results must be ignored.
+    expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.text()).toContain('This book is not in your library yet.');
   });
 
   it('supports setting cover via upload for preferred edition', async () => {
@@ -789,6 +1122,9 @@ describe('book detail page', () => {
     await (wrapper.vm as any).onCoverFileChange({ target: { files: [file] } });
     expect((wrapper.vm as any).coverFile).toBeTruthy();
 
+    await (wrapper.vm as any).onCoverFileChange({ target: { files: [] } });
+    expect((wrapper.vm as any).coverFile).toBe(null);
+
     // Cancel closes the dialog.
     (wrapper.vm as any).coverMode = 'url';
     await clickButton(wrapper, 'Cancel');
@@ -1002,6 +1338,44 @@ describe('book detail page', () => {
     await flushPromises();
   });
 
+  it('does nothing when saving an edited highlight without an id', async () => {
+    const calls: string[] = [];
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      calls.push(`${(opts?.method || 'GET').toUpperCase()} ${url}`);
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    // Ensure the early-return guard (`if (!editHighlightId.value) return;`) is exercised.
+    (wrapper.vm as any).editHighlightId = null;
+    await (wrapper.vm as any).saveEditHighlight();
+    await flushPromises();
+
+    expect(calls.some((c) => c.includes('/api/v1/highlights/'))).toBe(false);
+  });
+
   it('renders cover dialog url mode content and can cancel', async () => {
     apiRequest.mockImplementation(async (url: string, opts?: any) => {
       const method = (opts?.method || 'GET').toUpperCase();
@@ -1185,8 +1559,14 @@ describe('book detail page', () => {
   });
 
   it('handles an empty workId route param', async () => {
-    state.route = { fullPath: '/books/', params: {} as any };
-    apiRequest.mockRejectedValueOnce(new ApiClientErrorMock('Bad route', 'bad_request', 400));
+    state.route.fullPath = '/books/';
+    state.route.params.workId = undefined as any;
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/') {
+        throw new ApiClientErrorMock('Bad route', 'bad_request', 400);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
 
     const wrapper = mountPage();
     await flushPromises();
