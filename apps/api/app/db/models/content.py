@@ -52,6 +52,7 @@ class Note(Base):
     )
     title: Mapped[str | None] = mapped_column(sa.String(255))
     body: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    ap_uri: Mapped[str | None] = mapped_column(sa.Text)
     visibility: Mapped[str] = mapped_column(
         content_visibility_enum,
         nullable=False,
@@ -99,6 +100,7 @@ class Highlight(Base):
         nullable=False,
     )
     quote: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    ap_uri: Mapped[str | None] = mapped_column(sa.Text)
     location: Mapped[dict[str, object] | None] = mapped_column(JSONB)
     location_type: Mapped[str | None] = mapped_column(highlight_location_type_enum)
     location_sort: Mapped[float | None] = mapped_column(sa.Numeric(10, 2))
@@ -154,6 +156,7 @@ class Review(Base):
     )
     title: Mapped[str | None] = mapped_column(sa.String(255))
     body: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    ap_uri: Mapped[str | None] = mapped_column(sa.Text)
     rating: Mapped[int | None] = mapped_column(sa.SmallInteger)
     visibility: Mapped[str] = mapped_column(
         content_visibility_enum,

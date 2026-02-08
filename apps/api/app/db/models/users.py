@@ -46,6 +46,7 @@ class User(Base):
     handle: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     display_name: Mapped[str | None] = mapped_column(sa.String(255))
     avatar_url: Mapped[str | None] = mapped_column(sa.Text)
+    actor_uri: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
