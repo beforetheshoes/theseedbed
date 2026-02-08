@@ -5,6 +5,10 @@ on:
     branches:
       - development
       - main
+  pull_request_target:
+    branches:
+      - development
+      - main
   push:
     branches:
       - main
@@ -14,10 +18,15 @@ jobs:
     runs-on: ubuntu-latest
     environment: staging
     # Secrets are unavailable on forked PRs; skip in that case.
-    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'development' && github.event.pull_request.head.repo.fork == false
+    if: github.event_name == 'pull_request_target' && github.event.pull_request.base.ref == 'development' && github.event.pull_request.head.repo.fork == false
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          # With pull_request_target, checkout defaults to the base branch; we need the PR's content
+          # (specifically supabase/migrations) to detect drift against staging.
+          repository: ${{ github.event.pull_request.head.repo.full_name }}
+          ref: ${{ github.event.pull_request.head.sha }}
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v1
         with:
@@ -46,6 +55,7 @@ jobs:
 
   api:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request_target'
     defaults:
       run:
         working-directory: apps/api
@@ -101,6 +111,7 @@ jobs:
 
   web:
     runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request_target'
     defaults:
       run:
         working-directory: apps/web
