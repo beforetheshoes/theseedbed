@@ -10,7 +10,7 @@
         </template>
         <template #subtitle>
           <span class="text-base text-slate-600">
-            Use Apple or request a magic link to continue.
+            Use Apple, Google, or request a magic link to continue.
           </span>
         </template>
         <template #content>
@@ -22,6 +22,14 @@
               :loading="busy"
               data-test="login-apple"
               @click="signInWithApple"
+            />
+            <Button
+              class="w-full"
+              icon="pi pi-google"
+              label="Continue with Google"
+              :loading="busy"
+              data-test="login-google"
+              @click="signInWithGoogle"
             />
             <div class="flex items-center gap-3">
               <div class="h-px flex-1 bg-slate-200"></div>
@@ -171,6 +179,31 @@ const signInWithApple = async () => {
   const redirectTo = buildRedirectTo();
   const { error: signInError } = await supabase.auth.signInWithOAuth({
     provider: 'apple',
+    options: {
+      redirectTo,
+    },
+  });
+
+  busy.value = false;
+
+  if (signInError) {
+    error.value = signInError.message;
+  }
+};
+
+const signInWithGoogle = async () => {
+  status.value = '';
+  error.value = '';
+
+  if (!supabase) {
+    error.value = 'Supabase client is not available.';
+    return;
+  }
+
+  busy.value = true;
+  const redirectTo = buildRedirectTo();
+  const { error: signInError } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
     options: {
       redirectTo,
     },

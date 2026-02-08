@@ -18,13 +18,25 @@
         </template>
         <template #content>
           <div class="flex flex-col gap-4">
-            <div class="grid gap-4 md:grid-cols-[240px_1fr]">
+            <div class="grid gap-4 md:grid-cols-[240px_220px_220px_1fr]">
               <Select
                 v-model="statusFilter"
                 :options="statusFilters"
                 option-label="label"
                 option-value="value"
                 data-test="library-status-filter"
+              />
+              <InputText
+                v-model="tagFilter"
+                placeholder="Filter by tag"
+                data-test="library-tag-filter"
+              />
+              <Select
+                v-model="sortMode"
+                :options="sortOptions"
+                option-label="label"
+                option-value="value"
+                data-test="library-sort-select"
               />
             </div>
 
@@ -48,13 +60,42 @@
               Loading...
             </div>
 
-            <div v-if="items.length" class="grid gap-3" data-test="library-items">
-              <Card v-for="item in items" :key="item.id" class="border border-slate-200/70">
+            <div v-if="displayItems.length" class="grid gap-3" data-test="library-items">
+              <Card v-for="item in displayItems" :key="item.id" class="border border-slate-200/70">
                 <template #content>
                   <div class="flex items-center justify-between gap-3">
-                    <div>
-                      <p class="font-semibold text-slate-900">{{ item.work_title }}</p>
-                      <p class="text-sm text-slate-600">Status: {{ item.status }}</p>
+                    <div class="flex items-center gap-3">
+                      <div
+                        class="h-14 w-10 overflow-hidden rounded border border-slate-200/70 bg-slate-100"
+                      >
+                        <img
+                          v-if="item.cover_url"
+                          :src="item.cover_url"
+                          alt=""
+                          class="h-full w-full object-cover"
+                          data-test="library-item-cover"
+                        />
+                        <div
+                          v-else
+                          class="flex h-full w-full items-center justify-center"
+                          data-test="library-item-cover-fallback"
+                        >
+                          <i class="pi pi-image text-slate-400" aria-hidden="true"></i>
+                        </div>
+                      </div>
+
+                      <div>
+                        <NuxtLink
+                          :to="`/books/${item.work_id}`"
+                          class="font-semibold text-slate-900 hover:underline"
+                        >
+                          {{ item.work_title }}
+                        </NuxtLink>
+                        <p class="text-sm text-slate-600">Status: {{ item.status }}</p>
+                        <p v-if="item.tags?.length" class="text-xs text-slate-500">
+                          Tags: {{ item.tags.join(', ') }}
+                        </p>
+                      </div>
                     </div>
                     <span class="rounded bg-slate-100 px-2 py-1 text-xs uppercase text-slate-600">
                       {{ item.visibility }}
@@ -88,6 +129,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from '#imports';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
+import InputText from 'primevue/inputtext';
 import Select from 'primevue/select';
 import { ApiClientError, apiRequest } from '~/utils/api';
 
@@ -95,12 +137,17 @@ type LibraryItem = {
   id: string;
   work_id: string;
   work_title: string;
+  cover_url?: string | null;
   status: string;
   visibility: string;
+  tags?: string[];
+  created_at?: string;
 };
 
 const items = ref<LibraryItem[]>([]);
 const statusFilter = ref<string>('');
+const tagFilter = ref('');
+const sortMode = ref<'newest' | 'oldest' | 'title_asc'>('newest');
 const nextCursor = ref<string | null>(null);
 const loading = ref(false);
 const loadingMore = ref(false);
@@ -117,6 +164,32 @@ const statusFilters = [
   { label: 'Reading', value: 'reading' },
   { label: 'Completed', value: 'completed' },
 ];
+
+const sortOptions = [
+  { label: 'Newest first', value: 'newest' },
+  { label: 'Oldest first', value: 'oldest' },
+  { label: 'Title A-Z', value: 'title_asc' },
+];
+
+const displayItems = computed(() => {
+  const tag = tagFilter.value.trim().toLowerCase();
+  let filtered = items.value;
+  if (tag) {
+    filtered = filtered.filter((item) =>
+      Array.isArray(item.tags) ? item.tags.some((t) => t.toLowerCase().includes(tag)) : false,
+    );
+  }
+
+  const sorted = [...filtered];
+  if (sortMode.value === 'title_asc') {
+    sorted.sort((a, b) => a.work_title.localeCompare(b.work_title));
+  } else if (sortMode.value === 'oldest') {
+    sorted.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+  } else {
+    sorted.sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''));
+  }
+  return sorted;
+});
 
 const fetchPage = async (append = false) => {
   error.value = '';

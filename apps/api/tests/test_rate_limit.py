@@ -25,6 +25,9 @@ def _settings() -> Settings:
         supabase_jwt_audience="authenticated",
         supabase_jwt_secret=None,
         supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key=None,
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
         api_version="0.1.0",
     )
 

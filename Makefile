@@ -1,5 +1,5 @@
 .PHONY: dev dev-api dev-web dev-up install install-api install-web \
-	supabase-start supabase-env supabase-health \
+	supabase-start supabase-env supabase-health ensure-web-env \
 	lint lint-api lint-web format format-api format-web \
 	format-check format-check-api format-check-web \
 	typecheck typecheck-api test test-api test-web test-unit test-e2e \
@@ -10,17 +10,14 @@ API_RUN := $(if $(wildcard $(API_VENV_PY)),$(API_VENV_PY) -m,uv run)
 API_BUILD := $(if $(wildcard $(API_VENV_PY)),$(API_VENV_PY) -m build,uv build)
 
 # Run both API and web in development mode
-dev:
+dev: ensure-web-env
 	@echo "Starting API and web servers..."
 	@make -j2 dev-api dev-web
 
 # Install, configure env, link .env to web, then start dev servers
 dev-up:
-	@rm -f apps/web/.env
 	@make install
 	@make supabase-env
-	@ln -sf "$(CURDIR)/.env" apps/web/.env
-	@echo "Linked .env to apps/web/.env"
 	@make dev
 
 # Run API server
@@ -30,6 +27,15 @@ dev-api:
 # Run web server
 dev-web:
 	cd apps/web && pnpm dev
+
+# Link repo root .env for Nuxt runtime config when available
+ensure-web-env:
+	@if [ -f ".env" ] && [ ! -e "apps/web/.env" ]; then \
+		ln -sf "$(CURDIR)/.env" apps/web/.env; \
+		echo "Linked .env to apps/web/.env"; \
+	elif [ ! -f ".env" ]; then \
+		echo "No repo root .env found; run 'make supabase-env' to generate local Supabase env."; \
+	fi
 
 # Supabase local dev
 supabase-start:

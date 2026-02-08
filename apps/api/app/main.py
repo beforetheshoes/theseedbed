@@ -10,7 +10,19 @@ from starlette.responses import Response
 from app.core.audit import write_api_audit_log
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
-from app.routers import books, health, library, me, protected, version
+from app.routers import (
+    books,
+    health,
+    highlights,
+    library,
+    me,
+    notes,
+    protected,
+    reviews,
+    sessions,
+    version,
+    works,
+)
 
 
 def create_app() -> FastAPI:
@@ -56,4 +68,10 @@ def create_app() -> FastAPI:
     app.include_router(books.router)
     app.include_router(me.router)
     app.include_router(library.router)
+    app.include_router(sessions.router)
+    app.include_router(notes.router)
+    app.include_router(highlights.router)
+    app.include_router(reviews.public_router)
+    app.include_router(reviews.router)
+    app.include_router(works.router)
     return app

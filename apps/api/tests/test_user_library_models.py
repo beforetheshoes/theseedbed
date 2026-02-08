@@ -24,6 +24,7 @@ def test_users_table_schema() -> None:
         "handle",
         "display_name",
         "avatar_url",
+        "actor_uri",
         "created_at",
         "updated_at",
     }

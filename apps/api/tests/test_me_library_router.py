@@ -59,6 +59,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
                     "id": str(uuid.uuid4()),
                     "work_id": str(uuid.uuid4()),
                     "work_title": "Book",
+                    "cover_url": None,
                     "status": status or "to_read",
                     "visibility": "private",
                     "rating": None,
@@ -75,10 +76,12 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             SimpleNamespace(
                 id=uuid.uuid4(),
                 work_id=uuid.uuid4(),
+                preferred_edition_id=None,
                 status="to_read",
                 visibility="private",
                 rating=None,
                 tags=None,
+                created_at=dt.datetime.now(tz=dt.UTC),
             ),
             True,
         ),
@@ -88,6 +91,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         lambda session, *, user_id, item_id, updates: SimpleNamespace(
             id=item_id,
             work_id=uuid.uuid4(),
+            preferred_edition_id=updates.get("preferred_edition_id"),
             status=updates.get("status", "to_read"),
             visibility=updates.get("visibility", "private"),
             rating=updates.get("rating"),

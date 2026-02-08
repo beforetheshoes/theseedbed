@@ -13,6 +13,7 @@ from app.services.user_library import (
     _encode_cursor,
     create_or_get_library_item,
     delete_library_item,
+    get_library_item_by_work,
     get_or_create_profile,
     list_library_items,
     update_library_item,
@@ -21,10 +22,10 @@ from app.services.user_library import (
 
 
 class FakeExecuteResult:
-    def __init__(self, rows: list[tuple[Any, str]]) -> None:
+    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
         self._rows = rows
 
-    def all(self) -> list[tuple[Any, str]]:
+    def all(self) -> list[tuple[Any, ...]]:
         return self._rows
 
 
@@ -33,7 +34,7 @@ class FakeSession:
         self.get_map: dict[tuple[type[Any], Any], Any] = {}
         self.scalar_values: list[Any] = []
         self.added: list[Any] = []
-        self.execute_rows: list[tuple[Any, str]] = []
+        self.execute_rows: list[tuple[Any, str, Any]] = []
         self.deleted: list[Any] = []
         self.committed = False
 
@@ -270,7 +271,10 @@ def test_list_library_items_returns_cursor() -> None:
             "created_at": now,
         },
     )()
-    session.execute_rows = [(item1, "One"), (item2, "Two")]
+    session.execute_rows = [
+        (item1, "One", None),
+        (item2, "Two", "https://example.com/cover.jpg"),
+    ]
 
     result = list_library_items(
         cast(Any, session),
@@ -282,7 +286,19 @@ def test_list_library_items_returns_cursor() -> None:
         visibility=None,
     )
     assert len(result["items"]) == 1
+    assert result["items"][0]["cover_url"] in (None, "https://example.com/cover.jpg")
     assert result["next_cursor"] is not None
+
+
+def test_get_library_item_by_work_returns_none_when_missing() -> None:
+    session = FakeSession()
+    session.scalar_values = [None]
+    item = get_library_item_by_work(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        work_id=uuid.uuid4(),
+    )
+    assert item is None
 
 
 def test_update_library_item_requires_at_least_one_field() -> None:

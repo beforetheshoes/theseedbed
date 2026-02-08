@@ -206,3 +206,67 @@ def test_request_raises_after_retry_exhausted() -> None:
     client = OpenLibraryClient(transport=httpx.MockTransport(handler), max_retries=2)
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(client.search_books(query="boom"))
+
+
+def test_search_books_filters_invalid_docs() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "docs": [
+                    "not-a-dict",
+                    {"key": "/works/OL1W"},  # missing title
+                    {"title": "No key"},
+                    {"key": "/works/OL2W", "title": "Ok", "cover_i": "nope"},
+                ]
+            },
+        )
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.search_books(query="q"))
+    assert [item.work_key for item in result.items] == ["/works/OL2W"]
+    assert result.items[0].cover_url is None
+
+
+def test_fetch_work_bundle_handles_missing_editions_and_description_string() -> None:
+    responses = {
+        "/works/OL1W.json": {
+            "title": "Book A",
+            "description": "Desc",
+            "authors": [],
+            "covers": [],
+        },
+        "/works/OL1W/editions.json": {"entries": []},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+    assert bundle.description == "Desc"
+    assert bundle.edition is None
+
+
+def test_fetch_work_bundle_parses_edition_fields_defensively() -> None:
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": []},
+        "/works/OL1W/editions.json": {
+            "entries": [{"key": "/books/OL3M", "isbn_10": "nope", "publishers": "nope"}]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+    assert bundle.edition is not None
+    assert bundle.edition["isbn10"] is None
+    assert bundle.edition["publisher"] is None

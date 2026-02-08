@@ -88,6 +88,10 @@ Tip: you can avoid a persistent link by passing `--project-ref` to a command, or
 
 We do not share staging/production secrets via files. Only public values (anon key + URL) should be used in frontend configs. Server secrets live in hosting/CI.
 
+Apple OAuth policy:
+- Hosted staging/production Apple client ID/secret are managed in Supabase Dashboard.
+- Local `.env` Apple vars are optional and only needed when testing Apple auth against a local Supabase stack.
+
 ## CLI notes
 
 After projects are created, link/push config:
