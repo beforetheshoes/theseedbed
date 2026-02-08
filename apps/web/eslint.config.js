@@ -28,6 +28,8 @@ export default [
     rules: {
       ...vue.configs['flat/recommended'].rules,
       'vue/no-undef-components': ['error', { ignorePatterns: ['Nuxt.*'] }],
+      // TypeScript handles undefined identifiers; `no-undef` misfires on DOM types in `<script setup>`.
+      'no-undef': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },
@@ -47,6 +49,8 @@ export default [
       '@typescript-eslint': tsPlugin,
     },
     rules: {
+      // TypeScript handles this.
+      'no-undef': 'off',
       '@typescript-eslint/consistent-type-imports': 'error',
     },
   },

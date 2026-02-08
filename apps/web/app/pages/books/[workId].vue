@@ -48,6 +48,16 @@
                 >
                   <span class="text-xs text-slate-500">No cover</span>
                 </div>
+
+                <div v-if="libraryItem" class="flex flex-wrap items-center gap-2">
+                  <Button
+                    label="Set cover"
+                    size="small"
+                    severity="secondary"
+                    data-test="set-cover"
+                    @click="openCoverDialog"
+                  />
+                </div>
               </div>
 
               <div class="flex flex-col gap-3">
@@ -290,6 +300,77 @@
         </div>
       </Dialog>
 
+      <Dialog
+        v-model:visible="coverDialogVisible"
+        modal
+        header="Set cover"
+        :style="{ width: '44rem' }"
+      >
+        <div class="flex flex-col gap-4">
+          <p v-if="coverError" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
+            {{ coverError }}
+          </p>
+
+          <div v-if="needsEditionSelection" class="grid gap-3 md:grid-cols-2">
+            <Select
+              v-model="selectedEditionId"
+              :options="editionOptions"
+              option-label="label"
+              option-value="value"
+              :disabled="editionsLoading"
+            />
+            <div class="flex items-center gap-2">
+              <input id="preferred" v-model="setPreferredEdition" type="checkbox" />
+              <label class="text-sm text-slate-700" for="preferred">Set as preferred edition</label>
+            </div>
+          </div>
+          <div v-else class="text-xs text-slate-500">
+            Using your preferred edition for this book.
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <Button
+              label="Upload image"
+              size="small"
+              :severity="coverMode === 'upload' ? 'primary' : 'secondary'"
+              @click="coverMode = 'upload'"
+            />
+            <Button
+              label="Use image URL"
+              size="small"
+              :severity="coverMode === 'url' ? 'primary' : 'secondary'"
+              @click="coverMode = 'url'"
+            />
+          </div>
+
+          <div v-if="coverMode === 'upload'" class="flex flex-col gap-3">
+            <input type="file" accept="image/*" @change="onCoverFileChange" />
+            <div class="flex justify-end gap-2">
+              <Button
+                label="Cancel"
+                severity="secondary"
+                text
+                @click="coverDialogVisible = false"
+              />
+              <Button label="Upload" :loading="coverBusy" @click="uploadCover" />
+            </div>
+          </div>
+
+          <div v-else class="flex flex-col gap-3">
+            <InputText v-model="coverSourceUrl" placeholder="https://covers.openlibrary.org/..." />
+            <div class="flex justify-end gap-2">
+              <Button
+                label="Cancel"
+                severity="secondary"
+                text
+                @click="coverDialogVisible = false"
+              />
+              <Button label="Cache from URL" :loading="coverBusy" @click="cacheCover" />
+            </div>
+          </div>
+        </div>
+      </Dialog>
+
       <Card class="shadow-sm">
         <template #title>
           <div class="flex items-center gap-3 text-lg font-semibold">
@@ -350,6 +431,7 @@ type WorkDetail = {
 type LibraryItem = {
   id: string;
   work_id: string;
+  preferred_edition_id?: string | null;
   status: string;
   created_at: string;
 };
@@ -425,6 +507,41 @@ const reviewRating = ref<number | null>(null);
 const reviewTitle = ref('');
 const reviewBody = ref('');
 
+type EditionOption = { label: string; value: string };
+const coverDialogVisible = ref(false);
+const coverMode = ref<'upload' | 'url'>('upload');
+const coverBusy = ref(false);
+const coverError = ref('');
+const coverFile = ref<File | null>(null);
+const coverSourceUrl = ref('');
+const editionsLoading = ref(false);
+const editions = ref<any[]>([]);
+const selectedEditionId = ref<string>('');
+const setPreferredEdition = ref(true);
+
+const needsEditionSelection = computed(
+  () => Boolean(libraryItem.value) && !libraryItem.value?.preferred_edition_id,
+);
+
+const effectiveEditionId = computed(() => {
+  const preferred = libraryItem.value?.preferred_edition_id;
+  if (preferred) return preferred;
+  return selectedEditionId.value;
+});
+
+const editionOptions = computed<EditionOption[]>(() =>
+  editions.value.map((e: any) => {
+    const meta = [
+      e.isbn13 || e.isbn10 ? `ISBN: ${e.isbn13 || e.isbn10}` : null,
+      e.publisher ? `Publisher: ${e.publisher}` : null,
+      e.publish_date ? `Published: ${e.publish_date}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+    return { value: e.id, label: meta ? `${e.id} (${meta})` : e.id };
+  }),
+);
+
 const visibilityOptions = [
   { label: 'Private', value: 'private' },
   { label: 'Unlisted', value: 'unlisted' },
@@ -494,6 +611,107 @@ const fetchAll = async () => {
     }
   } finally {
     loading.value = false;
+  }
+};
+
+const openCoverDialog = async () => {
+  coverError.value = '';
+  coverBusy.value = false;
+  coverMode.value = 'upload';
+  coverFile.value = null;
+  coverSourceUrl.value = '';
+
+  if (needsEditionSelection.value) {
+    editionsLoading.value = true;
+    try {
+      const payload = await apiRequest<{ items: any[] }>(`/api/v1/works/${workId.value}/editions`);
+      editions.value = payload.items;
+      if (!selectedEditionId.value && payload.items.length) {
+        selectedEditionId.value = payload.items[0].id;
+      }
+    } catch (err) {
+      coverError.value = err instanceof ApiClientError ? err.message : 'Unable to load editions.';
+    } finally {
+      editionsLoading.value = false;
+    }
+  }
+
+  coverDialogVisible.value = true;
+};
+
+const onCoverFileChange = (evt: Event) => {
+  const input = evt.target as HTMLInputElement;
+  const file = input.files?.[0] || null;
+  coverFile.value = file;
+};
+
+const maybeSetPreferredEdition = async () => {
+  if (!libraryItem.value) return;
+  if (!setPreferredEdition.value) return;
+  if (!effectiveEditionId.value) return;
+  if (libraryItem.value.preferred_edition_id === effectiveEditionId.value) return;
+
+  await apiRequest(`/api/v1/library/items/${libraryItem.value.id}`, {
+    method: 'PATCH',
+    body: { preferred_edition_id: effectiveEditionId.value },
+  });
+  libraryItem.value = await apiRequest<LibraryItem>(
+    `/api/v1/library/items/by-work/${workId.value}`,
+  );
+};
+
+const uploadCover = async () => {
+  if (!effectiveEditionId.value) {
+    coverError.value = 'Select an edition first.';
+    return;
+  }
+  if (!coverFile.value) {
+    coverError.value = 'Choose an image file first.';
+    return;
+  }
+
+  coverBusy.value = true;
+  coverError.value = '';
+  try {
+    const fd = new FormData();
+    fd.append('file', coverFile.value);
+    await apiRequest(`/api/v1/editions/${effectiveEditionId.value}/cover`, {
+      method: 'POST',
+      body: fd,
+    });
+    await maybeSetPreferredEdition();
+    work.value = await apiRequest<WorkDetail>(`/api/v1/works/${workId.value}`);
+    coverDialogVisible.value = false;
+  } catch (err) {
+    coverError.value = err instanceof ApiClientError ? err.message : 'Unable to set cover.';
+  } finally {
+    coverBusy.value = false;
+  }
+};
+
+const cacheCover = async () => {
+  if (!effectiveEditionId.value) {
+    coverError.value = 'Select an edition first.';
+    return;
+  }
+  if (!coverSourceUrl.value.trim()) {
+    coverError.value = 'Enter an image URL first.';
+    return;
+  }
+  coverBusy.value = true;
+  coverError.value = '';
+  try {
+    await apiRequest(`/api/v1/editions/${effectiveEditionId.value}/cover/cache`, {
+      method: 'POST',
+      body: { source_url: coverSourceUrl.value.trim() },
+    });
+    await maybeSetPreferredEdition();
+    work.value = await apiRequest<WorkDetail>(`/api/v1/works/${workId.value}`);
+    coverDialogVisible.value = false;
+  } catch (err) {
+    coverError.value = err instanceof ApiClientError ? err.message : 'Unable to cache cover.';
+  } finally {
+    coverBusy.value = false;
   }
 };
 
