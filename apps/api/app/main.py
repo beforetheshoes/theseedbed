@@ -10,6 +10,7 @@ from starlette.responses import Response
 from app.core.audit import write_api_audit_log
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
+from app.core.schema_guard import run_schema_guard
 from app.routers import (
     books,
     health,
@@ -32,6 +33,11 @@ def create_app() -> FastAPI:
         description="API for The Seedbed book tracking application",
         version=settings.api_version,
     )
+
+    @app.on_event("startup")
+    def _schema_guard_startup() -> None:
+        run_schema_guard()
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_allowed_origins),
