@@ -9,7 +9,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.db.models.bibliography import Work
+from app.db.models.bibliography import Edition, Work
 from app.db.models.users import LibraryItem, User
 
 DEFAULT_LIBRARY_STATUS = "to_read"
@@ -132,8 +132,15 @@ def list_library_items(
     status: str | None,
 ) -> dict[str, Any]:
     stmt = (
-        sa.select(LibraryItem, Work.title)
+        sa.select(
+            LibraryItem,
+            Work.title,
+            sa.func.coalesce(Edition.cover_url, Work.default_cover_url).label(
+                "cover_url"
+            ),
+        )
         .join(Work, Work.id == LibraryItem.work_id)
+        .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
         .where(LibraryItem.user_id == user_id)
         .order_by(LibraryItem.created_at.desc(), LibraryItem.id.desc())
     )
@@ -157,12 +164,13 @@ def list_library_items(
     selected = rows[:limit]
 
     items: list[dict[str, Any]] = []
-    for item, work_title in selected:
+    for item, work_title, cover_url in selected:
         items.append(
             {
                 "id": str(item.id),
                 "work_id": str(item.work_id),
                 "work_title": work_title,
+                "cover_url": cover_url,
                 "status": item.status,
                 "visibility": item.visibility,
                 "rating": item.rating,
