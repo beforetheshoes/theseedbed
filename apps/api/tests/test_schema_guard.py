@@ -64,6 +64,7 @@ def test_schema_guard_raises_with_actionable_message(
     assert "Missing requirements" in message
     assert "content_visibility" in message
     assert "public.notes.ap_uri" in message
+    assert "public.works.default_cover_set_by" in message
 
 
 def test_schema_guard_passes_when_schema_is_present(
