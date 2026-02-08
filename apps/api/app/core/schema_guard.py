@@ -25,6 +25,13 @@ _REQUIRED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("highlights", "ap_uri"),
     ("reviews", "ap_uri"),
     ("users", "actor_uri"),
+    # Cover provenance columns: if these aren't present, basic work fetches can 500.
+    ("editions", "cover_set_by"),
+    ("editions", "cover_set_at"),
+    ("editions", "cover_storage_path"),
+    ("works", "default_cover_set_by"),
+    ("works", "default_cover_set_at"),
+    ("works", "default_cover_storage_path"),
 )
 
 
