@@ -85,6 +85,31 @@ describe('api utils', () => {
     fetchMock.mockRestore();
   });
 
+  it('does not force content-type header when sending FormData', async () => {
+    state.supabaseClient = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: 'token-123' } },
+        }),
+      },
+    };
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { ok: true }, error: null }),
+    } as any);
+
+    const fd = new FormData();
+    fd.append('file', new Blob(['x'], { type: 'text/plain' }), 'x.txt');
+    await apiRequest('/api/v1/upload', { method: 'POST', body: fd });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, any];
+    expect(options.headers.Authorization).toBe('Bearer token-123');
+    expect(options.headers['Content-Type']).toBeUndefined();
+    fetchMock.mockRestore();
+  });
+
   it('falls back to localhost base url when config is unset', async () => {
     state.config = { public: { apiBaseUrl: '' } };
     state.supabaseClient = {

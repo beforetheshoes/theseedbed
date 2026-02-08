@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import hashlib
 import uuid
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
-from app.db.models.bibliography import Edition
+from app.db.models.bibliography import Edition, Work
 from app.services.storage import StorageUploadResult, upload_storage_object
 
 
@@ -41,6 +42,7 @@ async def cache_edition_cover_from_url(
     settings: Settings,
     edition_id: uuid.UUID,
     source_url: str | None,
+    user_id: uuid.UUID | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
     storage_transport: httpx.AsyncBaseTransport | None = None,
 ) -> CoverCacheResult:
@@ -80,6 +82,16 @@ async def cache_edition_cover_from_url(
     )
 
     edition.cover_url = upload.public_url
+    edition.cover_storage_path = upload.path
+    edition.cover_set_by = user_id
+    edition.cover_set_at = dt.datetime.now(tz=dt.UTC)
+
+    work = session.get(Work, edition.work_id)
+    if work is not None:
+        work.default_cover_url = upload.public_url
+        work.default_cover_storage_path = upload.path
+        work.default_cover_set_by = user_id
+        work.default_cover_set_at = dt.datetime.now(tz=dt.UTC)
     session.commit()
 
     return CoverCacheResult(cached=True, cover_url=upload.public_url, storage=upload)

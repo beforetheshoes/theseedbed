@@ -1,5 +1,6 @@
 from . import (
     books,
+    editions,
     health,
     highlights,
     library,
@@ -14,6 +15,7 @@ from . import (
 
 __all__ = [
     "books",
+    "editions",
     "health",
     "highlights",
     "library",

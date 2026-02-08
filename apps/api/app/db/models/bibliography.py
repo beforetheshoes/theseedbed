@@ -42,6 +42,13 @@ class Work(Base):
     description: Mapped[str | None] = mapped_column(sa.Text)
     first_publish_year: Mapped[int | None] = mapped_column(sa.SmallInteger)
     default_cover_url: Mapped[str | None] = mapped_column(sa.Text)
+    default_cover_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        sa.UUID(as_uuid=True)
+    )
+    default_cover_set_at: Mapped[dt.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True)
+    )
+    default_cover_storage_path: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
@@ -78,6 +85,9 @@ class Edition(Base):
     language: Mapped[str | None] = mapped_column(sa.String(32))
     format: Mapped[str | None] = mapped_column(sa.String(64))
     cover_url: Mapped[str | None] = mapped_column(sa.Text)
+    cover_set_by: Mapped[uuid.UUID | None] = mapped_column(sa.UUID(as_uuid=True))
+    cover_set_at: Mapped[dt.datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    cover_storage_path: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
