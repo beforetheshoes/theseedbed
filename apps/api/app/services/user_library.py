@@ -9,7 +9,7 @@ from typing import Any
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.db.models.bibliography import Edition, Work
+from app.db.models.bibliography import Author, Edition, Work, WorkAuthor
 from app.db.models.users import LibraryItem, User
 
 DEFAULT_LIBRARY_STATUS = "to_read"
@@ -172,6 +172,21 @@ def list_library_items(
     has_next = len(rows) > limit
     selected = rows[:limit]
 
+    # Avoid N+1: fetch author names for the works in the current page in one query.
+    author_names_by_work: dict[uuid.UUID, list[str]] = {}
+    work_ids = [item.work_id for item, _work_title, _cover_url in selected]
+    if work_ids:
+        author_rows = session.execute(
+            sa.select(WorkAuthor.work_id, Author.name)
+            .join(Author, Author.id == WorkAuthor.author_id)
+            .where(WorkAuthor.work_id.in_(work_ids))
+        ).all()
+        for work_id, author_name in author_rows:
+            author_names_by_work.setdefault(work_id, []).append(author_name)
+        for work_id, names in author_names_by_work.items():
+            # Stable ordering for UI and tests.
+            author_names_by_work[work_id] = sorted(set(names))
+
     items: list[dict[str, Any]] = []
     for item, work_title, cover_url in selected:
         items.append(
@@ -179,6 +194,7 @@ def list_library_items(
                 "id": str(item.id),
                 "work_id": str(item.work_id),
                 "work_title": work_title,
+                "author_names": author_names_by_work.get(item.work_id, []),
                 "cover_url": cover_url,
                 "status": item.status,
                 "visibility": item.visibility,

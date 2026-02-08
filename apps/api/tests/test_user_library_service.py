@@ -35,6 +35,7 @@ class FakeSession:
         self.scalar_values: list[Any] = []
         self.added: list[Any] = []
         self.execute_rows: list[tuple[Any, str, Any]] = []
+        self.execute_results: list[list[tuple[Any, ...]]] = []
         self.deleted: list[Any] = []
         self.committed = False
 
@@ -57,6 +58,8 @@ class FakeSession:
         self.committed = True
 
     def execute(self, _stmt: Any) -> FakeExecuteResult:
+        if self.execute_results:
+            return FakeExecuteResult(self.execute_results.pop(0))
         return FakeExecuteResult(self.execute_rows)
 
     def delete(self, obj: Any) -> None:
@@ -271,9 +274,10 @@ def test_list_library_items_returns_cursor() -> None:
             "created_at": now,
         },
     )()
-    session.execute_rows = [
-        (item1, "One", None),
-        (item2, "Two", "https://example.com/cover.jpg"),
+    session.execute_results = [
+        [(item1, "One", None), (item2, "Two", "https://example.com/cover.jpg")],
+        # Author lookup for the page.
+        [(item1.work_id, "Author A"), (item1.work_id, "Author A")],
     ]
 
     result = list_library_items(
@@ -287,6 +291,7 @@ def test_list_library_items_returns_cursor() -> None:
     )
     assert len(result["items"]) == 1
     assert result["items"][0]["cover_url"] in (None, "https://example.com/cover.jpg")
+    assert result["items"][0]["author_names"] == ["Author A"]
     assert result["next_cursor"] is not None
 
 
