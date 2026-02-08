@@ -59,6 +59,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
                     "id": str(uuid.uuid4()),
                     "work_id": str(uuid.uuid4()),
                     "work_title": "Book",
+                    "author_names": ["Author A"],
                     "cover_url": None,
                     "status": status or "to_read",
                     "visibility": "private",
