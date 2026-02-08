@@ -218,6 +218,11 @@ describe('book detail page', () => {
         return { id: 'highlight-1' };
       }
 
+      if (url === '/api/v1/highlights/highlight-1' && method === 'PATCH') {
+        highlights[0] = { ...highlights[0], ...opts?.body };
+        return { id: 'highlight-1' };
+      }
+
       if (url === '/api/v1/highlights/highlight-1' && method === 'DELETE') {
         highlights.splice(0, highlights.length);
         return { ok: true };
@@ -337,6 +342,30 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Add highlight');
     await flushPromises();
     expect(wrapper.text()).toContain('A short excerpt');
+
+    // Edit highlight
+    await clickButton(wrapper, 'Edit');
+    await flushPromises();
+    expect((wrapper.vm as any).editHighlightVisible).toBe(true);
+    expect(wrapper.find('[data-test="dialog"]').exists()).toBe(true);
+    // Cover dialog bindings + cancel path
+    selects = wrapper.get('[data-test="dialog"]').findAll('select');
+    expect(selects.length).toBeGreaterThanOrEqual(1);
+    await selects[0].setValue('unlisted');
+    await wrapper
+      .get('[data-test="dialog"]')
+      .find('input[placeholder="Location (optional)"]')
+      .setValue('11');
+    await clickButton(wrapper, 'Cancel');
+    await flushPromises();
+    expect(wrapper.find('[data-test="dialog"]').exists()).toBe(false);
+
+    await clickButton(wrapper, 'Edit');
+    await flushPromises();
+    await wrapper.get('[data-test="dialog"]').find('textarea').setValue('Updated excerpt');
+    await clickButton(wrapper, 'Save');
+    await flushPromises();
+    expect(wrapper.text()).toContain('Updated excerpt');
 
     // Delete highlight (note was deleted earlier, so only one Delete button remains)
     await clickButton(wrapper, 'Delete', 0);
@@ -550,6 +579,7 @@ describe('book detail page', () => {
       notePatch: 0,
       noteDelete: 0,
       highlightPost: 0,
+      highlightPatch: 0,
       highlightDelete: 0,
       reviewPost: 0,
     };
@@ -627,6 +657,11 @@ describe('book detail page', () => {
         if (counts.highlightPost === 1) throw new Error('boom');
         throw new ApiClientErrorMock('Highlight create denied', 'forbidden', 403);
       }
+      if (url === '/api/v1/highlights/highlight-1' && method === 'PATCH') {
+        counts.highlightPatch += 1;
+        if (counts.highlightPatch === 1) throw new Error('boom');
+        throw new ApiClientErrorMock('Highlight update denied', 'forbidden', 403);
+      }
       if (url === '/api/v1/highlights/highlight-1' && method === 'DELETE') {
         counts.highlightDelete += 1;
         if (counts.highlightDelete === 1)
@@ -690,6 +725,10 @@ describe('book detail page', () => {
       'Unable to update note.',
     );
 
+    // Close the note dialog so highlight editing uses the correct Save button.
+    (wrapper.vm as any).editNoteVisible = false;
+    await flushPromises();
+
     // Note delete error (first Delete)
     await clickButton(wrapper, 'Delete', 0);
     await flushPromises();
@@ -714,6 +753,21 @@ describe('book detail page', () => {
     await flushPromises();
     expect(wrapper.get('[data-test="book-detail-error"]').text()).toContain(
       'Highlight create denied',
+    );
+
+    // Highlight edit errors (generic + ApiClientError)
+    await clickButton(wrapper, 'Edit', 1);
+    await flushPromises();
+    await clickButton(wrapper, 'Save');
+    await flushPromises();
+    expect(wrapper.get('[data-test="book-detail-error"]').text()).toContain(
+      'Unable to update highlight.',
+    );
+
+    await clickButton(wrapper, 'Save');
+    await flushPromises();
+    expect(wrapper.get('[data-test="book-detail-error"]').text()).toContain(
+      'Highlight update denied',
     );
 
     // Highlight delete error (second Delete)

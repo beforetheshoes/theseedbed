@@ -79,6 +79,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Book A',
+          cover_url: 'https://example.com/cover.jpg',
           status: 'to_read',
           visibility: 'private',
           tags: ['Favorites'],
@@ -96,6 +97,7 @@ describe('library page', () => {
       query: { limit: 10, cursor: undefined, status: undefined },
     });
     expect(wrapper.text()).toContain('Book A');
+    expect(wrapper.findAll('[data-test="library-item-cover"]').length).toBe(1);
   });
 
   it('loads next page when load more is clicked', async () => {
@@ -106,6 +108,7 @@ describe('library page', () => {
             id: 'item-1',
             work_id: 'work-1',
             work_title: 'Book A',
+            cover_url: 'https://example.com/cover.jpg',
             status: 'to_read',
             visibility: 'private',
             tags: ['Favorites'],
@@ -120,6 +123,7 @@ describe('library page', () => {
             id: 'item-2',
             work_id: 'work-2',
             work_title: 'Book B',
+            cover_url: null,
             status: 'reading',
             visibility: 'private',
             tags: ['SciFi'],
@@ -139,6 +143,7 @@ describe('library page', () => {
       query: { limit: 10, cursor: 'cursor-1', status: undefined },
     });
     expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.findAll('[data-test="library-item-cover-fallback"]').length).toBeGreaterThan(0);
   });
 
   it('shows empty state when no items are returned', async () => {
@@ -207,6 +212,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Book A',
+          cover_url: null,
           status: 'to_read',
           visibility: 'private',
           tags: ['Favorites', '2026'],
@@ -216,6 +222,7 @@ describe('library page', () => {
           id: 'item-2',
           work_id: 'work-2',
           work_title: 'Book B',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: ['SciFi'],
@@ -225,6 +232,7 @@ describe('library page', () => {
           id: 'item-3',
           work_id: 'work-3',
           work_title: 'Book C',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: undefined,
@@ -252,6 +260,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Zoo Book',
+          cover_url: null,
           status: 'to_read',
           visibility: 'private',
           tags: [],
@@ -261,6 +270,7 @@ describe('library page', () => {
           id: 'item-2',
           work_id: 'work-2',
           work_title: 'Alpha Book',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: [],
@@ -289,6 +299,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Book A',
+          cover_url: null,
           status: 'to_read',
           visibility: 'private',
           tags: [],
@@ -298,6 +309,7 @@ describe('library page', () => {
           id: 'item-2',
           work_id: 'work-2',
           work_title: 'Book B',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: [],
@@ -326,6 +338,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Book A',
+          cover_url: null,
           status: 'to_read',
           visibility: 'private',
           tags: [],
@@ -335,6 +348,7 @@ describe('library page', () => {
           id: 'item-2',
           work_id: 'work-2',
           work_title: 'Book B',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: [],
@@ -360,6 +374,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Book A',
+          cover_url: null,
           status: 'to_read',
           visibility: 'private',
           tags: [],
@@ -369,6 +384,7 @@ describe('library page', () => {
           id: 'item-2',
           work_id: 'work-2',
           work_title: 'Book B',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: [],
@@ -392,6 +408,7 @@ describe('library page', () => {
           id: 'item-1',
           work_id: 'work-1',
           work_title: 'Book A',
+          cover_url: null,
           status: 'to_read',
           visibility: 'private',
           tags: [],
@@ -401,6 +418,7 @@ describe('library page', () => {
           id: 'item-2',
           work_id: 'work-2',
           work_title: 'Book B',
+          cover_url: null,
           status: 'reading',
           visibility: 'private',
           tags: [],

@@ -237,14 +237,23 @@
                       {{ h.visibility }} | {{ formatDate(h.created_at) }}
                     </p>
                   </div>
-                  <Button
-                    label="Delete"
-                    size="small"
-                    text
-                    severity="danger"
-                    :loading="deletingHighlightId === h.id"
-                    @click="deleteHighlight(h)"
-                  />
+                  <div class="flex items-center gap-2">
+                    <Button
+                      label="Edit"
+                      size="small"
+                      text
+                      severity="secondary"
+                      @click="openEditHighlight(h)"
+                    />
+                    <Button
+                      label="Delete"
+                      size="small"
+                      text
+                      severity="danger"
+                      :loading="deletingHighlightId === h.id"
+                      @click="deleteHighlight(h)"
+                    />
+                  </div>
                 </div>
                 <p class="mt-2 text-sm text-slate-700">{{ h.quote }}</p>
               </div>
@@ -253,6 +262,33 @@
           </div>
         </template>
       </Card>
+
+      <Dialog
+        v-model:visible="editHighlightVisible"
+        modal
+        header="Edit highlight"
+        :style="{ width: '36rem' }"
+      >
+        <div class="flex flex-col gap-3">
+          <Select
+            v-model="editHighlightVisibility"
+            :options="visibilityOptions"
+            option-label="label"
+            option-value="value"
+          />
+          <InputText v-model="editHighlightLocationSort" placeholder="Location (optional)" />
+          <Textarea v-model="editHighlightQuote" rows="6" auto-resize />
+          <div class="flex justify-end gap-2">
+            <Button
+              label="Cancel"
+              severity="secondary"
+              text
+              @click="editHighlightVisible = false"
+            />
+            <Button label="Save" :loading="savingHighlight" @click="saveEditHighlight" />
+          </div>
+        </div>
+      </Dialog>
 
       <Card class="shadow-sm">
         <template #title>
@@ -338,6 +374,7 @@ type Highlight = {
   id: string;
   quote: string;
   visibility: string;
+  location_sort?: number | null;
   created_at: string;
 };
 
@@ -375,6 +412,12 @@ const deletingHighlightId = ref<string | null>(null);
 const newHighlightQuote = ref('');
 const newHighlightVisibility = ref<'private' | 'unlisted' | 'public'>('private');
 const highlightLocationSort = ref('');
+
+const editHighlightVisible = ref(false);
+const editHighlightId = ref<string | null>(null);
+const editHighlightQuote = ref('');
+const editHighlightVisibility = ref<'private' | 'unlisted' | 'public'>('private');
+const editHighlightLocationSort = ref('');
 
 const savingReview = ref(false);
 const reviewVisibility = ref<'private' | 'unlisted' | 'public'>('private');
@@ -582,6 +625,45 @@ const addHighlight = async () => {
     highlights.value = payload.items;
   } catch (err) {
     error.value = err instanceof ApiClientError ? err.message : 'Unable to add highlight.';
+  } finally {
+    savingHighlight.value = false;
+  }
+};
+
+const openEditHighlight = (highlight: Highlight) => {
+  editHighlightId.value = highlight.id;
+  editHighlightQuote.value = highlight.quote;
+  editHighlightVisibility.value = highlight.visibility as any;
+  editHighlightLocationSort.value =
+    highlight.location_sort !== null && highlight.location_sort !== undefined
+      ? String(highlight.location_sort)
+      : '';
+  editHighlightVisible.value = true;
+};
+
+const saveEditHighlight = async () => {
+  if (!editHighlightId.value) return;
+  savingHighlight.value = true;
+  error.value = '';
+  try {
+    const sort = editHighlightLocationSort.value.trim();
+    await apiRequest(`/api/v1/highlights/${editHighlightId.value}`, {
+      method: 'PATCH',
+      body: {
+        quote: editHighlightQuote.value,
+        visibility: editHighlightVisibility.value,
+        location_sort: sort ? Number(sort) : null,
+      },
+    });
+    editHighlightVisible.value = false;
+    if (libraryItem.value) {
+      const payload = await apiRequest<{ items: Highlight[] }>(
+        `/api/v1/library/items/${libraryItem.value.id}/highlights`,
+      );
+      highlights.value = payload.items;
+    }
+  } catch (err) {
+    error.value = err instanceof ApiClientError ? err.message : 'Unable to update highlight.';
   } finally {
     savingHighlight.value = false;
   }

@@ -64,17 +64,38 @@
               <Card v-for="item in displayItems" :key="item.id" class="border border-slate-200/70">
                 <template #content>
                   <div class="flex items-center justify-between gap-3">
-                    <div>
-                      <NuxtLink
-                        :to="`/books/${item.work_id}`"
-                        class="font-semibold text-slate-900 hover:underline"
+                    <div class="flex items-center gap-3">
+                      <div
+                        class="h-14 w-10 overflow-hidden rounded border border-slate-200/70 bg-slate-100"
                       >
-                        {{ item.work_title }}
-                      </NuxtLink>
-                      <p class="text-sm text-slate-600">Status: {{ item.status }}</p>
-                      <p v-if="item.tags?.length" class="text-xs text-slate-500">
-                        Tags: {{ item.tags.join(', ') }}
-                      </p>
+                        <img
+                          v-if="item.cover_url"
+                          :src="item.cover_url"
+                          alt=""
+                          class="h-full w-full object-cover"
+                          data-test="library-item-cover"
+                        />
+                        <div
+                          v-else
+                          class="flex h-full w-full items-center justify-center"
+                          data-test="library-item-cover-fallback"
+                        >
+                          <i class="pi pi-image text-slate-400" aria-hidden="true"></i>
+                        </div>
+                      </div>
+
+                      <div>
+                        <NuxtLink
+                          :to="`/books/${item.work_id}`"
+                          class="font-semibold text-slate-900 hover:underline"
+                        >
+                          {{ item.work_title }}
+                        </NuxtLink>
+                        <p class="text-sm text-slate-600">Status: {{ item.status }}</p>
+                        <p v-if="item.tags?.length" class="text-xs text-slate-500">
+                          Tags: {{ item.tags.join(', ') }}
+                        </p>
+                      </div>
                     </div>
                     <span class="rounded bg-slate-100 px-2 py-1 text-xs uppercase text-slate-600">
                       {{ item.visibility }}
@@ -116,6 +137,7 @@ type LibraryItem = {
   id: string;
   work_id: string;
   work_title: string;
+  cover_url?: string | null;
   status: string;
   visibility: string;
   tags?: string[];
