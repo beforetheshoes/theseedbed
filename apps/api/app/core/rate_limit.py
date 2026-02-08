@@ -53,6 +53,7 @@ class InMemoryRateLimiter:
 
 
 _rate_limiter = InMemoryRateLimiter()
+_FIRST_PARTY_WEB_CLIENT_ID = uuid.UUID("00000000-0000-0000-0000-000000000001")
 
 
 def _parse_positive_int(value: str | None, *, fallback: int) -> int:
@@ -122,14 +123,15 @@ def enforce_client_user_rate_limit(
     auth: Annotated[AuthContext, Depends(require_auth_context)],
     config: Annotated[RateLimitConfig, Depends(get_rate_limit_config)],
 ) -> None:
+    client_id = auth.client_id or _FIRST_PARTY_WEB_CLIENT_ID
+
     if config.default_limit <= 0:
         return
 
     endpoint_key = f"{request.method.upper()} {request.url.path}"
     limit = _resolve_limit(config, request)
-    effective_client_id = auth.client_id or auth.user_id
     retry_after = _rate_limiter.check(
-        key=(effective_client_id, auth.user_id, endpoint_key),
+        key=(client_id, auth.user_id, endpoint_key),
         limit=limit,
         window_seconds=config.window_seconds,
     )
@@ -137,7 +139,7 @@ def enforce_client_user_rate_limit(
         return
 
     request.state.rate_limit_event = {
-        "client_id": effective_client_id,
+        "client_id": client_id,
         "user_id": auth.user_id,
         "method": request.method.upper(),
         "path": request.url.path,
@@ -152,7 +154,7 @@ def enforce_client_user_rate_limit(
             "code": "rate_limited",
             "message": "Rate limit exceeded.",
             "details": {
-                "client_id": str(effective_client_id),
+                "client_id": str(client_id),
                 "user_id": str(auth.user_id),
                 "limit": limit,
                 "window_seconds": config.window_seconds,

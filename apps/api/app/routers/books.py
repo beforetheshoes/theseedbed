@@ -85,6 +85,8 @@ async def import_book(
             edition_key=payload.edition_key,
         )
         result = import_openlibrary_bundle(session, bundle=bundle)
+
+        # Best-effort cover caching; do not block imports.
         edition = result.get("edition")
         if isinstance(edition, dict):
             edition_id = edition.get("id")
@@ -99,7 +101,6 @@ async def import_book(
                     if cached.cover_url:
                         edition["cover_url"] = cached.cover_url
                 except Exception:
-                    # Cover caching should never block imports; fallback to upstream URL.
                     pass
     except httpx.HTTPError as exc:
         raise HTTPException(

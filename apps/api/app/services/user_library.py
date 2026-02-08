@@ -43,7 +43,10 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         return profile
 
     profile = User(
-        id=user_id, handle=_default_handle(user_id), display_name=None, avatar_url=None
+        id=user_id,
+        handle=_default_handle(user_id),
+        display_name=None,
+        avatar_url=None,
     )
     session.add(profile)
     session.commit()
@@ -130,6 +133,8 @@ def list_library_items(
     limit: int,
     cursor: str | None,
     status: str | None,
+    tag: str | None,
+    visibility: str | None,
 ) -> dict[str, Any]:
     stmt = (
         sa.select(
@@ -146,6 +151,10 @@ def list_library_items(
     )
     if status is not None:
         stmt = stmt.where(LibraryItem.status == status)
+    if visibility is not None:
+        stmt = stmt.where(LibraryItem.visibility == visibility)
+    if tag is not None:
+        stmt = stmt.where(LibraryItem.tags.contains([tag]))
 
     if cursor:
         cursor_created, cursor_id = _decode_cursor(cursor)
@@ -199,3 +208,48 @@ def get_library_item_by_work(
             LibraryItem.work_id == work_id,
         )
     )
+
+
+def update_library_item(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
+    updates: dict[str, Any],
+) -> LibraryItem:
+    if not updates:
+        raise ValueError("at least one field must be provided")
+
+    item = session.scalar(
+        sa.select(LibraryItem).where(
+            LibraryItem.id == item_id,
+            LibraryItem.user_id == user_id,
+        )
+    )
+    if item is None:
+        raise LookupError("library item not found")
+
+    for field in ("preferred_edition_id", "status", "visibility", "rating", "tags"):
+        if field in updates:
+            setattr(item, field, updates[field])
+
+    session.commit()
+    return item
+
+
+def delete_library_item(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    item_id: uuid.UUID,
+) -> None:
+    item = session.scalar(
+        sa.select(LibraryItem).where(
+            LibraryItem.id == item_id,
+            LibraryItem.user_id == user_id,
+        )
+    )
+    if item is None:
+        raise LookupError("library item not found")
+    session.delete(item)
+    session.commit()

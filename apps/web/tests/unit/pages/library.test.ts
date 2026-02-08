@@ -90,7 +90,6 @@ describe('library page', () => {
     });
 
     const wrapper = mountPage();
-
     await flushPromises();
 
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items', {
@@ -134,7 +133,6 @@ describe('library page', () => {
       });
 
     const wrapper = mountPage();
-
     await flushPromises();
     await wrapper.get('[data-test="library-load-more"]').trigger('click');
     await flushPromises();
@@ -361,7 +359,6 @@ describe('library page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    // Default is newest-first; the item with a timestamp should come first.
     const titleLinks = wrapper.get('[data-test="library-items"]').findAll('a');
     const titles = titleLinks.map((a) => a.text()).filter((t) => t !== 'Add books');
     expect(titles[0]).toBe('Book B');
