@@ -734,6 +734,39 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
     assert not unknown
 
 
+def test_alembic_version_is_not_accessible_to_client_roles(db_url: str) -> None:
+    # This check is only meaningful once the Supabase migration that revokes
+    # privileges has been applied to the database. Local Supabase instances may
+    # lag until `supabase db reset` / `supabase db push` is run.
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        migration_applied = conn.execute(
+            """
+            select 1
+            from supabase_migrations.schema_migrations
+            where version = '20260210211500'
+            limit 1;
+            """
+        ).fetchone()
+    if not migration_applied:
+        pytest.skip(
+            "Supabase migrations not up to date; apply latest Supabase migrations "
+            "(e.g. `supabase db reset` or `supabase db push`) to validate grants."
+        )
+
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        # If anon/authenticated have any privileges on alembic_version, fail loudly.
+        rows = conn.execute(
+            """
+            select grantee, privilege_type
+            from information_schema.role_table_grants
+            where table_schema = 'public'
+              and table_name = 'alembic_version'
+              and grantee in ('anon', 'authenticated');
+            """
+        ).fetchall()
+    assert rows == []
+
+
 def test_api_audit_logs_scoped_read(
     db_url: str, seed_data: dict[str, uuid.UUID]
 ) -> None:
