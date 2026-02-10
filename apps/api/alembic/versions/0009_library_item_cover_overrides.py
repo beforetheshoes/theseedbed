@@ -1,6 +1,6 @@
 """Add per-user cover override columns to library_items.
 
-Revision ID: 0009_library_item_cover_overrides
+Revision ID: 0009_cover_overrides
 Revises: 0008_cover_provenance
 Create Date: 2026-02-10 00:00:00
 """
@@ -11,7 +11,8 @@ import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0009_library_item_cover_overrides"
+# Alembic's default alembic_version.version_num is VARCHAR(32); keep revision <= 32 chars.
+revision = "0009_cover_overrides"
 down_revision = "0008_cover_provenance"
 branch_labels = None
 depends_on = None
