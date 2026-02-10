@@ -62,6 +62,24 @@ Local development is fully independent of hosting. You can build and run the app
 make supabase-health
 ```
 
+## Hosted RLS verification
+
+See `docs/supabase-hosted-rls-verification.md`.
+
+## Hosted migrations (automatic)
+
+GitHub Actions applies database migrations automatically:
+- On merge/push to `development`: pushes migrations to staging.
+- On merge/push to `main`: pushes migrations to production (staging-first workflow still applies).
+
+Required GitHub Actions secrets (prefer environment-scoped secrets):
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_STAGING_DB_PASSWORD`
+- `SUPABASE_PROD_DB_PASSWORD`
+- `RENDER_API_KEY` (API deploy is triggered after migrations)
+
+Workflow: `.github/workflows/supabase-db-push.yml`
+
 ## When to use `supabase link`
 
 Think of `supabase link` as "point the CLI at a hosted project." It is **not** used for local dev.

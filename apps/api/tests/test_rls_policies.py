@@ -190,6 +190,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
 
     library_item_1 = uuid.uuid4()
     library_item_2 = uuid.uuid4()
+    library_item_3 = uuid.uuid4()
     reading_session_1 = uuid.uuid4()
     reading_session_2 = uuid.uuid4()
     reading_state_event_1 = uuid.uuid4()
@@ -200,6 +201,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
     highlight_2 = uuid.uuid4()
     review_1 = uuid.uuid4()
     review_2 = uuid.uuid4()
+    review_3 = uuid.uuid4()
     api_client_1 = uuid.uuid4()
     api_client_2 = uuid.uuid4()
     api_audit_log_1 = uuid.uuid4()
@@ -269,7 +271,10 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
             """
             insert into public.library_items
                 (id, user_id, work_id, status, visibility)
-            values (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s);
+            values
+                (%s, %s, %s, %s, %s),
+                (%s, %s, %s, %s, %s),
+                (%s, %s, %s, %s, %s);
             """,
             (
                 library_item_1,
@@ -281,6 +286,11 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
                 user_2,
                 work_2,
                 "reading",
+                "private",
+                library_item_3,
+                user_2,
+                work_1,
+                "to_read",
                 "private",
             ),
         )
@@ -359,8 +369,11 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
         conn.execute(
             """
             insert into public.reviews
-                (id, user_id, library_item_id, title, body, rating)
-            values (%s, %s, %s, %s, %s, %s), (%s, %s, %s, %s, %s, %s);
+                (id, user_id, library_item_id, title, body, rating, visibility)
+            values
+                (%s, %s, %s, %s, %s, %s, %s),
+                (%s, %s, %s, %s, %s, %s, %s),
+                (%s, %s, %s, %s, %s, %s, %s);
             """,
             (
                 review_1,
@@ -369,12 +382,21 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
                 "Review One",
                 "Review body one",
                 7,
+                "private",
                 review_2,
                 user_2,
                 library_item_2,
                 "Review Two",
                 "Review body two",
                 8,
+                "public",
+                review_3,
+                user_2,
+                library_item_3,
+                "Review Three",
+                "Review body three",
+                6,
+                "unlisted",
             ),
         )
         conn.execute(
@@ -433,6 +455,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
         "source_record_1": source_record_1,
         "library_item_1": library_item_1,
         "library_item_2": library_item_2,
+        "library_item_3": library_item_3,
         "reading_session_1": reading_session_1,
         "reading_session_2": reading_session_2,
         "reading_state_event_1": reading_state_event_1,
@@ -443,6 +466,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
         "highlight_2": highlight_2,
         "review_1": review_1,
         "review_2": review_2,
+        "review_3": review_3,
         "api_client_1": api_client_1,
         "api_client_2": api_client_2,
         "api_audit_log_1": api_audit_log_1,
@@ -463,8 +487,8 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
                 (api_client_1, api_client_2),
             )
             conn.execute(
-                "delete from public.reviews where id in (%s, %s);",
-                (review_1, review_2),
+                "delete from public.reviews where id in (%s, %s, %s);",
+                (review_1, review_2, review_3),
             )
             conn.execute(
                 "delete from public.highlights where id in (%s, %s);",
@@ -483,8 +507,8 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
                 (reading_session_1, reading_session_2),
             )
             conn.execute(
-                "delete from public.library_items where id in (%s, %s);",
-                (library_item_1, library_item_2),
+                "delete from public.library_items where id in (%s, %s, %s);",
+                (library_item_1, library_item_2, library_item_3),
             )
             conn.execute(
                 "delete from public.work_authors where work_id = %s and author_id = %s;",
@@ -551,6 +575,15 @@ def test_policies_present(db_url: str) -> None:
             assert qual and f"{column} = auth.uid()" in qual
             assert with_check and f"{column} = auth.uid()" in with_check
 
+        # Explicit shared read for public reviews (authenticated only).
+        public_reviews_key = ("reviews", "reviews_public_read")
+        assert public_reviews_key in policies
+        _, _, cmd, roles, qual, with_check = policies[public_reviews_key]
+        assert cmd == "SELECT"
+        assert roles and "authenticated" in roles
+        assert qual and "visibility" in qual and "'public'" in qual
+        assert with_check is None
+
         for table in READ_ONLY_TABLES:
             key = (table, f"{table}_read")
             assert key in policies
@@ -578,7 +611,6 @@ def test_policies_present(db_url: str) -> None:
         ("reading_state_events", "user_id", "id", "reading_state_event_2"),
         ("notes", "user_id", "id", "note_2"),
         ("highlights", "user_id", "id", "highlight_2"),
-        ("reviews", "user_id", "id", "review_2"),
         ("api_clients", "owner_user_id", "client_id", "api_client_2"),
     ],
 )
@@ -634,6 +666,72 @@ def test_user_scoped_reads_and_updates(
             (user_2,),
         ).rowcount
         assert blocked_update == 0
+
+
+def test_reviews_public_read_for_authenticated(
+    db_url: str, seed_data: dict[str, uuid.UUID]
+) -> None:
+    user_1 = seed_data["user_1"]
+    user_2 = seed_data["user_2"]
+    review_public = seed_data["review_2"]
+    review_unlisted = seed_data["review_3"]
+
+    with _authenticated_conn(db_url, user_1) as conn:
+        # Can read other users' explicitly public reviews.
+        row = conn.execute(
+            "select count(*) from public.reviews where id = %s and user_id = %s;",
+            (review_public, user_2),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 1
+
+        # Cannot read other users' unlisted reviews (treated as private in RLS).
+        row = conn.execute(
+            "select count(*) from public.reviews where id = %s and user_id = %s;",
+            (review_unlisted, user_2),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 0
+
+
+def test_all_public_tables_accounted_for(db_url: str) -> None:
+    expected = {
+        "alembic_version",
+        "users",
+        "library_items",
+        "reading_sessions",
+        "reading_state_events",
+        "notes",
+        "highlights",
+        "reviews",
+        "api_clients",
+        "api_audit_logs",
+        "authors",
+        "works",
+        "editions",
+        "work_authors",
+        "external_ids",
+        "source_records",
+    }
+    # Some Supabase images may include extension tables in public.
+    ignored = {
+        "spatial_ref_sys",
+    }
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        rows = conn.execute(
+            """
+            select table_name
+            from information_schema.tables
+            where table_schema = 'public'
+              and table_type = 'BASE TABLE';
+            """
+        ).fetchall()
+    tables = {row[0] for row in rows}
+
+    unknown = tables - expected - ignored
+    missing = expected - tables
+    assert not missing
+    assert not unknown
 
 
 def test_api_audit_logs_scoped_read(
