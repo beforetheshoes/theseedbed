@@ -92,12 +92,7 @@
                       image-class="h-full w-full object-cover"
                       data-test="library-item-cover"
                     />
-                    <Skeleton
-                      v-else
-                      class="h-full w-full"
-                      borderRadius="0.5rem"
-                      data-test="library-item-cover-skeleton"
-                    />
+                    <CoverPlaceholder v-else data-test="library-item-cover-placeholder" />
                   </div>
 
                   <div class="min-w-0 pt-1">
@@ -162,6 +157,7 @@ definePageMeta({ layout: 'app', middleware: 'auth' });
 import { computed, onMounted, ref, watch } from 'vue';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
+import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 import EmptyState from '~/components/EmptyState.vue';
 
 type LibraryItem = {
