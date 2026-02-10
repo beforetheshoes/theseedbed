@@ -140,9 +140,11 @@ def list_library_items(
         sa.select(
             LibraryItem,
             Work.title,
-            sa.func.coalesce(Edition.cover_url, Work.default_cover_url).label(
-                "cover_url"
-            ),
+            sa.func.coalesce(
+                LibraryItem.cover_override_url,
+                Edition.cover_url,
+                Work.default_cover_url,
+            ).label("cover_url"),
         )
         .join(Work, Work.id == LibraryItem.work_id)
         .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
@@ -210,6 +212,44 @@ def list_library_items(
         next_cursor = _encode_cursor(last_item.created_at, last_item.id)
 
     return {"items": items, "next_cursor": next_cursor}
+
+
+def get_library_item_by_work_detail(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    work_id: uuid.UUID,
+) -> dict[str, Any] | None:
+    row = session.execute(
+        sa.select(
+            LibraryItem,
+            sa.func.coalesce(
+                LibraryItem.cover_override_url,
+                Edition.cover_url,
+                Work.default_cover_url,
+            ).label("cover_url"),
+        )
+        .join(Work, Work.id == LibraryItem.work_id)
+        .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
+        .where(LibraryItem.user_id == user_id, LibraryItem.work_id == work_id)
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    item, cover_url = row
+    return {
+        "id": str(item.id),
+        "work_id": str(item.work_id),
+        "preferred_edition_id": (
+            str(item.preferred_edition_id) if item.preferred_edition_id else None
+        ),
+        "cover_url": cover_url,
+        "status": item.status,
+        "visibility": item.visibility,
+        "rating": item.rating,
+        "tags": item.tags or [],
+        "created_at": item.created_at.isoformat(),
+    }
 
 
 def get_library_item_by_work(

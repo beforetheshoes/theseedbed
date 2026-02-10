@@ -3,7 +3,6 @@ from __future__ import annotations
 import datetime as dt
 import uuid
 from collections.abc import Generator
-from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -34,17 +33,18 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     app.dependency_overrides[get_db_session] = _fake_session
 
     monkeypatch.setattr(
-        "app.routers.library.get_library_item_by_work",
-        lambda *_args, **_kwargs: SimpleNamespace(
-            id=uuid.uuid4(),
-            work_id=uuid.uuid4(),
-            preferred_edition_id=None,
-            status="to_read",
-            visibility="private",
-            rating=None,
-            tags=None,
-            created_at=dt.datetime.now(tz=dt.UTC),
-        ),
+        "app.routers.library.get_library_item_by_work_detail",
+        lambda *_args, **_kwargs: {
+            "id": str(uuid.uuid4()),
+            "work_id": str(uuid.uuid4()),
+            "preferred_edition_id": None,
+            "cover_url": "https://example.com/cover.jpg",
+            "status": "to_read",
+            "visibility": "private",
+            "rating": None,
+            "tags": [],
+            "created_at": dt.datetime.now(tz=dt.UTC).isoformat(),
+        },
     )
 
     yield app
@@ -61,7 +61,8 @@ def test_get_library_item_by_work_returns_404(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.routers.library.get_library_item_by_work", lambda *_args, **_kwargs: None
+        "app.routers.library.get_library_item_by_work_detail",
+        lambda *_args, **_kwargs: None,
     )
     client = TestClient(app)
     response = client.get(f"/api/v1/library/items/by-work/{uuid.uuid4()}")

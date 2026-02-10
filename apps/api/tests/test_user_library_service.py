@@ -14,6 +14,7 @@ from app.services.user_library import (
     create_or_get_library_item,
     delete_library_item,
     get_library_item_by_work,
+    get_library_item_by_work_detail,
     get_or_create_profile,
     list_library_items,
     update_library_item,
@@ -27,6 +28,9 @@ class FakeExecuteResult:
 
     def all(self) -> list[tuple[Any, ...]]:
         return self._rows
+
+    def first(self) -> tuple[Any, ...] | None:
+        return self._rows[0] if self._rows else None
 
 
 class FakeSession:
@@ -384,3 +388,30 @@ def test_delete_library_item_deletes_and_commits() -> None:
 
     assert session.deleted == [item]
     assert session.committed is True
+
+
+def test_get_library_item_by_work_detail_returns_cover_url() -> None:
+    session = FakeSession()
+    item = type(
+        "Item",
+        (),
+        {
+            "id": uuid.uuid4(),
+            "work_id": uuid.uuid4(),
+            "preferred_edition_id": None,
+            "status": "reading",
+            "visibility": "private",
+            "rating": None,
+            "tags": [],
+            "created_at": dt.datetime.now(tz=dt.UTC).replace(microsecond=0),
+        },
+    )()
+    session.execute_results = [[(item, "https://example.com/cover.jpg")]]
+
+    result = get_library_item_by_work_detail(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        work_id=item.work_id,
+    )
+    assert result is not None
+    assert result["cover_url"] == "https://example.com/cover.jpg"

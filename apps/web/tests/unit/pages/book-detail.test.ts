@@ -817,6 +817,7 @@ describe('book detail page', () => {
           created_at: '2026-02-01',
         };
       }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') return { items: [] };
       if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
       if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
       if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
@@ -871,6 +872,7 @@ describe('book detail page', () => {
           created_at: '2026-02-01',
         };
       }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') return { items: [] };
       if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
       if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
       if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
@@ -919,6 +921,8 @@ describe('book detail page', () => {
 
     // Select the edition via the dialog select, and flip the "preferred" checkbox.
     const dialog = wrapper.get('[data-test="dialog"]');
+    await clickButton(wrapper, 'Use image URL');
+    await flushPromises();
     await dialog.get('select').setValue('edition-2');
     await dialog.get('#preferred').setValue(false);
     expect((wrapper.vm as any).setPreferredEdition).toBe(false);
@@ -982,7 +986,7 @@ describe('book detail page', () => {
     await flushPromises();
 
     const options = (wrapper.vm as any).editionOptions as Array<{ label: string; value: string }>;
-    expect(options).toEqual([{ value: 'edition-blank', label: 'edition-blank' }]);
+    expect(options).toEqual([{ value: 'edition-blank', label: 'Edition' }]);
   });
 
   it('uses a generic editions load error when openCoverDialog fails with a non-ApiClientError', async () => {
@@ -1145,6 +1149,9 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Set cover');
     await flushPromises();
 
+    expect((wrapper.vm as any).coverMode).toBe('choose');
+    await clickButton(wrapper, 'Upload image');
+    await flushPromises();
     expect((wrapper.vm as any).coverMode).toBe('upload');
     await clickButton(wrapper, 'Use image URL');
     await flushPromises();
@@ -1152,6 +1159,9 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Upload image');
     await flushPromises();
     expect((wrapper.vm as any).coverMode).toBe('upload');
+    await clickButton(wrapper, 'Choose from Open Library');
+    await flushPromises();
+    expect((wrapper.vm as any).coverMode).toBe('choose');
 
     // Guard: cacheCover requires a URL.
     (wrapper.vm as any).coverMode = 'url';
@@ -1181,6 +1191,184 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Cancel');
     await flushPromises();
     expect((wrapper.vm as any).coverDialogVisible).toBe(false);
+  });
+
+  it('loads Open Library cover candidates and can select one', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: 'https://example.com/work.jpg',
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          cover_url: 'https://example.com/override.jpg',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') {
+        return { items: [{ cover_id: 10, thumbnail_url: 'thumb', image_url: 'img' }] };
+      }
+      if (url === '/api/v1/works/work-1/covers/select' && method === 'POST') {
+        expect(opts?.body).toEqual({ cover_id: 10 });
+        return { scope: 'override', cover_url: 'https://example.com/override.jpg' };
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await clickButton(wrapper, 'Set cover');
+    await flushPromises();
+
+    expect((wrapper.vm as any).coverMode).toBe('choose');
+    expect(wrapper.findAll('[data-test="cover-candidates"]').length).toBe(1);
+
+    await wrapper.find('[data-test="cover-candidate-10"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/works/work-1/covers/select', {
+      method: 'POST',
+      body: { cover_id: 10 },
+    });
+    expect((wrapper.vm as any).coverDialogVisible).toBe(false);
+  });
+
+  it('renders cover candidate loading skeletons and Close button works', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await clickButton(wrapper, 'Set cover');
+    await flushPromises();
+
+    (wrapper.vm as any).coverCandidatesLoading = true;
+    await flushPromises();
+    expect(wrapper.find('[data-test="dialog"]').findAll('.p-skeleton').length).toBeGreaterThan(0);
+
+    (wrapper.vm as any).coverCandidatesLoading = false;
+    await flushPromises();
+
+    await clickButton(wrapper, 'Close');
+    await flushPromises();
+    expect((wrapper.vm as any).coverDialogVisible).toBe(false);
+  });
+
+  it('shows a helpful error when selecting a cover candidate fails', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') {
+        return { items: [{ cover_id: 10, thumbnail_url: 'thumb', image_url: 'img' }] };
+      }
+      if (url === '/api/v1/works/work-1/covers/select' && method === 'POST') {
+        throw new ApiClientErrorMock('Nope', 'bad_request', 400);
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await clickButton(wrapper, 'Set cover');
+    await flushPromises();
+
+    await wrapper.find('[data-test="cover-candidate-10"]').trigger('click');
+    await flushPromises();
+
+    expect((wrapper.vm as any).coverError).toContain('Nope');
+    expect((wrapper.vm as any).coverDialogVisible).toBe(true);
+  });
+
+  it('surfaces ApiClientError when cover candidates fail to load', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') {
+        throw new ApiClientErrorMock('Nope', 'bad_request', 400);
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await clickButton(wrapper, 'Set cover');
+    await flushPromises();
+
+    expect((wrapper.vm as any).coverError).toContain('Nope');
   });
 
   it('surfaces ApiClientError and generic errors for cover actions', async () => {

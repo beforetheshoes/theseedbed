@@ -324,3 +324,55 @@ class OpenLibraryClient:
             raw_work=work_payload,
             raw_edition=raw_edition,
         )
+
+    async def fetch_cover_ids_for_work(
+        self,
+        *,
+        work_key: str,
+        editions_limit: int = 20,
+    ) -> list[int]:
+        def _dedupe(ids: list[int]) -> list[int]:
+            seen: set[int] = set()
+            result: list[int] = []
+            for cid in ids:
+                if cid in seen:
+                    continue
+                seen.add(cid)
+                result.append(cid)
+            return result
+
+        normalized_work_key = _normalize_work_key(work_key)
+        work_payload = await self._request_json(f"{normalized_work_key}.json")
+
+        cover_ids: list[int] = []
+        covers = work_payload.get("covers")
+        if isinstance(covers, list):
+            for c in covers:
+                if isinstance(c, int) and c > 0:
+                    cover_ids.append(c)
+
+        cover_ids = _dedupe(cover_ids)
+        if cover_ids:
+            return cover_ids
+
+        # Some works do not expose cover ids on the work payload even though editions do.
+        editions_payload = await self._request_json(
+            f"{normalized_work_key}/editions.json", params={"limit": editions_limit}
+        )
+        entries = editions_payload.get("entries", [])
+        if not isinstance(entries, list):
+            return []
+
+        edition_cover_ids: list[int] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            edition_covers = entry.get("covers")
+            if not isinstance(edition_covers, list):
+                continue
+            for cid in edition_covers:
+                if not isinstance(cid, int) or cid <= 0:
+                    continue
+                edition_cover_ids.append(cid)
+
+        return _dedupe(edition_cover_ids)

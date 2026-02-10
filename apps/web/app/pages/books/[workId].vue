@@ -40,8 +40,8 @@
                 data-test="book-detail-cover"
               >
                 <Image
-                  v-if="work?.cover_url"
-                  :src="work.cover_url"
+                  v-if="effectiveCoverUrl"
+                  :src="effectiveCoverUrl"
                   alt=""
                   :preview="false"
                   class="h-full w-full"
@@ -389,7 +389,10 @@
       <div class="flex flex-col gap-4">
         <Message v-if="coverError" severity="error" :closable="false">{{ coverError }}</Message>
 
-        <div v-if="needsEditionSelection" class="grid gap-3 sm:grid-cols-2">
+        <div
+          v-if="coverMode !== 'choose' && needsEditionSelection"
+          class="grid gap-3 sm:grid-cols-2"
+        >
           <Select
             v-model="selectedEditionId"
             :options="editionOptions"
@@ -402,11 +405,20 @@
             <label class="text-sm" for="preferred">Set as preferred edition</label>
           </div>
         </div>
-        <div v-else class="text-xs text-[var(--p-text-muted-color)]">
+        <div v-else-if="coverMode !== 'choose'" class="text-xs text-[var(--p-text-muted-color)]">
           Using your preferred edition for this book.
+        </div>
+        <div v-else class="text-xs text-[var(--p-text-muted-color)]">
+          Covers are selected for the work, not a specific edition.
         </div>
 
         <div class="flex flex-wrap gap-2">
+          <Button
+            label="Choose from Open Library"
+            size="small"
+            :severity="coverMode === 'choose' ? 'primary' : 'secondary'"
+            @click="coverMode = 'choose'"
+          />
           <Button
             label="Upload image"
             size="small"
@@ -421,7 +433,64 @@
           />
         </div>
 
-        <div v-if="coverMode === 'upload'" class="flex flex-col gap-3">
+        <div v-if="coverMode === 'choose'" class="flex flex-col gap-3">
+          <div class="flex items-center justify-between gap-3">
+            <p class="text-xs text-[var(--p-text-muted-color)]">
+              Select a cover from Open Library.
+            </p>
+            <Button
+              label="Refresh"
+              size="small"
+              severity="secondary"
+              variant="text"
+              :loading="coverCandidatesLoading"
+              @click="loadCoverCandidates"
+            />
+          </div>
+
+          <div v-if="coverCandidatesLoading" class="grid grid-cols-3 gap-3 sm:grid-cols-4">
+            <Skeleton v-for="n in 8" :key="n" height="120px" borderRadius="0.75rem" />
+          </div>
+
+          <div
+            v-else-if="coverCandidates.length"
+            class="grid grid-cols-3 gap-3 sm:grid-cols-4 md:grid-cols-6"
+            data-test="cover-candidates"
+          >
+            <button
+              v-for="c in coverCandidates"
+              :key="c.cover_id"
+              type="button"
+              class="group overflow-hidden rounded-xl border border-[var(--p-content-border-color)] bg-black/5 shadow-sm transition hover:shadow-md dark:bg-white/5"
+              :class="coverSelectingId === c.cover_id ? 'opacity-60' : ''"
+              :disabled="coverBusy"
+              :data-test="`cover-candidate-${c.cover_id}`"
+              @click="selectCoverCandidate(c.cover_id)"
+            >
+              <Image
+                :src="c.thumbnail_url"
+                alt=""
+                :preview="false"
+                class="h-[120px] w-full"
+                image-class="h-full w-full object-cover"
+              />
+            </button>
+          </div>
+          <p v-else class="text-sm text-[var(--p-text-muted-color)]">
+            No covers found for this work.
+          </p>
+
+          <div class="flex justify-end gap-2">
+            <Button
+              label="Close"
+              severity="secondary"
+              variant="text"
+              @click="coverDialogVisible = false"
+            />
+          </div>
+        </div>
+
+        <div v-else-if="coverMode === 'upload'" class="flex flex-col gap-3">
           <div class="flex flex-col gap-2">
             <FileUpload
               mode="basic"
@@ -532,6 +601,7 @@ type LibraryItem = {
   id: string;
   work_id: string;
   preferred_edition_id?: string | null;
+  cover_url?: string | null;
   status: string;
   created_at: string;
 };
@@ -618,7 +688,7 @@ const reviewBody = ref('');
 
 type EditionOption = { label: string; value: string };
 const coverDialogVisible = ref(false);
-const coverMode = ref<'upload' | 'url'>('upload');
+const coverMode = ref<'choose' | 'upload' | 'url'>('choose');
 const coverBusy = ref(false);
 const coverError = ref('');
 const coverFile = ref<File | null>(null);
@@ -627,11 +697,18 @@ const editionsLoading = ref(false);
 const editions = ref<any[]>([]);
 const selectedEditionId = ref<string>('');
 const setPreferredEdition = ref(true);
+const coverCandidatesLoading = ref(false);
+const coverCandidates = ref<{ cover_id: number; thumbnail_url: string; image_url: string }[]>([]);
+const coverSelectingId = ref<number | null>(null);
 
 const runId = ref(0);
 
 const needsEditionSelection = computed(
   () => Boolean(libraryItem.value) && !libraryItem.value?.preferred_edition_id,
+);
+
+const effectiveCoverUrl = computed(
+  () => libraryItem.value?.cover_url ?? work.value?.cover_url ?? null,
 );
 
 const effectiveEditionId = computed(() => {
@@ -642,14 +719,22 @@ const effectiveEditionId = computed(() => {
 
 const editionOptions = computed<EditionOption[]>(() =>
   editions.value.map((e: any) => {
+    const providerLabel =
+      typeof e.provider_id === 'string' && e.provider_id.startsWith('/books/')
+        ? e.provider_id.replace('/books/', '')
+        : typeof e.provider_id === 'string'
+          ? e.provider_id
+          : null;
+    const isbn = e.isbn13 || e.isbn10 || null;
     const meta = [
-      e.isbn13 || e.isbn10 ? `ISBN: ${e.isbn13 || e.isbn10}` : null,
-      e.publisher ? `Publisher: ${e.publisher}` : null,
-      e.publish_date ? `Published: ${e.publish_date}` : null,
+      e.publisher || null,
+      e.publish_date ? `Published ${e.publish_date}` : null,
+      isbn ? `ISBN ${isbn}` : null,
+      providerLabel ? `Open Library ${providerLabel}` : null,
     ]
       .filter(Boolean)
       .join(' | ');
-    return { value: e.id, label: meta ? `${e.id} (${meta})` : e.id };
+    return { value: e.id, label: meta || 'Edition' };
   }),
 );
 
@@ -833,9 +918,12 @@ const refresh = async () => {
 const openCoverDialog = async () => {
   coverError.value = '';
   coverBusy.value = false;
-  coverMode.value = 'upload';
+  coverMode.value = 'choose';
   coverFile.value = null;
   coverSourceUrl.value = '';
+  coverCandidates.value = [];
+  coverCandidatesLoading.value = false;
+  coverSelectingId.value = null;
 
   if (needsEditionSelection.value) {
     editionsLoading.value = true;
@@ -852,7 +940,44 @@ const openCoverDialog = async () => {
     }
   }
 
+  void loadCoverCandidates();
   coverDialogVisible.value = true;
+};
+
+const loadCoverCandidates = async () => {
+  coverCandidatesLoading.value = true;
+  try {
+    const payload = await apiRequest<{ items: any[] }>(`/api/v1/works/${workId.value}/covers`);
+    coverCandidates.value = payload.items || [];
+  } catch (err) {
+    coverCandidates.value = [];
+    // Do not override an editions-loading error from openCoverDialog.
+    if (!coverError.value) {
+      coverError.value =
+        err instanceof ApiClientError ? err.message : 'Unable to load cover candidates.';
+    }
+  } finally {
+    coverCandidatesLoading.value = false;
+  }
+};
+
+const selectCoverCandidate = async (coverId: number) => {
+  coverBusy.value = true;
+  coverError.value = '';
+  coverSelectingId.value = coverId;
+  try {
+    await apiRequest(`/api/v1/works/${workId.value}/covers/select`, {
+      method: 'POST',
+      body: { cover_id: coverId },
+    });
+    coverDialogVisible.value = false;
+    await refresh();
+  } catch (err) {
+    coverError.value = err instanceof ApiClientError ? err.message : 'Unable to set cover.';
+  } finally {
+    coverBusy.value = false;
+    coverSelectingId.value = null;
+  }
 };
 
 const onCoverFileSelect = (evt: FileUploadSelectEvent) => {
@@ -895,7 +1020,7 @@ const uploadCover = async () => {
       body: fd,
     });
     await maybeSetPreferredEdition();
-    work.value = await apiRequest<WorkDetail>(`/api/v1/works/${workId.value}`);
+    await refresh();
     coverDialogVisible.value = false;
   } catch (err) {
     coverError.value = err instanceof ApiClientError ? err.message : 'Unable to set cover.';
@@ -921,7 +1046,7 @@ const cacheCover = async () => {
       body: { source_url: coverSourceUrl.value.trim() },
     });
     await maybeSetPreferredEdition();
-    work.value = await apiRequest<WorkDetail>(`/api/v1/works/${workId.value}`);
+    await refresh();
     coverDialogVisible.value = false;
   } catch (err) {
     coverError.value = err instanceof ApiClientError ? err.message : 'Unable to cache cover.';

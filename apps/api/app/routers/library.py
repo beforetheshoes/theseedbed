@@ -14,7 +14,7 @@ from app.db.session import get_db_session
 from app.services.user_library import (
     create_or_get_library_item,
     delete_library_item,
-    get_library_item_by_work,
+    get_library_item_by_work_detail,
     list_library_items,
     update_library_item,
 )
@@ -161,20 +161,9 @@ def get_item_by_work(
     auth: Annotated[AuthContext, Depends(require_auth_context)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
-    item = get_library_item_by_work(session, user_id=auth.user_id, work_id=work_id)
-    if item is None:
-        raise HTTPException(status_code=404, detail="library item not found")
-    return ok(
-        {
-            "id": str(item.id),
-            "work_id": str(item.work_id),
-            "preferred_edition_id": (
-                str(item.preferred_edition_id) if item.preferred_edition_id else None
-            ),
-            "status": item.status,
-            "visibility": item.visibility,
-            "rating": item.rating,
-            "tags": item.tags or [],
-            "created_at": item.created_at.isoformat(),
-        }
+    detail = get_library_item_by_work_detail(
+        session, user_id=auth.user_id, work_id=work_id
     )
+    if detail is None:
+        raise HTTPException(status_code=404, detail="library item not found")
+    return ok(detail)
