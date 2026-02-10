@@ -17,6 +17,7 @@ from app.routers import (
     health,
     highlights,
     library,
+    library_search,
     me,
     notes,
     protected,
@@ -76,6 +77,7 @@ def create_app() -> FastAPI:
     app.include_router(editions.router)
     app.include_router(me.router)
     app.include_router(library.router)
+    app.include_router(library_search.router)
     app.include_router(sessions.router)
     app.include_router(notes.router)
     app.include_router(highlights.router)

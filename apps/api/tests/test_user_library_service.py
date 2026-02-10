@@ -17,6 +17,7 @@ from app.services.user_library import (
     get_library_item_by_work_detail,
     get_or_create_profile,
     list_library_items,
+    search_library_items,
     update_library_item,
     update_profile,
 )
@@ -87,6 +88,40 @@ def test_cursor_decode_invalid_raises() -> None:
 def test_default_handle() -> None:
     user_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     assert _default_handle(user_id) == "user_aaaaaaaa"
+
+
+def test_search_library_items_shapes_items_and_authors() -> None:
+    session = FakeSession()
+    # First execute: base search rows
+    work_id = uuid.uuid4()
+    session.execute_results = [
+        [
+            (
+                work_id,
+                "Title",
+                "https://example.com/cover.jpg",
+                "/works/OL1W",
+            )
+        ],
+        # Second execute: author names by work
+        [(work_id, "B Author"), (work_id, "A Author"), (work_id, "A Author")],
+    ]
+
+    items = search_library_items(
+        session,  # type: ignore[arg-type]
+        user_id=uuid.uuid4(),
+        query="ti",
+        limit=10,
+    )
+    assert items == [
+        {
+            "work_id": str(work_id),
+            "work_title": "Title",
+            "author_names": ["A Author", "B Author"],
+            "cover_url": "https://example.com/cover.jpg",
+            "openlibrary_work_key": "/works/OL1W",
+        }
+    ]
 
 
 def test_get_or_create_profile_creates_when_missing() -> None:
