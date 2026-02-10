@@ -1,16 +1,5 @@
 <template>
   <div class="flex flex-col gap-4">
-    <div>
-      <Button
-        label="Back to library"
-        severity="secondary"
-        variant="text"
-        size="small"
-        data-test="book-detail-back"
-        @click="navigateTo('/library')"
-      />
-    </div>
-
     <!-- Hero card -->
     <Card data-test="book-detail-card">
       <template #title>
@@ -530,7 +519,7 @@
 definePageMeta({ layout: 'app', middleware: 'auth' });
 
 import { computed, onMounted, ref, watch } from 'vue';
-import { navigateTo, useRoute } from '#imports';
+import { useRoute } from '#imports';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
 import type { FileUploadSelectEvent } from 'primevue/fileupload';
