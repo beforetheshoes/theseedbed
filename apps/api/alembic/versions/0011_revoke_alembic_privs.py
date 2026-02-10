@@ -1,6 +1,6 @@
 """Revoke client-role privileges on alembic_version.
 
-Revision ID: 0011_revoke_alembic_version_privileges
+Revision ID: 0011_revoke_alembic_privs
 Revises: 0010_rls_hardening
 Create Date: 2026-02-10
 """
@@ -8,7 +8,7 @@ Create Date: 2026-02-10
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision = "0011_revoke_alembic_version_privileges"
+revision = "0011_revoke_alembic_privs"
 down_revision = "0010_rls_hardening"
 branch_labels = None
 depends_on = None
