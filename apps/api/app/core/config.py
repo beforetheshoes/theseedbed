@@ -165,7 +165,13 @@ def get_settings() -> Settings:
     jwt_secret: str | None = os.getenv("SUPABASE_JWT_SECRET", "").strip()
     if not jwt_secret:
         jwt_secret = None
-    service_role_key: str | None = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    # Supabase legacy: "service_role" key.
+    # Supabase current: "secret" key (sb_secret_...), which should be used server-side only.
+    # Support both env vars to avoid Render/GHA/env drift.
+    service_role_key: str | None = (
+        os.getenv("SUPABASE_SECRET_KEY", "").strip()
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
     if not service_role_key:
         service_role_key = None
     ttl_seconds = _parse_ttl_seconds()
