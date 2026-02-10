@@ -26,6 +26,7 @@ def test_upload_storage_object_puts_bytes_and_returns_public_url() -> None:
         assert request.method == "PUT"
         assert request.url.path == "/storage/v1/object/covers/a/b.txt"
         assert request.headers["authorization"] == "Bearer service-role"
+        assert request.headers["apikey"] == "service-role"
         assert request.headers["x-upsert"] == "true"
         assert request.headers["content-type"] == "text/plain"
         return httpx.Response(200, json={"Key": "ok"})

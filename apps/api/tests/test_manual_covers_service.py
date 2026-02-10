@@ -10,6 +10,7 @@ from PIL import Image
 
 from app.core.config import Settings
 from app.db.models.bibliography import Edition, Work
+from app.db.models.users import LibraryItem
 from app.services import manual_covers
 from app.services.covers import CoverCacheResult
 from app.services.manual_covers import (
@@ -62,7 +63,7 @@ def _jpeg_bytes() -> bytes:
     return buf.getvalue()
 
 
-def test_cache_cover_rejects_unapproved_source_host() -> None:
+def test_cache_cover_rejects_private_ip_source_url() -> None:
     session = FakeSession()
     edition_id = uuid.uuid4()
     work_id = uuid.uuid4()
@@ -91,10 +92,10 @@ def test_cache_cover_rejects_unapproved_source_host() -> None:
             settings=_settings(),
             user_id=uuid.uuid4(),
             edition_id=edition_id,
-            source_url="https://evil.example.com/x.jpg",
+            source_url="http://127.0.0.1/x.jpg",
         )
 
-    with pytest.raises(ValueError, match="approved host"):
+    with pytest.raises(ValueError, match="public http\\(s\\) URL"):
         asyncio.run(run())
 
 
@@ -153,6 +154,77 @@ def test_set_cover_from_upload_updates_work_and_edition(
     assert work.default_cover_url == edition.cover_url
     assert edition.cover_set_by == user_id
     assert work.default_cover_set_by == user_id
+    assert session.committed is True
+
+
+def test_set_cover_from_upload_sets_library_override_when_global_cover_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    edition_id = uuid.uuid4()
+    work_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    session._editions[edition_id] = Edition(
+        id=edition_id,
+        work_id=work_id,
+        publisher=None,
+        publish_date=None,
+        language=None,
+        format=None,
+        cover_url=None,
+    )
+    session._works[work_id] = Work(
+        id=work_id,
+        title="Book",
+        description=None,
+        first_publish_year=None,
+        default_cover_url="https://example.supabase.co/storage/v1/object/public/covers/existing.jpg",
+    )
+
+    item = LibraryItem(
+        user_id=user_id,
+        work_id=work_id,
+        preferred_edition_id=None,
+        status="to_read",
+        visibility="private",
+        rating=None,
+        tags=None,
+    )
+
+    # Membership exists, then _require_library_item returns the item
+    session.scalar_values = [uuid.uuid4(), item]
+
+    async def fake_upload_storage_object(**_kwargs: Any) -> StorageUploadResult:
+        return StorageUploadResult(
+            public_url="https://example.supabase.co/storage/v1/object/public/covers/manual-overrides/x.jpg",
+            bucket="covers",
+            path="manual-overrides/x.jpg",
+        )
+
+    monkeypatch.setattr(
+        manual_covers, "upload_storage_object", fake_upload_storage_object
+    )
+
+    async def run() -> None:
+        result = await set_edition_cover_from_upload(
+            session,  # type: ignore[arg-type]
+            settings=_settings(),
+            user_id=user_id,
+            edition_id=edition_id,
+            content=_jpeg_bytes(),
+            content_type="image/jpeg",
+        )
+        assert result["cover_url"].endswith("manual-overrides/x.jpg")
+
+    asyncio.run(run())
+
+    edition = session._editions[edition_id]
+    work = session._works[work_id]
+    assert edition.cover_url is None
+    assert work.default_cover_url is not None
+    assert item.cover_override_url is not None
+    assert item.cover_override_set_by == user_id
     assert session.committed is True
 
 
@@ -252,4 +324,69 @@ def test_cache_cover_updates_provenance_and_storage_path(
     assert edition.cover_storage_path == "openlibrary/x.jpg"
     assert work.default_cover_storage_path == "openlibrary/x.jpg"
     assert work.default_cover_url == edition.cover_url
+    assert session.committed is True
+
+
+def test_cache_cover_sets_library_override_when_global_cover_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    edition_id = uuid.uuid4()
+    work_id = uuid.uuid4()
+    user_id = uuid.uuid4()
+
+    session._editions[edition_id] = Edition(
+        id=edition_id,
+        work_id=work_id,
+        publisher=None,
+        publish_date=None,
+        language=None,
+        format=None,
+        cover_url=None,
+    )
+    session._works[work_id] = Work(
+        id=work_id,
+        title="Book",
+        description=None,
+        first_publish_year=None,
+        default_cover_url="https://example.supabase.co/storage/v1/object/public/covers/existing.jpg",
+    )
+
+    item = LibraryItem(
+        user_id=user_id,
+        work_id=work_id,
+        preferred_edition_id=None,
+        status="to_read",
+        visibility="private",
+        rating=None,
+        tags=None,
+    )
+
+    # Membership exists, then _require_library_item returns the item
+    session.scalar_values = [uuid.uuid4(), item]
+
+    async def fake_cache_cover_to_storage(**_kwargs: Any) -> StorageUploadResult:
+        return StorageUploadResult(
+            public_url="https://example.supabase.co/storage/v1/object/public/covers/openlibrary/x.jpg",
+            bucket="covers",
+            path="openlibrary/x.jpg",
+        )
+
+    monkeypatch.setattr(
+        manual_covers, "cache_cover_to_storage", fake_cache_cover_to_storage
+    )
+
+    async def run() -> None:
+        result = await cache_edition_cover_from_source_url(
+            session,  # type: ignore[arg-type]
+            settings=_settings(),
+            user_id=user_id,
+            edition_id=edition_id,
+            source_url="https://covers.openlibrary.org/b/id/1-L.jpg",
+        )
+        assert result["cover_url"] is not None
+
+    asyncio.run(run())
+    assert item.cover_override_url is not None
+    assert item.cover_override_set_by == user_id
     assert session.committed is True

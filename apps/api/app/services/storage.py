@@ -43,6 +43,8 @@ async def upload_storage_object(
     url = f"{settings.supabase_url}/storage/v1/object/{safe_bucket}/{safe_path}"
     headers = {
         "Authorization": f"Bearer {settings.supabase_service_role_key}",
+        # Supabase storage expects apikey even when using Authorization.
+        "apikey": settings.supabase_service_role_key,
         "Content-Type": content_type,
         "x-upsert": "true" if upsert else "false",
     }

@@ -72,6 +72,10 @@ def test_library_items_table_schema() -> None:
         "visibility",
         "rating",
         "tags",
+        "cover_override_url",
+        "cover_override_storage_path",
+        "cover_override_set_by",
+        "cover_override_set_at",
         "created_at",
         "updated_at",
     }
