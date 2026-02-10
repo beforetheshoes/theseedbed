@@ -20,18 +20,20 @@
       <div class="flex flex-col gap-4">
         <Card>
           <template #content>
-            <div class="grid w-full gap-3 md:grid-cols-[240px_220px_220px]">
+            <div class="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Select
                 v-model="statusFilter"
                 :options="statusFilters"
                 option-label="label"
                 option-value="value"
                 data-test="library-status-filter"
+                class="min-w-0 w-full"
               />
               <InputText
                 v-model="tagFilter"
                 placeholder="Filter by tag"
                 data-test="library-tag-filter"
+                class="min-w-0 w-full"
               />
               <Select
                 v-model="sortMode"
@@ -39,6 +41,7 @@
                 option-label="label"
                 option-value="value"
                 data-test="library-sort-select"
+                class="min-w-0 w-full"
               />
             </div>
           </template>
@@ -108,7 +111,7 @@
                       {{ item.author_names.join(', ') }}
                     </p>
                     <div class="mt-3 flex flex-wrap items-center gap-2">
-                      <Tag :value="statusLabel(item.status)" severity="secondary" />
+                      <Tag :value="libraryStatusLabel(item.status)" severity="secondary" />
                       <Tag
                         v-for="tag in (item.tags || []).slice(0, 3)"
                         :key="tag"
@@ -158,6 +161,7 @@ definePageMeta({ layout: 'app', middleware: 'auth' });
 
 import { computed, onMounted, ref, watch } from 'vue';
 import { ApiClientError, apiRequest } from '~/utils/api';
+import { libraryStatusLabel } from '~/utils/libraryStatus';
 import EmptyState from '~/components/EmptyState.vue';
 
 type LibraryItem = {
@@ -213,16 +217,6 @@ const displayItems = computed(() => {
   }
   return sorted;
 });
-
-const statusLabel = (value: string): string => {
-  const map: Record<string, string> = {
-    to_read: 'To read',
-    reading: 'Reading',
-    completed: 'Completed',
-    abandoned: 'Abandoned',
-  };
-  return map[value] || value;
-};
 
 const fetchPage = async (append = false) => {
   error.value = '';
