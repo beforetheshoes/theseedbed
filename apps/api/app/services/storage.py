@@ -19,6 +19,12 @@ class StorageNotConfiguredError(RuntimeError):
     """Raised when required Supabase storage settings are missing."""
 
 
+def _is_supabase_secret_key(key: str) -> bool:
+    # Supabase "secret"/"publishable" keys are not JWTs and should not be used as Bearer tokens.
+    # They are sent via `apikey` and handled by Supabase's API gateway.
+    return key.startswith("sb_secret_") or key.startswith("sb_publishable_")
+
+
 def _public_object_url(*, supabase_url: str, bucket: str, path: str) -> str:
     # Public bucket/object access URL pattern.
     # Note: access depends on bucket/public policy in Supabase.
@@ -40,18 +46,22 @@ async def upload_storage_object(
     if not settings.supabase_url:
         raise StorageNotConfiguredError("SUPABASE_URL is not configured")
     if not settings.supabase_service_role_key:
-        raise StorageNotConfiguredError("SUPABASE_SERVICE_ROLE_KEY is not configured")
+        raise StorageNotConfiguredError(
+            "SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY is not configured"
+        )
 
     safe_bucket = quote(bucket, safe="")
     safe_path = quote(path, safe="/._-")
     url = f"{settings.supabase_url}/storage/v1/object/{safe_bucket}/{safe_path}"
-    headers = {
-        "Authorization": f"Bearer {settings.supabase_service_role_key}",
-        # Supabase storage expects apikey even when using Authorization.
+    headers: dict[str, str] = {
+        # Supabase API gateway expects apikey even if Authorization is present.
         "apikey": settings.supabase_service_role_key,
         "Content-Type": content_type,
         "x-upsert": "true" if upsert else "false",
     }
+    if not _is_supabase_secret_key(settings.supabase_service_role_key):
+        # Legacy service_role keys are JWTs and can be used as Bearer tokens.
+        headers["Authorization"] = f"Bearer {settings.supabase_service_role_key}"
 
     async with httpx.AsyncClient(timeout=20.0, transport=transport) as client:
         response = await client.put(url, content=content, headers=headers)
