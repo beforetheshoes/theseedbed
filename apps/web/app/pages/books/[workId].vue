@@ -75,12 +75,9 @@
                 <p class="text-sm text-[var(--p-text-muted-color)]">
                   This book is not in your library yet.
                 </p>
-                <NuxtLink
-                  to="/books/search"
-                  class="text-sm font-medium text-primary hover:underline"
-                >
-                  Search and import it
-                </NuxtLink>
+                <p class="text-sm text-[var(--p-text-muted-color)]">
+                  Use the search bar in the top navigation to import and add it.
+                </p>
               </div>
             </div>
           </div>

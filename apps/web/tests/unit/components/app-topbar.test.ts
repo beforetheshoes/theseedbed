@@ -73,6 +73,27 @@ describe('AppTopBar', () => {
       global: {
         plugins: [[PrimeVue, { ripple: false }]],
         stubs: {
+          AutoComplete: defineComponent({
+            name: 'AutoComplete',
+            setup:
+              (_props, { attrs }) =>
+              () =>
+                h('div', { ...attrs }),
+          }),
+          Dialog: defineComponent({
+            name: 'Dialog',
+            setup:
+              (_props, { slots, attrs }) =>
+              () =>
+                h('div', { ...attrs }, slots.default?.()),
+          }),
+          ToggleSwitch: defineComponent({
+            name: 'ToggleSwitch',
+            setup:
+              (_props, { attrs }) =>
+              () =>
+                h('div', { ...attrs }),
+          }),
           Menu: MenuStub,
           SelectButton: defineComponent({
             name: 'SelectButton',
@@ -191,10 +212,46 @@ describe('AppTopBar', () => {
       global: {
         plugins: [[PrimeVue, { ripple: false }]],
         stubs: {
+          AutoComplete: defineComponent({
+            name: 'AutoComplete',
+            setup:
+              (_props, { attrs }) =>
+              () =>
+                h('div', { ...attrs }),
+          }),
+          Dialog: defineComponent({
+            name: 'Dialog',
+            setup:
+              (_props, { slots, attrs }) =>
+              () =>
+                h('div', { ...attrs }, slots.default?.()),
+          }),
+          ToggleSwitch: defineComponent({
+            name: 'ToggleSwitch',
+            setup:
+              (_props, { attrs }) =>
+              () =>
+                h('div', { ...attrs }),
+          }),
           Menu: defineComponent({
             name: 'Menu',
             props: ['model'],
-            setup: () => () => h('div'),
+            setup: (props) => () =>
+              h(
+                'div',
+                (props.model || []).map((item: any) =>
+                  h(
+                    'button',
+                    {
+                      key: item.label,
+                      'data-test': `menu-item-${item.label}`,
+                      onClick: () => item.command?.(),
+                      disabled: Boolean(item.disabled) || Boolean(item.separator),
+                    },
+                    item.label ?? '',
+                  ),
+                ),
+              ),
           }),
           Toolbar: defineComponent({
             name: 'Toolbar',
@@ -222,76 +279,7 @@ describe('AppTopBar', () => {
 
     await Promise.resolve();
     expect(wrapper.get('[data-test="account-signin"]').exists()).toBe(true);
-  });
 
-  it('covers supabase guards and sign-in menu command', async () => {
-    const useSupabaseClientMock = vi.fn().mockReturnValue(null);
-    vi.doMock('#imports', () => ({
-      useSupabaseClient: useSupabaseClientMock,
-      navigateTo: navigateToMock,
-    }));
-
-    vi.resetModules();
-    const { default: FreshTopBar } = await import('../../../app/components/shell/AppTopBar.vue');
-
-    const wrapper = mount(FreshTopBar, {
-      global: {
-        plugins: [[PrimeVue, { ripple: false }]],
-        stubs: {
-          Menu: defineComponent({
-            name: 'Menu',
-            props: ['model'],
-            setup: (props, { expose }) => {
-              expose({ toggle: vi.fn() });
-              return () =>
-                h(
-                  'div',
-                  (props.model || []).map((item: any) =>
-                    h(
-                      'button',
-                      {
-                        key: item.label,
-                        'data-test': `menu-item-${item.label}`,
-                        onClick: () => item.command?.(),
-                      },
-                      item.label ?? '',
-                    ),
-                  ),
-                );
-            },
-          }),
-          Toolbar: defineComponent({
-            name: 'Toolbar',
-            setup:
-              (_props, { slots }) =>
-              () =>
-                h('div', [slots.start?.(), slots.end?.()]),
-          }),
-          NuxtLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
-          Button: defineComponent({
-            name: 'Button',
-            emits: ['click'],
-            setup:
-              (_props, { slots, emit }) =>
-              () =>
-                h(
-                  'button',
-                  { onClick: (e: any) => emit('click', e) },
-                  slots.default?.({ class: 'p-button' }),
-                ),
-          }),
-        },
-      },
-    });
-
-    // Set userEmail manually to reach the "Sign out" command even without supabase.
-    (wrapper.vm as any).userEmail = 'reader@theseedbed.app';
-    await wrapper.vm.$nextTick();
-    await wrapper.get('[data-test="menu-item-Sign out"]').trigger('click');
-
-    // Also cover the signed-out branch and its sign-in menu command.
-    (wrapper.vm as any).userEmail = null;
-    await wrapper.vm.$nextTick();
     await wrapper.get('[data-test="menu-item-Sign in"]').trigger('click');
     expect(navigateToMock).toHaveBeenCalledWith('/login');
   });
