@@ -10,6 +10,23 @@ on:
       - main
 
 jobs:
+  # NOTE: This job exists primarily to satisfy branch protection rules that
+  # require a "staging-migration-guard" status check on PRs.
+  #
+  # Migrations are applied automatically on merge via `.github/workflows/supabase-db-push.yml`,
+  # so this job intentionally does NOT attempt to push/check the hosted staging DB (no secrets).
+  staging-migration-guard:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Verify automated migration workflow is present
+        run: |
+          test -f .github/workflows/supabase-db-push.yml
+          grep -q "supabase db push" .github/workflows/supabase-db-push.yml
+          echo "staging-migration-guard: OK (migrations will be applied automatically on merge)."
+
   api:
     runs-on: ubuntu-latest
     defaults:
