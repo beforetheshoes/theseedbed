@@ -48,12 +48,7 @@
                   image-class="h-full w-full object-cover"
                   data-test="book-detail-cover-image"
                 />
-                <Skeleton
-                  v-else
-                  class="h-full w-full"
-                  borderRadius="0.75rem"
-                  data-test="book-detail-cover-skeleton"
-                />
+                <CoverPlaceholder v-else data-test="book-detail-cover-placeholder" />
               </div>
 
               <div v-if="libraryItem" class="flex flex-wrap items-center gap-2">
@@ -522,6 +517,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from '#imports';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
+import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 import type { FileUploadSelectEvent } from 'primevue/fileupload';
 
 type WorkDetail = {

@@ -179,6 +179,8 @@ describe('book detail page', () => {
 
     expect(wrapper.text()).not.toContain('Back to library');
     expect(wrapper.text()).toContain('This book is not in your library yet.');
+    // When a book has no cover, show an explicit placeholder (not a skeleton).
+    expect(wrapper.findAll('[data-test="book-detail-cover-placeholder"]').length).toBe(1);
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/works/work-1');
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/by-work/work-1');
   });

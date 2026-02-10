@@ -144,7 +144,9 @@ describe('library page', () => {
       query: { limit: 10, cursor: 'cursor-1', status: undefined },
     });
     expect(wrapper.text()).toContain('Book B');
-    expect(wrapper.findAll('[data-test="library-item-cover-skeleton"]').length).toBeGreaterThan(0);
+    expect(wrapper.findAll('[data-test="library-item-cover-placeholder"]').length).toBeGreaterThan(
+      0,
+    );
   });
 
   it('shows empty state when no items are returned', async () => {
