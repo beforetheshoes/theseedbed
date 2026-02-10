@@ -40,6 +40,7 @@ def test_schema_guard_skips_when_not_staging_or_prod(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("SUPABASE_ENV", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "http://127.0.0.1:54321")
     monkeypatch.setattr(
         schema_guard,
         "_open_db_session",
@@ -52,6 +53,7 @@ def test_schema_guard_raises_with_actionable_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SUPABASE_ENV", "staging")
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.setattr(
         schema_guard,
         "_open_db_session",
@@ -65,18 +67,34 @@ def test_schema_guard_raises_with_actionable_message(
     assert "content_visibility" in message
     assert "public.notes.ap_uri" in message
     assert "public.works.default_cover_set_by" in message
+    assert "public.library_items.cover_override_url" in message
 
 
 def test_schema_guard_passes_when_schema_is_present(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("SUPABASE_ENV", "prod")
+    monkeypatch.delenv("SUPABASE_URL", raising=False)
     monkeypatch.setattr(
         schema_guard,
         "_open_db_session",
         lambda: _open_fake_session(_FakeSession(enum_ok=True, columns_ok=True)),
     )
     schema_guard.run_schema_guard()
+
+
+def test_schema_guard_runs_when_env_label_missing_but_hosted_supabase(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("SUPABASE_ENV", raising=False)
+    monkeypatch.setenv("SUPABASE_URL", "https://example.supabase.co")
+    monkeypatch.setattr(
+        schema_guard,
+        "_open_db_session",
+        lambda: _open_fake_session(_FakeSession(enum_ok=False, columns_ok=False)),
+    )
+    with pytest.raises(schema_guard.SchemaGuardError):
+        schema_guard.run_schema_guard()
 
 
 def test_open_db_session_exhausts_generator(monkeypatch: pytest.MonkeyPatch) -> None:

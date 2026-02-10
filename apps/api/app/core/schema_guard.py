@@ -32,6 +32,11 @@ _REQUIRED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("works", "default_cover_set_by"),
     ("works", "default_cover_set_at"),
     ("works", "default_cover_storage_path"),
+    # Per-user cover overrides: if these aren't present, library list queries can 500.
+    ("library_items", "cover_override_url"),
+    ("library_items", "cover_override_storage_path"),
+    ("library_items", "cover_override_set_by"),
+    ("library_items", "cover_override_set_at"),
 )
 
 
@@ -44,7 +49,18 @@ def _normalize_env(value: str | None) -> str | None:
 
 def should_run_schema_guard() -> bool:
     env_label = _normalize_env(os.getenv("SUPABASE_ENV"))
-    return env_label in _STAGING_ENV_LABELS | _PROD_ENV_LABELS
+    if env_label is not None:
+        return env_label in _STAGING_ENV_LABELS | _PROD_ENV_LABELS
+
+    # Fallback: if SUPABASE_ENV isn't set (common in Render), still protect hosted
+    # deployments from schema drift. We skip only when it looks like a local
+    # Supabase instance.
+    supabase_url = _normalize_env(os.getenv("SUPABASE_URL"))
+    if supabase_url is None:
+        return False
+
+    local_markers = ("localhost", "127.0.0.1", "0.0.0.0")
+    return not any(marker in supabase_url for marker in local_markers)
 
 
 @contextmanager
