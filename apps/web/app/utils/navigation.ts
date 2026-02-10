@@ -9,5 +9,4 @@ export type NavItem = {
 
 export const appNavItems: NavItem[] = [
   { label: 'Library', to: '/library', icon: 'pi pi-book', visibility: 'all' },
-  { label: 'Add books', to: '/books/search', icon: 'pi pi-search', visibility: 'all' },
 ];

@@ -11,9 +11,6 @@
             </p>
           </div>
         </div>
-        <Button asChild v-slot="slotProps" size="small">
-          <NuxtLink to="/books/search" :class="slotProps.class">Add books</NuxtLink>
-        </Button>
       </div>
     </template>
     <template #content>
@@ -126,17 +123,8 @@
           data-test="library-empty"
           icon="pi pi-inbox"
           title="No library items found."
-          body="Search for a book to import it into your library."
-        >
-          <template #action>
-            <Button asChild v-slot="slotProps">
-              <NuxtLink to="/books/search" :class="slotProps.class">
-                <i class="pi pi-search" aria-hidden="true"></i>
-                Add a book
-              </NuxtLink>
-            </Button>
-          </template>
-        </EmptyState>
+          body="Use the search bar in the top navigation to import books into your library."
+        />
 
         <Button
           v-if="nextCursor"
