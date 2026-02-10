@@ -2,6 +2,9 @@
   "name": "web",
   "type": "module",
   "private": true,
+  "imports": {
+    "#internal/nuxt/paths": "./internal/nuxt-paths.mjs"
+  },
   "scripts": {
     "build": "nuxt build",
     "dev": "nuxt dev",
@@ -13,13 +16,16 @@
     "format:check": "prettier --check .",
     "test:unit": "vitest run --coverage",
     "test:unit:watch": "vitest",
-    "test:e2e": "start-server-and-test \"NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm preview --port 3000\" http://localhost:3000 \"node scripts/warmup-e2e.mjs && pnpm exec cypress run\"",
-    "test:e2e:open": "start-server-and-test \"NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm preview --port 3000\" http://localhost:3000 \"node scripts/warmup-e2e.mjs && pnpm exec cypress open\""
+    "test:e2e": "rm -rf .nuxt .output && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && start-server-and-test \"NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm preview --port 3000\" http://localhost:3000/login \"node scripts/warmup-e2e.mjs && pnpm exec cypress run\"",
+    "test:e2e:open": "rm -rf .nuxt .output && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && start-server-and-test \"NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm preview --port 3000\" http://localhost:3000/login \"node scripts/warmup-e2e.mjs && pnpm exec cypress open\""
   },
   "dependencies": {
+    "@fontsource/atkinson-hyperlegible": "^5.2.8",
+    "@fontsource/fraunces": "^5.2.5",
+    "@fontsource/ibm-plex-sans": "^5.2.6",
     "@nuxtjs/supabase": "^1.6.0",
+    "@primeuix/themes": "^2.0.3",
     "@primevue/nuxt-module": "^4.3.3",
-    "@primevue/themes": "^4.3.3",
     "@supabase/supabase-js": "^2.56.1",
     "nuxt": "^4.2.2",
     "primeicons": "^7.0.0",
@@ -29,9 +35,10 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.10.0",
+    "@nuxtjs/tailwindcss": "^6.12.2",
+    "@tailwindcss/typography": "^0.5.16",
     "@typescript-eslint/eslint-plugin": "^8.8.1",
     "@typescript-eslint/parser": "^8.8.1",
-    "@nuxtjs/tailwindcss": "^6.12.2",
     "@vitejs/plugin-vue": "^6.0.3",
     "@vitest/coverage-v8": "^4.0.16",
     "@vue/compiler-sfc": "^3.5.26",

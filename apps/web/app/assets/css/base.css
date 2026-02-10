@@ -1,0 +1,7 @@
+/* Intentionally empty.
+ *
+ * This file exists for compatibility with Nuxt/preview builds that still
+ * reference it in generated CSS entrypoints.
+ *
+ * PrimeVue provides all component styling; avoid custom CSS overrides here.
+ */

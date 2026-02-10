@@ -1,158 +1,164 @@
 <template>
-  <PageShell>
-    <Card class="shadow-lg" data-test="library-card">
-      <template #title>
-        <SectionHeader icon="pi pi-book text-emerald-600" title="Your library">
-          <template #actions>
-            <NuxtLink
-              to="/books/search"
-              class="text-sm font-medium text-emerald-700 hover:underline"
-            >
-              Add books
-            </NuxtLink>
+  <Card data-test="library-card">
+    <template #title>
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <i class="pi pi-book text-primary" aria-hidden="true"></i>
+          <div>
+            <p class="font-serif text-xl font-semibold tracking-tight">Your library</p>
+            <p class="text-sm text-[var(--p-text-muted-color)]">
+              Filter, sort, and jump back into a book.
+            </p>
+          </div>
+        </div>
+        <Button asChild v-slot="slotProps" size="small">
+          <NuxtLink to="/books/search" :class="slotProps.class">Add books</NuxtLink>
+        </Button>
+      </div>
+    </template>
+    <template #content>
+      <div class="flex flex-col gap-4">
+        <Card>
+          <template #content>
+            <div class="grid w-full gap-3 md:grid-cols-[240px_220px_220px]">
+              <Select
+                v-model="statusFilter"
+                :options="statusFilters"
+                option-label="label"
+                option-value="value"
+                data-test="library-status-filter"
+              />
+              <InputText
+                v-model="tagFilter"
+                placeholder="Filter by tag"
+                data-test="library-tag-filter"
+              />
+              <Select
+                v-model="sortMode"
+                :options="sortOptions"
+                option-label="label"
+                option-value="value"
+                data-test="library-sort-select"
+              />
+            </div>
           </template>
-        </SectionHeader>
-      </template>
-      <template #content>
-        <div class="flex flex-col gap-4">
-          <div class="grid gap-4 md:grid-cols-[240px_220px_220px_1fr]">
-            <Select
-              v-model="statusFilter"
-              :options="statusFilters"
-              option-label="label"
-              option-value="value"
-              data-test="library-status-filter"
-            />
-            <InputText
-              v-model="tagFilter"
-              placeholder="Filter by tag"
-              data-test="library-tag-filter"
-            />
-            <Select
-              v-model="sortMode"
-              :options="sortOptions"
-              option-label="label"
-              option-value="value"
-              data-test="library-sort-select"
-            />
-          </div>
+        </Card>
 
-          <InlineAlert v-if="error" tone="error" :message="error" data-test="library-error" />
+        <Message v-if="error" severity="error" :closable="false" data-test="library-error">{{
+          error
+        }}</Message>
+
+        <!-- Skeleton loading -->
+        <div v-if="loading" class="grid gap-3" data-test="library-loading">
+          <Card v-for="n in 4" :key="n">
+            <template #content>
+              <div class="flex items-start gap-4">
+                <Skeleton width="80px" height="120px" borderRadius="0.5rem" class="shrink-0" />
+                <div class="flex flex-1 flex-col gap-2 pt-1">
+                  <Skeleton width="75%" height="1.25rem" />
+                  <Skeleton width="50%" height="1rem" />
+                  <div class="mt-2 flex gap-2">
+                    <Skeleton width="4rem" height="1.25rem" borderRadius="9999px" />
+                    <Skeleton width="3.5rem" height="1.25rem" borderRadius="9999px" />
+                  </div>
+                </div>
+              </div>
+            </template>
+          </Card>
+        </div>
+
+        <div v-else-if="displayItems.length" class="grid gap-3" data-test="library-items">
           <NuxtLink
-            v-if="authRequired"
-            :to="loginHref"
-            class="text-sm font-medium text-emerald-700 hover:underline"
-            data-test="library-login-link"
+            v-for="item in displayItems"
+            :key="item.id"
+            :to="`/books/${item.work_id}`"
+            class="block"
           >
-            Sign in to continue
-          </NuxtLink>
-
-          <div v-if="loading" class="text-sm text-slate-600" data-test="library-loading">
-            Loading...
-          </div>
-
-          <div v-if="displayItems.length" class="grid gap-3" data-test="library-items">
-            <Card v-for="item in displayItems" :key="item.id" class="border border-slate-200/70">
+            <Card>
               <template #content>
-                <div class="flex items-start justify-between gap-4">
-                  <div class="flex min-w-0 items-start gap-4">
-                    <div
-                      class="h-16 w-12 overflow-hidden rounded border border-slate-200/70 bg-slate-100"
-                    >
-                      <img
-                        v-if="item.cover_url"
-                        :src="item.cover_url"
-                        alt=""
-                        class="h-full w-full object-cover"
-                        data-test="library-item-cover"
-                      />
-                      <div
-                        v-else
-                        class="flex h-full w-full items-center justify-center"
-                        data-test="library-item-cover-fallback"
-                      >
-                        <i class="pi pi-image text-slate-400" aria-hidden="true"></i>
-                      </div>
-                    </div>
+                <div class="flex items-start gap-4">
+                  <div
+                    class="h-[120px] w-[80px] shrink-0 overflow-hidden rounded-lg border border-[var(--p-content-border-color)] bg-black/5 dark:bg-white/5"
+                  >
+                    <Image
+                      v-if="item.cover_url"
+                      :src="item.cover_url"
+                      alt=""
+                      :preview="false"
+                      class="h-full w-full"
+                      image-class="h-full w-full object-cover"
+                      data-test="library-item-cover"
+                    />
+                    <Skeleton
+                      v-else
+                      class="h-full w-full"
+                      borderRadius="0.5rem"
+                      data-test="library-item-cover-skeleton"
+                    />
+                  </div>
 
-                    <div class="min-w-0">
-                      <NuxtLink
-                        :to="`/books/${item.work_id}`"
-                        class="block truncate font-semibold text-slate-900 hover:underline"
-                      >
-                        {{ item.work_title }}
-                      </NuxtLink>
-                      <p v-if="item.author_names?.length" class="truncate text-sm text-slate-600">
-                        {{ item.author_names.join(', ') }}
-                      </p>
-                      <div class="mt-2 flex flex-wrap items-center gap-2">
-                        <span class="rounded bg-slate-100 px-2 py-1 text-xs text-slate-700">
-                          {{ statusLabel(item.status) }}
-                        </span>
-                        <span
-                          class="rounded bg-slate-100 px-2 py-1 text-xs uppercase text-slate-600"
-                        >
-                          {{ item.visibility }}
-                        </span>
-                        <span
-                          v-for="tag in (item.tags || []).slice(0, 3)"
-                          :key="tag"
-                          class="rounded bg-emerald-50 px-2 py-1 text-xs text-emerald-700"
-                        >
-                          {{ tag }}
-                        </span>
-                      </div>
+                  <div class="min-w-0 pt-1">
+                    <p class="truncate font-serif text-base font-semibold tracking-tight">
+                      {{ item.work_title }}
+                    </p>
+                    <p
+                      v-if="item.author_names?.length"
+                      class="truncate text-sm text-[var(--p-text-muted-color)]"
+                    >
+                      {{ item.author_names.join(', ') }}
+                    </p>
+                    <div class="mt-3 flex flex-wrap items-center gap-2">
+                      <Tag :value="statusLabel(item.status)" severity="secondary" />
+                      <Tag
+                        v-for="tag in (item.tags || []).slice(0, 3)"
+                        :key="tag"
+                        :value="tag"
+                        severity="info"
+                      />
                     </div>
                   </div>
                 </div>
               </template>
             </Card>
-          </div>
+          </NuxtLink>
+        </div>
 
-          <EmptyState
-            v-else-if="!loading"
-            data-test="library-empty"
-            icon="pi pi-inbox"
-            title="No library items found."
-            body="Search for a book to import it into your library."
-          >
-            <template #action>
-              <NuxtLink
-                to="/books/search"
-                class="inline-flex items-center gap-2 rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
-              >
+        <EmptyState
+          v-else
+          data-test="library-empty"
+          icon="pi pi-inbox"
+          title="No library items found."
+          body="Search for a book to import it into your library."
+        >
+          <template #action>
+            <Button asChild v-slot="slotProps">
+              <NuxtLink to="/books/search" :class="slotProps.class">
                 <i class="pi pi-search" aria-hidden="true"></i>
                 Add a book
               </NuxtLink>
-            </template>
-          </EmptyState>
+            </Button>
+          </template>
+        </EmptyState>
 
-          <Button
-            v-if="nextCursor"
-            label="Load more"
-            class="self-start"
-            :loading="loadingMore"
-            data-test="library-load-more"
-            @click="loadMore"
-          />
-        </div>
-      </template>
-    </Card>
-  </PageShell>
+        <Button
+          v-if="nextCursor"
+          label="Load more"
+          class="self-start"
+          :loading="loadingMore"
+          data-test="library-load-more"
+          @click="loadMore"
+        />
+      </div>
+    </template>
+  </Card>
 </template>
 
 <script setup lang="ts">
+definePageMeta({ layout: 'app', middleware: 'auth' });
+
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from '#imports';
-import Button from 'primevue/button';
-import Card from 'primevue/card';
-import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import EmptyState from '~/components/EmptyState.vue';
-import InlineAlert from '~/components/InlineAlert.vue';
-import PageShell from '~/components/PageShell.vue';
-import SectionHeader from '~/components/SectionHeader.vue';
 
 type LibraryItem = {
   id: string;
@@ -174,11 +180,6 @@ const nextCursor = ref<string | null>(null);
 const loading = ref(false);
 const loadingMore = ref(false);
 const error = ref('');
-const authRequired = ref(false);
-const route = useRoute();
-const loginHref = computed(
-  () => `/login?returnTo=${encodeURIComponent(route.fullPath || '/library')}`,
-);
 
 const statusFilters = [
   { label: 'All statuses', value: '' },
@@ -225,7 +226,6 @@ const statusLabel = (value: string): string => {
 
 const fetchPage = async (append = false) => {
   error.value = '';
-  authRequired.value = false;
   if (append) {
     loadingMore.value = true;
   } else {
@@ -249,7 +249,6 @@ const fetchPage = async (append = false) => {
   } catch (err) {
     if (err instanceof ApiClientError) {
       error.value = err.message;
-      authRequired.value = err.code === 'auth_required';
     } else {
       error.value = 'Unable to load library items right now.';
     }

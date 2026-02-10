@@ -1,89 +1,84 @@
 <template>
-  <PageShell maxWidth="md">
-    <section class="mx-auto flex w-full max-w-lg flex-col gap-6">
-      <Card class="shadow-lg">
-        <template #title>
-          <div class="flex items-center gap-3 text-2xl font-semibold">
-            <i class="pi pi-book text-emerald-600" aria-hidden="true"></i>
-            <span>Sign in to The Seedbed</span>
-          </div>
-        </template>
-        <template #subtitle>
-          <span class="text-base text-slate-600">
-            Use Apple, Google, or request a magic link to continue.
-          </span>
-        </template>
-        <template #content>
-          <div class="flex flex-col gap-4">
-            <Button
-              class="w-full"
-              icon="pi pi-apple"
-              label="Continue with Apple"
-              :loading="busy"
-              data-test="login-apple"
-              @click="signInWithApple"
-            />
-            <Button
-              class="w-full"
-              icon="pi pi-google"
-              label="Continue with Google"
-              :loading="busy"
-              data-test="login-google"
-              @click="signInWithGoogle"
-            />
-            <div class="flex items-center gap-3">
-              <div class="h-px flex-1 bg-slate-200"></div>
-              <span class="text-xs uppercase tracking-[0.2em] text-slate-400">or</span>
-              <div class="h-px flex-1 bg-slate-200"></div>
-            </div>
-            <div class="flex flex-col gap-2">
-              <label class="text-sm font-medium text-slate-700" for="email">Email</label>
-              <InputText
-                id="email"
-                v-model="email"
-                class="w-full"
-                type="email"
-                placeholder="you@theseedbed.app"
-                data-test="login-email"
-              />
-            </div>
-            <Button
-              class="w-full"
-              label="Send magic link"
-              :loading="busy"
-              data-test="login-magic-link"
-              @click="sendMagicLink"
-            />
-            <InlineAlert v-if="status" :message="status" />
-            <InlineAlert v-if="error" tone="error" :message="error" />
-            <InlineAlert
-              v-if="!supabase"
-              message="Supabase client is not configured. Check environment variables."
-            />
-            <p v-if="showDebug" class="rounded-md bg-slate-100 px-3 py-2 text-xs text-slate-600">
-              Preview debug: supabaseUrl={{ debugStatus.url ? 'set' : 'missing' }},
-              supabaseAnonKey={{ debugStatus.anonKey ? 'set' : 'missing' }}, client={{
-                debugStatus.client ? 'ready' : 'missing'
-              }}, plugin={{ debugStatus.plugin ? 'loaded' : 'missing' }}.
-            </p>
-          </div>
-        </template>
-      </Card>
-    </section>
-  </PageShell>
+  <Card data-test="login-card">
+    <template #title>
+      <div class="flex flex-col items-center gap-2 text-center">
+        <Avatar icon="pi pi-book" shape="circle" size="xlarge" :pt="avatarPt" />
+        <h1 class="text-2xl font-semibold tracking-tight">Welcome back</h1>
+        <p class="text-sm text-[var(--p-text-muted-color)]">Sign in to The Seedbed</p>
+      </div>
+    </template>
+    <template #content>
+      <div class="flex flex-col gap-5">
+        <Button
+          class="w-full"
+          icon="pi pi-apple"
+          label="Continue with Apple"
+          :loading="busy"
+          severity="secondary"
+          variant="outlined"
+          size="large"
+          data-test="login-apple"
+          @click="signInWithApple"
+        />
+        <Button
+          class="w-full"
+          icon="pi pi-google"
+          label="Continue with Google"
+          :loading="busy"
+          severity="secondary"
+          variant="outlined"
+          size="large"
+          data-test="login-google"
+          @click="signInWithGoogle"
+        />
+        <Divider align="center">
+          <span class="text-xs uppercase tracking-[0.22em] text-[var(--p-text-muted-color)]"
+            >or</span
+          >
+        </Divider>
+        <div class="flex flex-col gap-2">
+          <label class="text-sm font-medium" for="email">Email</label>
+          <InputText
+            id="email"
+            v-model="email"
+            :class="['w-full', { 'p-invalid': !!error }]"
+            type="email"
+            placeholder="you@theseedbed.app"
+            autocomplete="email"
+            size="large"
+            data-test="login-email"
+          />
+        </div>
+        <Button
+          class="w-full"
+          label="Send magic link"
+          :loading="busy"
+          severity="primary"
+          raised
+          size="large"
+          data-test="login-magic-link"
+          @click="sendMagicLink"
+        />
+        <Message v-if="status" severity="info" :closable="false">{{ status }}</Message>
+        <Message v-if="error" severity="error" :closable="false" data-test="login-error">{{
+          error
+        }}</Message>
+        <Message v-if="!supabase" severity="error" :closable="false"
+          >Supabase client is not configured. Check environment variables.</Message
+        >
+      </div>
+    </template>
+  </Card>
 </template>
 
 <script setup lang="ts">
+definePageMeta({ layout: 'auth', middleware: ['guest-only-client'] });
+
 import { computed, ref } from 'vue';
-import { useRoute, useRuntimeConfig, useSupabaseClient } from '#imports';
-import Button from 'primevue/button';
-import Card from 'primevue/card';
-import InputText from 'primevue/inputtext';
-import InlineAlert from '~/components/InlineAlert.vue';
-import PageShell from '~/components/PageShell.vue';
+import { useRoute, useSupabaseClient } from '#imports';
+import Avatar from 'primevue/avatar';
 
 const supabase = useSupabaseClient();
-const config = useRuntimeConfig();
 const route = useRoute();
 
 const email = ref('');
@@ -95,21 +90,31 @@ const returnTo = computed(() =>
   typeof route.query.returnTo === 'string' ? route.query.returnTo : '',
 );
 
-const showDebug = computed(() => {
-  if (!globalThis.location) {
-    return false;
+const avatarPt = {
+  root: { class: 'bg-[var(--p-primary-100)] text-primary' },
+};
+
+const RETURN_TO_STORAGE_KEY = 'seedbed.auth.returnTo';
+
+const persistReturnTo = () => {
+  if (!returnTo.value) {
+    return;
   }
 
-  const host = globalThis.location.hostname ?? '';
-  return host.endsWith('vercel.app') || host.includes('localhost');
-});
+  const storage = globalThis.localStorage;
+  if (!storage || typeof storage.setItem !== 'function') {
+    return;
+  }
 
-const debugStatus = computed(() => ({
-  url: Boolean(config.public.supabaseUrl),
-  anonKey: Boolean(config.public.supabaseAnonKey),
-  client: Boolean(supabase),
-  plugin: true,
-}));
+  try {
+    storage.setItem(
+      RETURN_TO_STORAGE_KEY,
+      JSON.stringify({ path: returnTo.value, at: Date.now() }),
+    );
+  } catch {
+    // Best-effort only; auth flow still works without restoring returnTo.
+  }
+};
 
 const buildRedirectTo = () => {
   if (!globalThis.location) {
@@ -121,14 +126,9 @@ const buildRedirectTo = () => {
     return '';
   }
 
-  const base = `${origin}/auth/callback`;
-  if (!returnTo.value) {
-    return base;
-  }
-
-  const redirectUrl = new globalThis.URL(base);
-  redirectUrl.searchParams.set('returnTo', returnTo.value);
-  return redirectUrl.toString();
+  // Keep this redirect URL stable and allow-list friendly.
+  // We persist returnTo separately because some Supabase redirect allow-lists are exact-match only.
+  return `${origin}/auth/callback`;
 };
 
 const sendMagicLink = async () => {
@@ -147,6 +147,7 @@ const sendMagicLink = async () => {
 
   busy.value = true;
 
+  persistReturnTo();
   const redirectTo = buildRedirectTo();
   const { error: signInError } = await supabase.auth.signInWithOtp({
     email: email.value.trim(),
@@ -175,6 +176,7 @@ const signInWithApple = async () => {
   }
 
   busy.value = true;
+  persistReturnTo();
   const redirectTo = buildRedirectTo();
   const { error: signInError } = await supabase.auth.signInWithOAuth({
     provider: 'apple',
@@ -200,6 +202,7 @@ const signInWithGoogle = async () => {
   }
 
   busy.value = true;
+  persistReturnTo();
   const redirectTo = buildRedirectTo();
   const { error: signInError } = await supabase.auth.signInWithOAuth({
     provider: 'google',

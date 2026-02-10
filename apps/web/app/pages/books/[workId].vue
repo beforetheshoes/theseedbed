@@ -1,45 +1,66 @@
 <template>
-  <PageShell>
-    <NuxtLink to="/library" class="text-sm font-medium text-emerald-700 hover:underline">
-      Back to library
-    </NuxtLink>
+  <div class="flex flex-col gap-4">
+    <div>
+      <Button
+        label="Back to library"
+        severity="secondary"
+        variant="text"
+        size="small"
+        data-test="book-detail-back"
+        @click="navigateTo('/library')"
+      />
+    </div>
 
-    <Card class="shadow-lg" data-test="book-detail-card">
+    <!-- Hero card -->
+    <Card data-test="book-detail-card">
       <template #title>
         <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div class="flex items-center gap-3">
-            <i class="pi pi-book text-emerald-600" aria-hidden="true"></i>
-            <span class="text-2xl font-semibold">
+            <i class="pi pi-book text-primary" aria-hidden="true"></i>
+            <span class="font-serif text-2xl font-semibold tracking-tight">
               {{ work?.title || 'Book detail' }}
             </span>
           </div>
-          <span
-            v-if="libraryItem"
-            class="rounded bg-slate-100 px-2 py-1 text-xs uppercase text-slate-600"
-          >
-            {{ libraryItem.status }}
-          </span>
+          <Tag v-if="libraryItem" :value="libraryItem.status" severity="secondary" />
         </div>
       </template>
       <template #content>
         <div class="flex flex-col gap-6">
-          <InlineAlert v-if="error" tone="error" :message="error" data-test="book-detail-error" />
+          <Message v-if="error" severity="error" :closable="false" data-test="book-detail-error">{{
+            error
+          }}</Message>
 
-          <div v-if="coreLoading" class="text-sm text-slate-600">Loading...</div>
+          <!-- Skeleton loading for hero -->
+          <div v-if="coreLoading" class="grid gap-6 md:grid-cols-[176px_1fr]">
+            <Skeleton width="176px" height="256px" borderRadius="0.75rem" />
+            <div class="flex flex-col gap-3 pt-2">
+              <Skeleton width="66%" height="1.25rem" />
+              <Skeleton width="33%" height="1rem" />
+              <Skeleton width="100%" height="5rem" class="mt-2" />
+            </div>
+          </div>
 
-          <div v-else class="grid gap-6 md:grid-cols-[160px_1fr]">
+          <div v-else class="grid gap-6 md:grid-cols-[176px_1fr]">
             <div class="flex flex-col gap-3">
-              <img
-                v-if="work?.cover_url"
-                :src="work.cover_url"
-                alt=""
-                class="h-56 w-40 rounded-md border border-slate-200/70 object-cover shadow-sm"
-              />
               <div
-                v-else
-                class="flex h-56 w-40 items-center justify-center rounded-md bg-slate-100"
+                class="h-64 w-44 overflow-hidden rounded-xl border border-[var(--p-content-border-color)] bg-black/5 shadow-md dark:bg-white/5"
+                data-test="book-detail-cover"
               >
-                <span class="text-xs text-slate-500">No cover</span>
+                <Image
+                  v-if="work?.cover_url"
+                  :src="work.cover_url"
+                  alt=""
+                  :preview="false"
+                  class="h-full w-full"
+                  image-class="h-full w-full object-cover"
+                  data-test="book-detail-cover-image"
+                />
+                <Skeleton
+                  v-else
+                  class="h-full w-full"
+                  borderRadius="0.75rem"
+                  data-test="book-detail-cover-skeleton"
+                />
               </div>
 
               <div v-if="libraryItem" class="flex flex-wrap items-center gap-2">
@@ -54,19 +75,21 @@
             </div>
 
             <div class="flex flex-col gap-3">
-              <p v-if="work?.authors?.length" class="text-sm text-slate-700">
+              <p v-if="work?.authors?.length" class="text-sm">
                 <span class="font-medium">Authors:</span>
                 {{ work.authors.map((a) => a.name).join(', ') }}
               </p>
-              <p v-if="work?.description" class="text-sm text-slate-700">
+              <p v-if="work?.description" class="prose prose-sm max-w-none dark:prose-invert">
                 {{ work.description }}
               </p>
 
               <div v-if="!libraryItem" class="flex flex-col gap-2">
-                <p class="text-sm text-slate-600">This book is not in your library yet.</p>
+                <p class="text-sm text-[var(--p-text-muted-color)]">
+                  This book is not in your library yet.
+                </p>
                 <NuxtLink
                   to="/books/search"
-                  class="text-sm font-medium text-emerald-700 hover:underline"
+                  class="text-sm font-medium text-primary hover:underline"
                 >
                   Search and import it
                 </NuxtLink>
@@ -77,17 +100,18 @@
       </template>
     </Card>
 
-    <Card v-if="libraryItem" class="shadow-sm">
+    <!-- Reading sessions -->
+    <Card v-if="libraryItem">
       <template #title>
-        <div class="flex items-center gap-3 text-lg font-semibold">
-          <i class="pi pi-clock text-emerald-600" aria-hidden="true"></i>
-          <span>Reading sessions</span>
+        <div class="flex items-center gap-3">
+          <Avatar icon="pi pi-clock" shape="circle" aria-hidden="true" />
+          <span class="font-serif text-lg font-semibold tracking-tight">Reading sessions</span>
         </div>
       </template>
       <template #content>
         <div class="flex flex-col gap-4">
           <div v-if="sessionsError" class="flex flex-col gap-2">
-            <InlineAlert tone="error" :message="sessionsError" />
+            <Message severity="error" :closable="false">{{ sessionsError }}</Message>
             <div>
               <Button
                 label="Retry"
@@ -98,11 +122,23 @@
               />
             </div>
           </div>
-          <div v-else-if="sessionsLoading" class="text-sm text-slate-600">Loading sessions...</div>
+          <!-- Skeleton loading -->
+          <div v-else-if="sessionsLoading" class="flex flex-col gap-2">
+            <div v-for="n in 3" :key="n" class="flex items-center gap-3">
+              <Skeleton shape="circle" size="0.75rem" class="shrink-0" />
+              <div class="flex-1">
+                <Skeleton width="33%" height="1rem" class="mb-1" />
+                <Skeleton width="50%" height="0.75rem" />
+              </div>
+            </div>
+          </div>
 
-          <div class="grid gap-3 md:grid-cols-3">
+          <div class="grid gap-3 sm:grid-cols-2">
             <InputText v-model="sessionPagesRead" placeholder="Pages read" />
             <InputText v-model="sessionProgressPercent" placeholder="Progress % (0-100)" />
+          </div>
+          <Textarea v-model="sessionNote" rows="2" auto-resize placeholder="Session note" />
+          <div>
             <Button
               label="Log session"
               :loading="savingSession"
@@ -110,39 +146,40 @@
               @click="logSession"
             />
           </div>
-          <Textarea v-model="sessionNote" rows="2" auto-resize placeholder="Session note" />
 
-          <div v-if="sessions.length" class="grid gap-2">
-            <div
-              v-for="s in sessions"
-              :key="s.id"
-              class="rounded-md border border-slate-200/70 bg-white px-3 py-2"
-            >
-              <p class="text-sm font-medium text-slate-900">
-                {{ formatDate(s.started_at) }}
+          <Timeline v-if="sessions.length" :value="sessions" align="left">
+            <template #marker>
+              <Avatar shape="circle" size="small" aria-hidden="true" />
+            </template>
+            <template #content="{ item }">
+              <p class="text-sm font-medium">{{ formatDate(item.started_at) }}</p>
+              <p class="text-xs text-[var(--p-text-muted-color)]">
+                Pages: {{ item.pages_read ?? '-' }} | Progress: {{ item.progress_percent ?? '-' }}
               </p>
-              <p class="text-xs text-slate-600">
-                Pages: {{ s.pages_read ?? '-' }} | Progress: {{ s.progress_percent ?? '-' }}
+              <p v-if="item.note" class="text-xs text-[var(--p-text-muted-color)]">
+                {{ item.note }}
               </p>
-              <p v-if="s.note" class="text-xs text-slate-600">{{ s.note }}</p>
-            </div>
-          </div>
-          <p v-else class="text-sm text-slate-600">No sessions yet.</p>
+            </template>
+          </Timeline>
+          <p v-else-if="!sessionsLoading" class="text-sm text-[var(--p-text-muted-color)]">
+            No sessions yet.
+          </p>
         </div>
       </template>
     </Card>
 
-    <Card v-if="libraryItem" class="shadow-sm">
+    <!-- Notes -->
+    <Card v-if="libraryItem">
       <template #title>
-        <div class="flex items-center gap-3 text-lg font-semibold">
-          <i class="pi pi-pencil text-emerald-600" aria-hidden="true"></i>
-          <span>Notes</span>
+        <div class="flex items-center gap-3">
+          <Avatar icon="pi pi-pencil" shape="circle" aria-hidden="true" />
+          <span class="font-serif text-lg font-semibold tracking-tight">Notes</span>
         </div>
       </template>
       <template #content>
         <div class="flex flex-col gap-4">
           <div v-if="notesError" class="flex flex-col gap-2">
-            <InlineAlert tone="error" :message="notesError" />
+            <Message severity="error" :closable="false">{{ notesError }}</Message>
             <div>
               <Button
                 label="Retry"
@@ -153,9 +190,16 @@
               />
             </div>
           </div>
-          <div v-else-if="notesLoading" class="text-sm text-slate-600">Loading notes...</div>
+          <div v-else-if="notesLoading" class="flex flex-col gap-2">
+            <Card v-for="n in 2" :key="n">
+              <template #content>
+                <Skeleton width="33%" height="1rem" class="mb-2" />
+                <Skeleton width="100%" height="0.75rem" />
+              </template>
+            </Card>
+          </div>
 
-          <div class="grid gap-3 md:grid-cols-3">
+          <div class="grid gap-3 sm:grid-cols-2">
             <InputText v-model="newNoteTitle" placeholder="Title (optional)" />
             <Select
               v-model="newNoteVisibility"
@@ -163,47 +207,49 @@
               option-label="label"
               option-value="value"
             />
-            <Button label="Add note" :loading="savingNote" @click="addNote" />
           </div>
           <Textarea v-model="newNoteBody" rows="3" auto-resize placeholder="Write a note..." />
+          <div>
+            <Button label="Add note" :loading="savingNote" @click="addNote" />
+          </div>
 
           <div v-if="notes.length" class="grid gap-2">
-            <div
-              v-for="n in notes"
-              :key="n.id"
-              class="rounded-md border border-slate-200/70 bg-white px-3 py-2"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p v-if="n.title" class="text-sm font-semibold text-slate-900">
-                    {{ n.title }}
-                  </p>
-                  <p class="text-xs text-slate-500">
-                    {{ n.visibility }} | {{ formatDate(n.created_at) }}
-                  </p>
+            <Card v-for="n in notes" :key="n.id">
+              <template #content>
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p v-if="n.title" class="text-sm font-semibold">
+                      {{ n.title }}
+                    </p>
+                    <p class="text-xs text-[var(--p-text-muted-color)]">
+                      {{ n.visibility }} | {{ formatDate(n.created_at) }}
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      label="Edit"
+                      size="small"
+                      text
+                      severity="secondary"
+                      @click="openEditNote(n)"
+                    />
+                    <Button
+                      label="Delete"
+                      size="small"
+                      text
+                      severity="danger"
+                      :loading="deletingNoteId === n.id"
+                      @click="deleteNote(n)"
+                    />
+                  </div>
                 </div>
-                <div class="flex items-center gap-2">
-                  <Button
-                    label="Edit"
-                    size="small"
-                    text
-                    severity="secondary"
-                    @click="openEditNote(n)"
-                  />
-                  <Button
-                    label="Delete"
-                    size="small"
-                    text
-                    severity="danger"
-                    :loading="deletingNoteId === n.id"
-                    @click="deleteNote(n)"
-                  />
-                </div>
-              </div>
-              <p class="mt-2 text-sm text-slate-700">{{ n.body }}</p>
-            </div>
+                <p class="mt-2 text-sm">{{ n.body }}</p>
+              </template>
+            </Card>
           </div>
-          <p v-else class="text-sm text-slate-600">No notes yet.</p>
+          <p v-else-if="!notesLoading" class="text-sm text-[var(--p-text-muted-color)]">
+            No notes yet.
+          </p>
         </div>
       </template>
     </Card>
@@ -219,23 +265,29 @@
         />
         <Textarea v-model="editNoteBody" rows="6" auto-resize />
         <div class="flex justify-end gap-2">
-          <Button label="Cancel" severity="secondary" text @click="editNoteVisible = false" />
+          <Button
+            label="Cancel"
+            severity="secondary"
+            variant="text"
+            @click="editNoteVisible = false"
+          />
           <Button label="Save" :loading="savingNote" @click="saveEditNote" />
         </div>
       </div>
     </Dialog>
 
-    <Card v-if="libraryItem" class="shadow-sm">
+    <!-- Highlights -->
+    <Card v-if="libraryItem">
       <template #title>
-        <div class="flex items-center gap-3 text-lg font-semibold">
-          <i class="pi pi-quote-right text-emerald-600" aria-hidden="true"></i>
-          <span>Highlights</span>
+        <div class="flex items-center gap-3">
+          <Avatar icon="pi pi-quote-right" shape="circle" aria-hidden="true" />
+          <span class="font-serif text-lg font-semibold tracking-tight">Highlights</span>
         </div>
       </template>
       <template #content>
         <div class="flex flex-col gap-4">
           <div v-if="highlightsError" class="flex flex-col gap-2">
-            <InlineAlert tone="error" :message="highlightsError" />
+            <Message severity="error" :closable="false">{{ highlightsError }}</Message>
             <div>
               <Button
                 label="Retry"
@@ -246,11 +298,16 @@
               />
             </div>
           </div>
-          <div v-else-if="highlightsLoading" class="text-sm text-slate-600">
-            Loading highlights...
+          <div v-else-if="highlightsLoading" class="flex flex-col gap-2">
+            <Card v-for="n in 2" :key="n">
+              <template #content>
+                <Skeleton width="25%" height="0.75rem" class="mb-2" />
+                <Skeleton width="100%" height="1rem" />
+              </template>
+            </Card>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-3">
+          <div class="grid gap-3 sm:grid-cols-2">
             <Select
               v-model="newHighlightVisibility"
               :options="visibilityOptions"
@@ -258,7 +315,6 @@
               option-value="value"
             />
             <InputText v-model="highlightLocationSort" placeholder="Location (optional)" />
-            <Button label="Add highlight" :loading="savingHighlight" @click="addHighlight" />
           </div>
           <Textarea
             v-model="newHighlightQuote"
@@ -266,41 +322,44 @@
             auto-resize
             placeholder="Paste a short excerpt..."
           />
+          <div>
+            <Button label="Add highlight" :loading="savingHighlight" @click="addHighlight" />
+          </div>
 
           <div v-if="highlights.length" class="grid gap-2">
-            <div
-              v-for="h in highlights"
-              :key="h.id"
-              class="rounded-md border border-slate-200/70 bg-white px-3 py-2"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <p class="text-xs text-slate-500">
-                    {{ h.visibility }} | {{ formatDate(h.created_at) }}
-                  </p>
+            <Card v-for="h in highlights" :key="h.id">
+              <template #content>
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <p class="text-xs text-[var(--p-text-muted-color)]">
+                      {{ h.visibility }} | {{ formatDate(h.created_at) }}
+                    </p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button
+                      label="Edit"
+                      size="small"
+                      text
+                      severity="secondary"
+                      @click="openEditHighlight(h)"
+                    />
+                    <Button
+                      label="Delete"
+                      size="small"
+                      text
+                      severity="danger"
+                      :loading="deletingHighlightId === h.id"
+                      @click="deleteHighlight(h)"
+                    />
+                  </div>
                 </div>
-                <div class="flex items-center gap-2">
-                  <Button
-                    label="Edit"
-                    size="small"
-                    text
-                    severity="secondary"
-                    @click="openEditHighlight(h)"
-                  />
-                  <Button
-                    label="Delete"
-                    size="small"
-                    text
-                    severity="danger"
-                    :loading="deletingHighlightId === h.id"
-                    @click="deleteHighlight(h)"
-                  />
-                </div>
-              </div>
-              <p class="mt-2 text-sm text-slate-700">{{ h.quote }}</p>
-            </div>
+                <p class="mt-2 text-sm italic">{{ h.quote }}</p>
+              </template>
+            </Card>
           </div>
-          <p v-else class="text-sm text-slate-600">No highlights yet.</p>
+          <p v-else-if="!highlightsLoading" class="text-sm text-[var(--p-text-muted-color)]">
+            No highlights yet.
+          </p>
         </div>
       </template>
     </Card>
@@ -321,12 +380,18 @@
         <InputText v-model="editHighlightLocationSort" placeholder="Location (optional)" />
         <Textarea v-model="editHighlightQuote" rows="6" auto-resize />
         <div class="flex justify-end gap-2">
-          <Button label="Cancel" severity="secondary" text @click="editHighlightVisible = false" />
+          <Button
+            label="Cancel"
+            severity="secondary"
+            variant="text"
+            @click="editHighlightVisible = false"
+          />
           <Button label="Save" :loading="savingHighlight" @click="saveEditHighlight" />
         </div>
       </div>
     </Dialog>
 
+    <!-- Cover dialog -->
     <Dialog
       v-model:visible="coverDialogVisible"
       modal
@@ -334,11 +399,9 @@
       :style="{ width: '44rem' }"
     >
       <div class="flex flex-col gap-4">
-        <p v-if="coverError" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-          {{ coverError }}
-        </p>
+        <Message v-if="coverError" severity="error" :closable="false">{{ coverError }}</Message>
 
-        <div v-if="needsEditionSelection" class="grid gap-3 md:grid-cols-2">
+        <div v-if="needsEditionSelection" class="grid gap-3 sm:grid-cols-2">
           <Select
             v-model="selectedEditionId"
             :options="editionOptions"
@@ -347,11 +410,13 @@
             :disabled="editionsLoading"
           />
           <div class="flex items-center gap-2">
-            <input id="preferred" v-model="setPreferredEdition" type="checkbox" />
-            <label class="text-sm text-slate-700" for="preferred">Set as preferred edition</label>
+            <Checkbox inputId="preferred" v-model="setPreferredEdition" binary />
+            <label class="text-sm" for="preferred">Set as preferred edition</label>
           </div>
         </div>
-        <div v-else class="text-xs text-slate-500">Using your preferred edition for this book.</div>
+        <div v-else class="text-xs text-[var(--p-text-muted-color)]">
+          Using your preferred edition for this book.
+        </div>
 
         <div class="flex flex-wrap gap-2">
           <Button
@@ -369,9 +434,27 @@
         </div>
 
         <div v-if="coverMode === 'upload'" class="flex flex-col gap-3">
-          <input type="file" accept="image/*" @change="onCoverFileChange" />
+          <div class="flex flex-col gap-2">
+            <FileUpload
+              mode="basic"
+              name="cover"
+              accept="image/*"
+              :auto="false"
+              :multiple="false"
+              chooseLabel="Choose image"
+              @select="onCoverFileSelect"
+            />
+            <p v-if="coverFile" class="text-xs text-[var(--p-text-muted-color)]">
+              Selected: {{ coverFile.name }}
+            </p>
+          </div>
           <div class="flex justify-end gap-2">
-            <Button label="Cancel" severity="secondary" text @click="coverDialogVisible = false" />
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="text"
+              @click="coverDialogVisible = false"
+            />
             <Button label="Upload" :loading="coverBusy" @click="uploadCover" />
           </div>
         </div>
@@ -379,24 +462,30 @@
         <div v-else class="flex flex-col gap-3">
           <InputText v-model="coverSourceUrl" placeholder="https://covers.openlibrary.org/..." />
           <div class="flex justify-end gap-2">
-            <Button label="Cancel" severity="secondary" text @click="coverDialogVisible = false" />
+            <Button
+              label="Cancel"
+              severity="secondary"
+              variant="text"
+              @click="coverDialogVisible = false"
+            />
             <Button label="Cache from URL" :loading="coverBusy" @click="cacheCover" />
           </div>
         </div>
       </div>
     </Dialog>
 
-    <Card v-if="libraryItem" class="shadow-sm">
+    <!-- Review -->
+    <Card v-if="libraryItem">
       <template #title>
-        <div class="flex items-center gap-3 text-lg font-semibold">
-          <i class="pi pi-star text-emerald-600" aria-hidden="true"></i>
-          <span>Your review</span>
+        <div class="flex items-center gap-3">
+          <Avatar icon="pi pi-star" shape="circle" aria-hidden="true" />
+          <span class="font-serif text-lg font-semibold tracking-tight">Your review</span>
         </div>
       </template>
       <template #content>
         <div class="flex flex-col gap-4">
           <div v-if="reviewError" class="flex flex-col gap-2">
-            <InlineAlert tone="error" :message="reviewError" />
+            <Message severity="error" :closable="false">{{ reviewError }}</Message>
             <div>
               <Button
                 label="Retry"
@@ -407,43 +496,39 @@
               />
             </div>
           </div>
-          <div v-else-if="reviewLoading" class="text-sm text-slate-600">Loading review...</div>
+          <div v-else-if="reviewLoading" class="flex flex-col gap-3">
+            <Skeleton width="33%" height="1.5rem" />
+            <Skeleton width="100%" height="1rem" />
+          </div>
 
-          <div class="grid gap-3 md:grid-cols-3">
+          <Rating v-model="reviewRating" :stars="5" :cancel="true" />
+
+          <div class="grid gap-3 sm:grid-cols-2">
             <Select
               v-model="reviewVisibility"
               :options="visibilityOptions"
               option-label="label"
               option-value="value"
             />
-            <Select
-              v-model="reviewRating"
-              :options="ratingOptions"
-              option-label="label"
-              option-value="value"
-            />
+            <InputText v-model="reviewTitle" placeholder="Title (optional)" />
+          </div>
+          <Textarea v-model="reviewBody" rows="5" auto-resize placeholder="Write your review..." />
+          <div>
             <Button label="Save review" :loading="savingReview" @click="saveReview" />
           </div>
-          <InputText v-model="reviewTitle" placeholder="Title (optional)" />
-          <Textarea v-model="reviewBody" rows="5" auto-resize placeholder="Write your review..." />
         </div>
       </template>
     </Card>
-  </PageShell>
+  </div>
 </template>
 
 <script setup lang="ts">
+definePageMeta({ layout: 'app', middleware: 'auth' });
+
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from '#imports';
-import Button from 'primevue/button';
-import Card from 'primevue/card';
-import Dialog from 'primevue/dialog';
-import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
-import Textarea from 'primevue/textarea';
+import { navigateTo, useRoute } from '#imports';
 import { ApiClientError, apiRequest } from '~/utils/api';
-import InlineAlert from '~/components/InlineAlert.vue';
-import PageShell from '~/components/PageShell.vue';
+import type { FileUploadSelectEvent } from 'primevue/fileupload';
 
 type WorkDetail = {
   id: string;
@@ -582,15 +667,6 @@ const visibilityOptions = [
   { label: 'Private', value: 'private' },
   { label: 'Unlisted', value: 'unlisted' },
   { label: 'Public', value: 'public' },
-];
-
-const ratingOptions = [
-  { label: 'No rating', value: null },
-  { label: '1', value: 1 },
-  { label: '2', value: 2 },
-  { label: '3', value: 3 },
-  { label: '4', value: 4 },
-  { label: '5', value: 5 },
 ];
 
 const formatDate = (value: string) => {
@@ -789,9 +865,8 @@ const openCoverDialog = async () => {
   coverDialogVisible.value = true;
 };
 
-const onCoverFileChange = (evt: Event) => {
-  const input = evt.target as HTMLInputElement;
-  const file = input.files?.[0] || null;
+const onCoverFileSelect = (evt: FileUploadSelectEvent) => {
+  const file = (evt.files as File[] | undefined)?.[0] ?? null;
   coverFile.value = file;
 };
 

@@ -13,6 +13,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     include: ['tests/unit/**/*.test.ts'],
+    setupFiles: ['tests/setup.ts'],
     // Coverage + Vue SFC transforms can be expensive; cap workers to avoid local thrash.
     maxWorkers: 4,
     coverage: {
