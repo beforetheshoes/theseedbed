@@ -15,6 +15,10 @@ class StorageUploadResult:
     path: str
 
 
+class StorageNotConfiguredError(RuntimeError):
+    """Raised when required Supabase storage settings are missing."""
+
+
 def _public_object_url(*, supabase_url: str, bucket: str, path: str) -> str:
     # Public bucket/object access URL pattern.
     # Note: access depends on bucket/public policy in Supabase.
@@ -34,9 +38,9 @@ async def upload_storage_object(
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> StorageUploadResult:
     if not settings.supabase_url:
-        raise RuntimeError("SUPABASE_URL is not configured")
+        raise StorageNotConfiguredError("SUPABASE_URL is not configured")
     if not settings.supabase_service_role_key:
-        raise RuntimeError("SUPABASE_SERVICE_ROLE_KEY is not configured")
+        raise StorageNotConfiguredError("SUPABASE_SERVICE_ROLE_KEY is not configured")
 
     safe_bucket = quote(bucket, safe="")
     safe_path = quote(path, safe="/._-")

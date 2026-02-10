@@ -63,7 +63,7 @@ Service settings (API):
 - Build command: `pip install uv && uv sync --frozen --no-dev`
 - Start command: `uv run uvicorn main:app --host 0.0.0.0 --port $PORT`
 - Health check path: `/api/v1/health`
-- Env vars (staging/prod): `SUPABASE_URL`, `SUPABASE_JWT_AUDIENCE=authenticated`
+- Env vars (staging/prod): `SUPABASE_URL`, `SUPABASE_JWT_AUDIENCE=authenticated`, `SUPABASE_SERVICE_ROLE_KEY` (required for cover uploads/caching)
 
 CLI examples:
 
