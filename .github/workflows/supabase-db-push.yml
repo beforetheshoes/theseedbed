@@ -62,11 +62,13 @@ jobs:
           # Source: https://render.com/docs/cli
           RENDER_CLI_VERSION="2.8.0"
           asset="cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
+          tmpdir="$(mktemp -d)"
           curl -fsSL \
             "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/${asset}" \
-            -o render.zip
-          unzip -q render.zip
-          sudo mv "cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
+            -o "$tmpdir/render.zip"
+          # Avoid interactive prompts (zip contains README.md, etc.).
+          unzip -o -q "$tmpdir/render.zip" -d "$tmpdir"
+          sudo mv "$tmpdir/cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
           render --version
 
       - name: Verify Render API key is configured
@@ -137,11 +139,13 @@ jobs:
           # Source: https://render.com/docs/cli
           RENDER_CLI_VERSION="2.8.0"
           asset="cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
+          tmpdir="$(mktemp -d)"
           curl -fsSL \
             "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/${asset}" \
-            -o render.zip
-          unzip -q render.zip
-          sudo mv "cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
+            -o "$tmpdir/render.zip"
+          # Avoid interactive prompts (zip contains README.md, etc.).
+          unzip -o -q "$tmpdir/render.zip" -d "$tmpdir"
+          sudo mv "$tmpdir/cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
           render --version
 
       - name: Verify Render API key is configured
