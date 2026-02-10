@@ -81,6 +81,7 @@ def test_get_settings_parses_highlight_max_chars_and_bucket() -> None:
     try:
         os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
         os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "role"
+        os.environ.pop("SUPABASE_SECRET_KEY", None)
         os.environ["SUPABASE_STORAGE_COVERS_BUCKET"] = "mycovers"
         os.environ["PUBLIC_HIGHLIGHT_MAX_CHARS"] = "123"
         config_module.reset_settings_cache()
@@ -89,6 +90,22 @@ def test_get_settings_parses_highlight_max_chars_and_bucket() -> None:
         assert settings.supabase_service_role_key == "role"
         assert settings.supabase_storage_covers_bucket == "mycovers"
         assert settings.public_highlight_max_chars == 123
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+        config_module.reset_settings_cache()
+
+
+def test_get_settings_prefers_secret_key_over_service_role_key() -> None:
+    original_env = os.environ.copy()
+    try:
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
+        os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "legacy-service-role"
+        os.environ["SUPABASE_SECRET_KEY"] = "sb_secret_example"
+        config_module.reset_settings_cache()
+
+        settings = config_module.get_settings()
+        assert settings.supabase_service_role_key == "sb_secret_example"
     finally:
         os.environ.clear()
         os.environ.update(original_env)
