@@ -1,15 +1,25 @@
 <template>
-  <Breadcrumb class="bg-transparent p-0" :home="home" :model="items" />
+  <Breadcrumb class="bg-transparent p-0" :home="home" :model="items">
+    <template #item="{ item, props }">
+      <NuxtLink v-if="item.to" :to="item.to" class="p-breadcrumb-item-link cursor-pointer">
+        <span v-if="item.icon" :class="item.icon" aria-hidden="true" />
+        <span v-else class="text-sm">{{ item.label }}</span>
+      </NuxtLink>
+      <span v-else v-bind="props.action" class="text-sm">{{ item.label }}</span>
+    </template>
+  </Breadcrumb>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRoute } from '#imports';
-type BreadcrumbItem = { label: string; to?: string };
+
+type BreadcrumbItem = { label?: string; icon?: string; to?: string };
 
 const route = useRoute();
 
-const home = computed<BreadcrumbItem>(() => ({ icon: 'pi pi-home', to: '/library' }) as any);
+// Library is treated as the home destination, so we avoid a separate Home crumb.
+const home = computed<BreadcrumbItem | undefined>(() => undefined);
 
 const items = computed<BreadcrumbItem[]>(() => {
   const path = route.path || '/';
