@@ -58,8 +58,16 @@ jobs:
 
       - name: Install Render CLI
         run: |
-          curl -fsSL https://cli.render.com/install.sh | sh
-          echo "$HOME/.render/bin" >> "$GITHUB_PATH"
+          # Install a pinned Render CLI binary (more reliable than curl|sh).
+          # Source: https://render.com/docs/cli
+          RENDER_CLI_VERSION="2.8.0"
+          asset="cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
+          curl -fsSL \
+            "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/${asset}" \
+            -o render.zip
+          unzip -q render.zip
+          sudo mv "cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
+          render --version
 
       - name: Verify Render API key is configured
         run: |
@@ -125,8 +133,16 @@ jobs:
 
       - name: Install Render CLI
         run: |
-          curl -fsSL https://cli.render.com/install.sh | sh
-          echo "$HOME/.render/bin" >> "$GITHUB_PATH"
+          # Install a pinned Render CLI binary (more reliable than curl|sh).
+          # Source: https://render.com/docs/cli
+          RENDER_CLI_VERSION="2.8.0"
+          asset="cli_${RENDER_CLI_VERSION}_linux_amd64.zip"
+          curl -fsSL \
+            "https://github.com/render-oss/cli/releases/download/v${RENDER_CLI_VERSION}/${asset}" \
+            -o render.zip
+          unzip -q render.zip
+          sudo mv "cli_v${RENDER_CLI_VERSION}" /usr/local/bin/render
+          render --version
 
       - name: Verify Render API key is configured
         run: |
