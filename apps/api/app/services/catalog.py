@@ -71,6 +71,8 @@ def import_openlibrary_bundle(
         work = session.get(Work, work_external.entity_id)
         if work is None:
             raise RuntimeError("work external ID points to missing work")
+        if work.default_cover_url is None and bundle.cover_url is not None:
+            work.default_cover_url = bundle.cover_url
     else:
         work = Work(
             title=bundle.title,
@@ -149,6 +151,8 @@ def import_openlibrary_bundle(
             edition = session.get(Edition, edition_external.entity_id)
             if edition is None:
                 raise RuntimeError("edition external ID points to missing edition")
+            if edition.cover_url is None and bundle.cover_url is not None:
+                edition.cover_url = bundle.cover_url
         else:
             edition = Edition(
                 work_id=work.id,

@@ -93,6 +93,30 @@ def test_fetch_work_bundle_collects_author_and_first_edition() -> None:
     assert bundle.cover_url == "https://covers.openlibrary.org/b/id/12-L.jpg"
 
 
+def test_fetch_work_bundle_falls_back_to_edition_cover_when_work_missing() -> None:
+    requests: list[str] = []
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": []},
+        "/works/OL1W/editions.json": {"entries": [{"key": "/books/OL3M"}]},
+        "/books/OL3M.json": {"covers": [99], "isbn_10": ["123"], "publishers": ["Pub"]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+
+    assert bundle.edition is not None
+    assert bundle.edition["key"] == "/books/OL3M"
+    assert bundle.cover_url == "https://covers.openlibrary.org/b/id/99-L.jpg"
+    assert "/books/OL3M.json" in requests
+
+
 def test_request_retries_on_5xx() -> None:
     calls = {"count": 0}
 

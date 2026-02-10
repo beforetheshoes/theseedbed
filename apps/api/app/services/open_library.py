@@ -275,6 +275,43 @@ class OpenLibraryClient:
         if isinstance(covers, list) and covers and isinstance(covers[0], int):
             cover_url = f"https://covers.openlibrary.org/b/id/{covers[0]}-L.jpg"
 
+        # Some works do not expose cover ids at the work level, but editions do.
+        if cover_url is None and raw_edition is not None:
+            edition_covers = raw_edition.get("covers")
+            if (
+                isinstance(edition_covers, list)
+                and edition_covers
+                and isinstance(edition_covers[0], int)
+            ):
+                cover_url = (
+                    f"https://covers.openlibrary.org/b/id/{edition_covers[0]}-L.jpg"
+                )
+
+        # If we only have an editions.json stub, fetch the full edition payload on-demand
+        # to check for covers (and to persist a more complete source record).
+        if (
+            cover_url is None
+            and raw_edition is not None
+            and normalized_edition_key is not None
+            and edition_key is None
+        ):
+            try:
+                raw_edition = await self._request_json(f"{normalized_edition_key}.json")
+            except httpx.HTTPError:
+                # Best-effort fallback. If the edition fetch fails, continue with the
+                # editions.json stub we already have instead of failing the import.
+                pass
+            else:
+                edition_covers = raw_edition.get("covers")
+                if (
+                    isinstance(edition_covers, list)
+                    and edition_covers
+                    and isinstance(edition_covers[0], int)
+                ):
+                    cover_url = (
+                        f"https://covers.openlibrary.org/b/id/{edition_covers[0]}-L.jpg"
+                    )
+
         edition: dict[str, Any] | None = None
         if raw_edition is not None and normalized_edition_key is not None:
             isbn10 = None
