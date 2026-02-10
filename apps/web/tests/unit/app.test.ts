@@ -9,13 +9,17 @@ describe('app shell', () => {
       global: {
         stubs: {
           NuxtRouteAnnouncer: { template: '<div data-test="announcer" />' },
-          NuxtPage: { template: '<div data-test="page" />' },
+          NuxtLayout: { template: '<div data-test="layout"><slot /></div>' },
+          NuxtPage: { props: ['transition'], template: '<div data-test="page" />' },
+          Toast: { template: '<div data-test="toast" />' },
+          ConfirmDialog: { template: '<div data-test="confirm" />' },
         },
       },
     });
 
     expect(wrapper.get('[data-test="app-shell"]').exists()).toBe(true);
     expect(wrapper.get('[data-test="announcer"]').exists()).toBe(true);
+    expect(wrapper.get('[data-test="layout"]').exists()).toBe(true);
     expect(wrapper.get('[data-test="page"]').exists()).toBe(true);
   });
 });

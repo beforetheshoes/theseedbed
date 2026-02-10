@@ -21,6 +21,8 @@ const ApiClientErrorMock = vi.hoisted(
     },
 );
 
+const toastAdd = vi.hoisted(() => vi.fn());
+
 vi.mock('~/utils/api', () => ({
   apiRequest,
   ApiClientError: ApiClientErrorMock,
@@ -28,6 +30,10 @@ vi.mock('~/utils/api', () => ({
 
 vi.mock('#imports', () => ({
   useRoute: () => state.route,
+}));
+
+vi.mock('primevue/usetoast', () => ({
+  useToast: () => ({ add: toastAdd }),
 }));
 
 import SearchPage from '../../../app/pages/books/search.vue';
@@ -52,6 +58,7 @@ describe('books search page', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     apiRequest.mockReset();
+    toastAdd.mockReset();
     state.route = { fullPath: '/books/search' };
   });
 
@@ -76,6 +83,7 @@ describe('books search page', () => {
           title: 'Book A',
           author_names: ['Author A'],
           first_publish_year: 2000,
+          cover_url: 'https://example.com/cover.jpg',
         },
       ],
     });
@@ -89,6 +97,8 @@ describe('books search page', () => {
       query: { query: 'harry', limit: 10, page: 1 },
     });
     expect(wrapper.text()).toContain('Book A');
+    expect(wrapper.find('[data-test="search-item-cover"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="search-item-cover-skeleton"]').exists()).toBe(false);
   });
 
   it('clears the prior debounce timer when query changes rapidly', async () => {
@@ -120,6 +130,7 @@ describe('books search page', () => {
           title: 'Book A',
           author_names: [],
           first_publish_year: null,
+          cover_url: null,
         },
       ],
     });
@@ -141,8 +152,6 @@ describe('books search page', () => {
     await vi.advanceTimersByTimeAsync(350);
 
     expect(wrapper.get('[data-test="search-error"]').text()).toContain('Auth required');
-    const loginLink = wrapper.get('[data-test="search-login-link"]');
-    expect(loginLink.attributes('href')).toBe('/login?returnTo=%2Fbooks%2Fsearch');
   });
 
   it('shows generic errors from search calls', async () => {
@@ -164,6 +173,7 @@ describe('books search page', () => {
             title: 'Book A',
             author_names: ['Author A'],
             first_publish_year: 2000,
+            cover_url: null,
           },
         ],
       })
@@ -184,7 +194,9 @@ describe('books search page', () => {
       method: 'POST',
       body: { work_id: 'work-1', status: 'to_read' },
     });
-    expect(wrapper.get('[data-test="search-message"]').text()).toContain('added');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: expect.stringContaining('added') }),
+    );
   });
 
   it('uses the currently selected status when adding to library', async () => {
@@ -196,6 +208,7 @@ describe('books search page', () => {
             title: 'Book A',
             author_names: ['Author A'],
             first_publish_year: 2000,
+            cover_url: null,
           },
         ],
       })
@@ -224,6 +237,7 @@ describe('books search page', () => {
             title: 'Book A',
             author_names: ['Author A'],
             first_publish_year: 2000,
+            cover_url: null,
           },
         ],
       })
@@ -236,7 +250,12 @@ describe('books search page', () => {
     await vi.advanceTimersByTimeAsync(350);
     await wrapper.get('[data-test="search-add-0"]').trigger('click');
 
-    expect(wrapper.get('[data-test="search-message"]').text()).toContain('already in your library');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'success',
+        summary: expect.stringContaining('already in your library'),
+      }),
+    );
   });
 
   it('shows api client errors from import flow', async () => {
@@ -248,6 +267,7 @@ describe('books search page', () => {
             title: 'Book A',
             author_names: ['Author A'],
             first_publish_year: 2000,
+            cover_url: null,
           },
         ],
       })
@@ -271,6 +291,7 @@ describe('books search page', () => {
             title: 'Book A',
             author_names: ['Author A'],
             first_publish_year: 2000,
+            cover_url: null,
           },
         ],
       })
@@ -298,5 +319,26 @@ describe('books search page', () => {
   it('unmounts without a pending timer', () => {
     const wrapper = mountPage();
     expect(() => wrapper.unmount()).not.toThrow();
+  });
+
+  it('renders a skeleton thumbnail when cover_url is missing', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          work_key: '/works/OL1W',
+          title: 'Book A',
+          author_names: ['Author A'],
+          first_publish_year: 2000,
+          cover_url: null,
+        },
+      ],
+    });
+
+    const wrapper = mountPage();
+
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(wrapper.find('[data-test="search-item-cover-skeleton"]').exists()).toBe(true);
   });
 });

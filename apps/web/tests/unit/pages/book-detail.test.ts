@@ -57,7 +57,7 @@ const mountPage = () =>
           props: ['label', 'loading'],
           emits: ['click'],
           template:
-            '<button :disabled="loading" @click="$emit(`click`, $event)">{{ label }}</button>',
+            '<button :disabled="loading" @click="$emit(`click`, $event)"><slot :class="`p-button`">{{ label }}</slot></button>',
         },
         InputText: {
           props: ['modelValue', 'placeholder'],
@@ -92,6 +92,43 @@ const mountPage = () =>
               </option>
             </select>
           `,
+        },
+        Rating: {
+          props: ['modelValue', 'stars', 'cancel'],
+          emits: ['update:modelValue'],
+          template:
+            '<div data-test="rating-stub"><button v-for="n in (stars || 5)" :key="n" :aria-label="`${n} stars`" @click="$emit(`update:modelValue`, n)">{{ n }}</button><button v-if="cancel" aria-label="Clear" @click="$emit(`update:modelValue`, null)">Clear</button></div>',
+        },
+        Timeline: {
+          props: ['value', 'align'],
+          template:
+            '<div data-test="timeline-stub"><div v-for="item in value" :key="item.id"><slot name="marker" /><slot name="content" :item="item" /></div></div>',
+        },
+        Message: {
+          props: ['severity', 'closable'],
+          template:
+            '<div :class="`p-message-${severity}`" :data-test="$attrs[`data-test`]"><slot /></div>',
+          inheritAttrs: false,
+        },
+        Skeleton: {
+          props: ['width', 'height', 'borderRadius', 'shape', 'size'],
+          template: '<div class="p-skeleton"></div>',
+        },
+        Image: {
+          props: ['src', 'preview', 'imageClass'],
+          template: '<div v-bind="$attrs"><img :src="src" alt="" /></div>',
+        },
+        Checkbox: {
+          props: ['modelValue', 'binary', 'inputId'],
+          emits: ['update:modelValue'],
+          template:
+            '<input :id="inputId" type="checkbox" :checked="!!modelValue" @change="$emit(`update:modelValue`, $event.target.checked)" />',
+        },
+        FileUpload: {
+          props: ['accept', 'chooseLabel', 'mode', 'multiple', 'name'],
+          emits: ['select'],
+          template:
+            '<input type="file" :accept="accept" @change="$emit(`select`, { originalEvent: $event, files: Array.from($event.target.files || []) })" />',
         },
       },
     },
@@ -296,7 +333,7 @@ describe('book detail page', () => {
 
     // Change note visibility select (covers v-model + select binding)
     let selects = wrapper.findAll('select');
-    expect(selects.length).toBeGreaterThanOrEqual(4);
+    expect(selects.length).toBeGreaterThanOrEqual(3);
     await selects[0].setValue('public');
 
     await wrapper.find('input[placeholder="Title (optional)"]').setValue('Note title');
@@ -332,7 +369,7 @@ describe('book detail page', () => {
       .find('input[placeholder="Title (optional)"]')
       .setValue('Edited title');
     selects = wrapper.findAll('select');
-    expect(selects.length).toBeGreaterThanOrEqual(5);
+    expect(selects.length).toBeGreaterThanOrEqual(4);
     await selects[1].setValue('unlisted');
     await wrapper.get('[data-test="dialog"]').find('textarea').setValue('Updated body');
     await clickButton(wrapper, 'Save');
@@ -351,7 +388,7 @@ describe('book detail page', () => {
 
     // Change highlight visibility select (covers v-model + select binding)
     selects = wrapper.findAll('select');
-    expect(selects.length).toBeGreaterThanOrEqual(4);
+    expect(selects.length).toBeGreaterThanOrEqual(3);
     await selects[1].setValue('public');
 
     await wrapper.find('input[placeholder="Location (optional)"]').setValue('10');
@@ -394,11 +431,17 @@ describe('book detail page', () => {
     expect(wrapper.text()).toContain('No highlights yet.');
 
     // Save review (ensures API call uses trimmed/null behavior)
-    // Set review visibility and rating selects (covers select + rating options)
+    // Set review visibility select and rating via Rating stub
     selects = wrapper.findAll('select');
-    expect(selects.length).toBeGreaterThanOrEqual(4);
+    expect(selects.length).toBeGreaterThanOrEqual(3);
     await selects[2].setValue('public'); // review visibility
-    await selects[3].setValue('5'); // review rating
+
+    // Click the 5th star button in the Rating stub (= 5 rating)
+    const ratingStub = wrapper.get('[data-test="rating-stub"]');
+    const ratingButtons = ratingStub
+      .findAll('button')
+      .filter((b) => b.attributes('aria-label')?.includes('stars'));
+    await ratingButtons[ratingButtons.length - 1].trigger('click');
 
     // There are multiple "Title (optional)" inputs; pick the last one for review.
     const titleInputs = wrapper.findAll('input[placeholder="Title (optional)"]');
@@ -464,7 +507,8 @@ describe('book detail page', () => {
 
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.text()).toContain('Author A');
-    expect(wrapper.text()).toContain('Loading sessions...');
+    // Sessions section shows skeleton loading (no text), just verify it doesn't show "No sessions yet."
+    expect(wrapper.text()).not.toContain('No sessions yet.');
 
     resolveSessions?.({ items: [] });
     await flushPromises();
@@ -1119,10 +1163,13 @@ describe('book detail page', () => {
 
     // Cover file change handler.
     const file = new File(['x'], 'cover.jpg', { type: 'image/jpeg' });
-    await (wrapper.vm as any).onCoverFileChange({ target: { files: [file] } });
+    await (wrapper.vm as any).onCoverFileSelect({
+      originalEvent: new Event('change'),
+      files: [file],
+    });
     expect((wrapper.vm as any).coverFile).toBeTruthy();
 
-    await (wrapper.vm as any).onCoverFileChange({ target: { files: [] } });
+    await (wrapper.vm as any).onCoverFileSelect({ originalEvent: new Event('change'), files: [] });
     expect((wrapper.vm as any).coverFile).toBe(null);
 
     // Cancel closes the dialog.

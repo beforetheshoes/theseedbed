@@ -1,7 +1,14 @@
 <template>
-  <div class="app-shell" :data-test="shellTestId">
+  <div
+    class="min-h-screen bg-[var(--p-surface-50)] font-sans text-[var(--p-text-color)] dark:bg-[var(--p-surface-950)]"
+    :data-test="shellTestId"
+  >
     <NuxtRouteAnnouncer />
-    <NuxtPage />
+    <NuxtLayout>
+      <Toast />
+      <ConfirmDialog />
+      <NuxtPage :transition="{ name: 'page', mode: 'out-in' }" />
+    </NuxtLayout>
   </div>
 </template>
 

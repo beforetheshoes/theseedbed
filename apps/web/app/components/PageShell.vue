@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen bg-slate-950/5 text-slate-900">
+  <div class="min-h-screen">
     <main
       :class="[
         'mx-auto flex w-full flex-col gap-6 px-6 py-12',

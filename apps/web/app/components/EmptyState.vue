@@ -1,23 +1,26 @@
 <template>
-  <div class="rounded-lg border border-slate-200/70 bg-white p-6" :data-test="dataTest">
-    <div class="flex items-start gap-4">
-      <div v-if="icon" class="rounded-full bg-slate-100 p-3 text-slate-600" aria-hidden="true">
-        <i :class="icon"></i>
-      </div>
-      <div class="min-w-0">
-        <p class="text-sm font-semibold text-slate-900">{{ title }}</p>
-        <p v-if="body" class="mt-1 text-sm text-slate-600">
-          {{ body }}
-        </p>
-        <div v-if="$slots.action" class="mt-4">
-          <slot name="action" />
+  <Card :data-test="dataTest">
+    <template #content>
+      <div class="flex items-start gap-4">
+        <Avatar v-if="icon" :icon="icon" shape="circle" class="shrink-0" :pt="avatarPt" />
+        <div class="min-w-0">
+          <p class="text-sm font-semibold">{{ title }}</p>
+          <p v-if="body" class="mt-1 text-sm text-[var(--p-text-muted-color)]">
+            {{ body }}
+          </p>
+          <div v-if="$slots.action" class="mt-4">
+            <slot name="action" />
+          </div>
         </div>
       </div>
-    </div>
-  </div>
+    </template>
+  </Card>
 </template>
 
 <script setup lang="ts">
+import Avatar from 'primevue/avatar';
+import Card from 'primevue/card';
+
 withDefaults(
   defineProps<{
     title: string;
@@ -27,4 +30,8 @@ withDefaults(
   }>(),
   { body: '', icon: '', dataTest: undefined },
 );
+
+const avatarPt = {
+  root: { class: 'bg-[var(--p-primary-100)] text-primary' },
+};
 </script>

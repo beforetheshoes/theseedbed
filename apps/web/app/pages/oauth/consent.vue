@@ -1,91 +1,85 @@
 <template>
-  <div class="min-h-screen bg-slate-950/5 text-slate-900">
-    <section class="mx-auto flex w-full max-w-2xl flex-col gap-6 px-6 py-12">
-      <Card class="shadow-lg">
-        <template #title>
-          <div class="flex items-center gap-3 text-2xl font-semibold">
-            <i class="pi pi-lock text-emerald-600" aria-hidden="true"></i>
-            <span>Authorize access</span>
+  <Card data-test="oauth-consent-card">
+    <template #title>
+      <div class="flex items-center gap-3 text-2xl font-semibold">
+        <i class="pi pi-lock text-primary" aria-hidden="true"></i>
+        <span class="font-serif tracking-tight">Authorize access</span>
+      </div>
+    </template>
+    <template #subtitle>
+      <span class="text-base text-[var(--p-text-muted-color)]">
+        Review the request and decide whether to grant access.
+      </span>
+    </template>
+    <template #content>
+      <div v-if="loading" class="text-sm text-[var(--p-text-muted-color)]">
+        Loading authorization details…
+      </div>
+      <div v-else class="flex flex-col gap-4">
+        <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+        <template v-else>
+          <div class="flex items-center gap-3">
+            <Avatar
+              v-if="authorization?.client.logo_uri"
+              :image="authorization.client.logo_uri"
+              shape="circle"
+              size="large"
+              :aria-label="authorization.client.name || 'Client logo'"
+              class="shrink-0"
+            />
+            <div>
+              <p class="text-lg font-semibold">
+                {{ authorization?.client.name || 'Unnamed application' }}
+              </p>
+              <p class="text-sm text-[var(--p-text-muted-color)]">
+                {{ authorization?.client.uri || 'No client URL provided' }}
+              </p>
+            </div>
           </div>
-        </template>
-        <template #subtitle>
-          <span class="text-base text-slate-600">
-            Review the request and decide whether to grant access.
-          </span>
-        </template>
-        <template #content>
-          <div v-if="loading" class="text-sm text-slate-600">Loading authorization details…</div>
-          <div v-else class="flex flex-col gap-4">
-            <p v-if="error" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-              {{ error }}
+          <div>
+            <p class="text-sm font-semibold">Requested scopes</p>
+            <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-[var(--p-text-muted-color)]">
+              <li v-for="scope in scopes" :key="scope">{{ scope }}</li>
+            </ul>
+          </div>
+          <div>
+            <p class="text-sm font-semibold">Redirect URI</p>
+            <p class="mt-1 break-all text-sm text-[var(--p-text-muted-color)]">
+              {{ authorization?.redirect_uri }}
             </p>
-            <template v-else>
-              <div class="flex items-center gap-3">
-                <div
-                  v-if="authorization?.client.logo_uri"
-                  class="h-12 w-12 overflow-hidden rounded-full border border-slate-200"
-                >
-                  <img
-                    :src="authorization.client.logo_uri"
-                    :alt="authorization.client.name || 'Client logo'"
-                    class="h-full w-full object-cover"
-                  />
-                </div>
-                <div>
-                  <p class="text-lg font-semibold text-slate-900">
-                    {{ authorization?.client.name || 'Unnamed application' }}
-                  </p>
-                  <p class="text-sm text-slate-600">
-                    {{ authorization?.client.uri || 'No client URL provided' }}
-                  </p>
-                </div>
-              </div>
-              <div>
-                <p class="text-sm font-semibold text-slate-800">Requested scopes</p>
-                <ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-slate-700">
-                  <li v-for="scope in scopes" :key="scope">{{ scope }}</li>
-                </ul>
-              </div>
-              <div>
-                <p class="text-sm font-semibold text-slate-800">Redirect URI</p>
-                <p class="mt-1 break-all text-sm text-slate-600">
-                  {{ authorization?.redirect_uri }}
-                </p>
-              </div>
-            </template>
           </div>
         </template>
-        <template #footer>
-          <div class="flex flex-wrap items-center gap-3">
-            <Button
-              label="Approve"
-              icon="pi pi-check"
-              :loading="submitting"
-              :disabled="!authorization || !!error"
-              data-test="oauth-approve"
-              @click="submitConsent('approve')"
-            />
-            <Button
-              label="Deny"
-              severity="secondary"
-              icon="pi pi-times"
-              :loading="submitting"
-              :disabled="!authorization || !!error"
-              data-test="oauth-deny"
-              @click="submitConsent('deny')"
-            />
-          </div>
-        </template>
-      </Card>
-    </section>
-  </div>
+      </div>
+    </template>
+    <template #footer>
+      <div class="flex flex-wrap items-center gap-3">
+        <Button
+          label="Approve"
+          icon="pi pi-check"
+          :loading="submitting"
+          :disabled="!authorization || !!error"
+          data-test="oauth-approve"
+          @click="submitConsent('approve')"
+        />
+        <Button
+          label="Deny"
+          severity="secondary"
+          icon="pi pi-times"
+          :loading="submitting"
+          :disabled="!authorization || !!error"
+          data-test="oauth-deny"
+          @click="submitConsent('deny')"
+        />
+      </div>
+    </template>
+  </Card>
 </template>
 
 <script setup lang="ts">
+definePageMeta({ layout: 'auth' });
+
 import { computed, onMounted, ref } from 'vue';
 import { navigateTo, useRoute, useRuntimeConfig, useSupabaseClient } from '#imports';
-import Button from 'primevue/button';
-import Card from 'primevue/card';
 
 type AuthorizationDetails = {
   authorization_id: string;

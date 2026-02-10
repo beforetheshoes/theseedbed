@@ -95,6 +95,40 @@ describe('oauth consent page', () => {
     expect(navigateToMock).not.toHaveBeenCalled();
   });
 
+  it('renders the client logo when logo_uri is present', async () => {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        authorization_id: 'auth-123',
+        redirect_uri: 'https://theseedbed.app/oauth/callback',
+        scope: 'profile.read library.read',
+        client: {
+          id: 'client-1',
+          name: 'The Seedbed',
+          uri: 'https://theseedbed.app',
+          logo_uri: 'https://example.com/logo.png',
+        },
+        user: {
+          id: 'user-1',
+          email: 'reader@theseedbed.app',
+        },
+      }),
+    }) as typeof globalThis.fetch;
+
+    const wrapper = mount(ConsentPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+        stubs: {
+          Avatar: { template: '<div data-test="client-logo"></div>' },
+        },
+      },
+    });
+
+    await flushPromises();
+
+    expect(wrapper.find('[data-test="client-logo"]').exists()).toBe(true);
+  });
+
   it('shows an error when authorization_id is missing', async () => {
     state.route = { query: {}, fullPath: '/oauth/consent' };
 

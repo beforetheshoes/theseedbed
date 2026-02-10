@@ -1,4 +1,5 @@
 import type { Config } from 'tailwindcss';
+import typography from '@tailwindcss/typography';
 
 export default {
   content: [
@@ -9,8 +10,18 @@ export default {
     './plugins/**/*.{js,ts}',
     './nuxt.config.ts',
   ],
-  theme: {
-    extend: {},
+  darkMode: 'class',
+  // PrimeVue provides full component styling; Tailwind Preflight resets conflict with it.
+  corePlugins: {
+    preflight: false,
   },
-  plugins: [],
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['"IBM Plex Sans"', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        serif: ['"Fraunces"', 'ui-serif', 'Georgia', 'serif'],
+      },
+    },
+  },
+  plugins: [typography],
 } satisfies Config;

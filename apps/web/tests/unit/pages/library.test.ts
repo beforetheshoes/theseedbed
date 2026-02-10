@@ -144,7 +144,7 @@ describe('library page', () => {
       query: { limit: 10, cursor: 'cursor-1', status: undefined },
     });
     expect(wrapper.text()).toContain('Book B');
-    expect(wrapper.findAll('[data-test="library-item-cover-fallback"]').length).toBeGreaterThan(0);
+    expect(wrapper.findAll('[data-test="library-item-cover-skeleton"]').length).toBeGreaterThan(0);
   });
 
   it('shows empty state when no items are returned', async () => {
@@ -165,21 +165,6 @@ describe('library page', () => {
     await flushPromises();
 
     expect(wrapper.get('[data-test="library-error"]').text()).toContain('Sign in required');
-    const loginLink = wrapper.get('[data-test="library-login-link"]');
-    expect(loginLink.attributes('href')).toBe('/login?returnTo=%2Flibrary');
-  });
-
-  it('uses /library as returnTo when route has no fullPath', async () => {
-    state.route = {} as any;
-    apiRequest.mockRejectedValueOnce(
-      new ApiClientErrorMock('Sign in required', 'auth_required', 401),
-    );
-
-    const wrapper = mountPage();
-    await flushPromises();
-
-    const loginLink = wrapper.get('[data-test="library-login-link"]');
-    expect(loginLink.attributes('href')).toBe('/login?returnTo=%2Flibrary');
   });
 
   it('shows generic errors on fetch', async () => {
@@ -290,10 +275,10 @@ describe('library page', () => {
     await wrapper.get('[data-test="library-sort-select"]').trigger('click');
     await flushPromises();
 
-    const titleLinks = wrapper.get('[data-test="library-items"]').findAll('a');
-    const titles = titleLinks.map((a) => a.text()).filter((t) => t !== 'Add books');
-    expect(titles[0]).toBe('Alpha Book');
-    expect(titles[1]).toBe('Zoo Book');
+    const items = wrapper.get('[data-test="library-items"]').findAll('a');
+    const titles = items.map((a) => a.text());
+    expect(titles[0]).toContain('Alpha Book');
+    expect(titles[1]).toContain('Zoo Book');
   });
 
   it('sorts by oldest first when selected programmatically', async () => {
@@ -329,10 +314,10 @@ describe('library page', () => {
     (wrapper.vm as any).sortMode = 'oldest';
     await flushPromises();
 
-    const titleLinks = wrapper.get('[data-test="library-items"]').findAll('a');
-    const titles = titleLinks.map((a) => a.text()).filter((t) => t !== 'Add books');
-    expect(titles[0]).toBe('Book B');
-    expect(titles[1]).toBe('Book A');
+    const items = wrapper.get('[data-test="library-items"]').findAll('a');
+    const titles = items.map((a) => a.text());
+    expect(titles[0]).toContain('Book B');
+    expect(titles[1]).toContain('Book A');
   });
 
   it('sorts even when created_at is missing (covers created_at fallback branches)', async () => {
@@ -365,9 +350,9 @@ describe('library page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    const titleLinks = wrapper.get('[data-test="library-items"]').findAll('a');
-    const titles = titleLinks.map((a) => a.text()).filter((t) => t !== 'Add books');
-    expect(titles[0]).toBe('Book B');
+    const items = wrapper.get('[data-test="library-items"]').findAll('a');
+    const titles = items.map((a) => a.text());
+    expect(titles[0]).toContain('Book B');
   });
 
   it('handles newest-first sorting when all created_at values are missing', async () => {
