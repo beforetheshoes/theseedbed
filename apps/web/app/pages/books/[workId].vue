@@ -10,7 +10,11 @@
               {{ work?.title || 'Book detail' }}
             </span>
           </div>
-          <Tag v-if="libraryItem" :value="libraryItem.status" severity="secondary" />
+          <Tag
+            v-if="libraryItem"
+            :value="libraryStatusLabel(libraryItem.status)"
+            severity="secondary"
+          />
         </div>
       </template>
       <template #content>
@@ -517,6 +521,7 @@ definePageMeta({ layout: 'app', middleware: 'auth' });
 import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from '#imports';
 import { ApiClientError, apiRequest } from '~/utils/api';
+import { libraryStatusLabel } from '~/utils/libraryStatus';
 import type { FileUploadSelectEvent } from 'primevue/fileupload';
 
 type WorkDetail = {

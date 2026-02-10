@@ -299,6 +299,7 @@ describe('book detail page', () => {
     // Initial render exercises not-loaded -> loaded states and seeded review.
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.text()).toContain('Author A');
+    expect(wrapper.text()).toContain('Reading');
     expect(wrapper.text()).toContain('No sessions yet.');
     expect(wrapper.text()).toContain('No notes yet.');
     expect(wrapper.text()).toContain('No highlights yet.');
