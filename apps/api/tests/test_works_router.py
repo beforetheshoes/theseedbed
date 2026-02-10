@@ -12,6 +12,7 @@ from app.core.config import Settings, get_settings
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
 from app.routers.works import router as works_router
+from app.services.storage import StorageNotConfiguredError
 
 
 @pytest.fixture
@@ -157,3 +158,19 @@ def test_select_work_cover_returns_502_on_cache_failure(
         f"/api/v1/works/{uuid.uuid4()}/covers/select", json={"cover_id": 123}
     )
     assert response.status_code == 502
+
+
+def test_select_work_cover_returns_503_when_storage_not_configured(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise StorageNotConfiguredError("SUPABASE_SERVICE_ROLE_KEY is not configured")
+
+    monkeypatch.setattr("app.routers.works.select_openlibrary_cover", _boom)
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/covers/select", json={"cover_id": 123}
+    )
+    assert response.status_code == 503
+    payload = response.json()
+    assert payload["detail"]["code"] == "cover_upload_unavailable"

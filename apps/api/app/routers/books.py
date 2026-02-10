@@ -18,6 +18,7 @@ from app.services.catalog import import_openlibrary_bundle
 from app.services.covers import cache_edition_cover_from_url
 from app.services.manual_books import create_manual_book
 from app.services.open_library import OpenLibraryClient
+from app.services.storage import StorageNotConfiguredError
 
 
 class ImportBookRequest(BaseModel):
@@ -161,5 +162,13 @@ async def create_manual(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except StorageNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "cover_upload_unavailable",
+                "message": "Cover uploads are temporarily unavailable. Please try again later.",
+            },
+        ) from exc
 
     return ok(result)

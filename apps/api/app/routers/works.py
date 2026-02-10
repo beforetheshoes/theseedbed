@@ -13,6 +13,7 @@ from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
 from app.services.open_library import OpenLibraryClient
+from app.services.storage import StorageNotConfiguredError
 from app.services.work_covers import (
     list_openlibrary_cover_candidates,
     select_openlibrary_cover,
@@ -106,6 +107,14 @@ async def select_cover(
             detail={
                 "code": "cover_cache_failed",
                 "message": "Unable to cache cover image right now. Please try again shortly.",
+            },
+        ) from exc
+    except StorageNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "cover_upload_unavailable",
+                "message": "Cover uploads are temporarily unavailable. Please try again later.",
             },
         ) from exc
 

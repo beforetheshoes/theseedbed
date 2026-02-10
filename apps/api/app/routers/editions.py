@@ -17,6 +17,7 @@ from app.services.manual_covers import (
     cache_edition_cover_from_source_url,
     set_edition_cover_from_upload,
 )
+from app.services.storage import StorageNotConfiguredError
 
 router = APIRouter(
     prefix="/api/v1/editions",
@@ -55,6 +56,14 @@ async def upload_cover(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except StorageNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "cover_upload_unavailable",
+                "message": "Cover uploads are temporarily unavailable. Please try again later.",
+            },
+        ) from exc
     return ok(result)
 
 
@@ -80,4 +89,12 @@ async def cache_cover(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except StorageNotConfiguredError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "cover_upload_unavailable",
+                "message": "Cover uploads are temporarily unavailable. Please try again later.",
+            },
+        ) from exc
     return ok(result)
