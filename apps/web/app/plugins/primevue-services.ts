@@ -4,6 +4,12 @@ import ToastService from 'primevue/toastservice';
 
 export default defineNuxtPlugin((nuxtApp) => {
   // Provide PrimeVue service injections for useToast/useConfirm in both SSR and client.
-  nuxtApp.vueApp.use(ToastService);
-  nuxtApp.vueApp.use(ConfirmationService);
+  // @primevue/nuxt-module may also install these; Vue warns if a plugin is applied twice.
+  const plugins: Set<unknown> | undefined = (nuxtApp.vueApp as any)?._context?.plugins;
+  if (!plugins?.has(ToastService)) {
+    nuxtApp.vueApp.use(ToastService);
+  }
+  if (!plugins?.has(ConfirmationService)) {
+    nuxtApp.vueApp.use(ConfirmationService);
+  }
 });

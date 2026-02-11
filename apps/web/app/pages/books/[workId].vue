@@ -59,6 +59,14 @@
                   data-test="set-cover"
                   @click="openCoverDialog"
                 />
+                <Button
+                  label="Remove from library"
+                  size="small"
+                  severity="danger"
+                  variant="text"
+                  data-test="book-remove-open"
+                  @click="openRemoveConfirm"
+                />
               </div>
             </div>
 
@@ -528,6 +536,41 @@
       </div>
     </Dialog>
 
+    <!-- Remove-from-library dialog -->
+    <Dialog
+      v-model:visible="removeConfirmOpen"
+      modal
+      header="Remove from library"
+      :draggable="false"
+      style="width: 32rem"
+      data-test="book-remove-dialog"
+    >
+      <div class="flex flex-col gap-4">
+        <div>
+          <p class="text-sm text-[var(--p-text-muted-color)]">
+            Remove "{{ work?.title || '' }}" from your library? This cannot be undone.
+          </p>
+        </div>
+        <div class="flex items-center justify-end gap-2">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            variant="text"
+            data-test="book-remove-cancel"
+            :disabled="removeConfirmLoading"
+            @click="cancelRemoveConfirm"
+          />
+          <Button
+            label="Remove"
+            severity="danger"
+            data-test="book-remove-confirm"
+            :loading="removeConfirmLoading"
+            @click="confirmRemove"
+          />
+        </div>
+      </div>
+    </Dialog>
+
     <!-- Review -->
     <Card v-if="libraryItem">
       <template #title>
@@ -580,11 +623,14 @@
 definePageMeta({ layout: 'app', middleware: 'auth' });
 
 import { computed, onMounted, ref, watch } from 'vue';
-import { useRoute } from '#imports';
+import { navigateTo, useRoute } from '#imports';
+import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
 import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 import type { FileUploadSelectEvent } from 'primevue/fileupload';
+
+const toast = useToast();
 
 type WorkDetail = {
   id: string;
@@ -697,6 +743,9 @@ const setPreferredEdition = ref(true);
 const coverCandidatesLoading = ref(false);
 const coverCandidates = ref<{ cover_id: number; thumbnail_url: string; image_url: string }[]>([]);
 const coverSelectingId = ref<number | null>(null);
+
+const removeConfirmOpen = ref(false);
+const removeConfirmLoading = ref(false);
 
 const runId = ref(0);
 
@@ -910,6 +959,44 @@ const refresh = async () => {
   void loadNotes();
   void loadHighlights();
   void loadReview();
+};
+
+const openRemoveConfirm = () => {
+  removeConfirmOpen.value = true;
+};
+
+const cancelRemoveConfirm = () => {
+  if (removeConfirmLoading.value) return;
+  removeConfirmOpen.value = false;
+};
+
+const confirmRemove = async () => {
+  if (!libraryItem.value) return;
+  removeConfirmLoading.value = true;
+  error.value = '';
+  try {
+    await apiRequest(`/api/v1/library/items/${libraryItem.value.id}`, { method: 'DELETE' });
+    toast.add({ severity: 'success', summary: 'Removed from your library.', life: 2500 });
+    removeConfirmOpen.value = false;
+    await navigateTo('/library');
+  } catch (err) {
+    if (err instanceof ApiClientError && err.status === 404) {
+      toast.add({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+        life: 3000,
+      });
+      removeConfirmOpen.value = false;
+      await navigateTo('/library');
+    } else {
+      const msg =
+        err instanceof ApiClientError ? err.message : 'Unable to remove this item right now.';
+      toast.add({ severity: 'error', summary: msg, life: 3000 });
+      error.value = msg;
+    }
+  } finally {
+    removeConfirmLoading.value = false;
+  }
 };
 
 const openCoverDialog = async () => {
