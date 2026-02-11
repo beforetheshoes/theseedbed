@@ -191,7 +191,7 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'app', middleware: 'auth' });
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
@@ -211,6 +211,7 @@ type LibraryItem = {
   tags?: string[];
   created_at?: string;
 };
+const LIBRARY_UPDATED_EVENT = 'chapterverse:library-updated';
 
 const items = ref<LibraryItem[]>([]);
 const statusFilter = ref<string>('');
@@ -342,7 +343,16 @@ watch(statusFilter, () => {
   void fetchPage(false);
 });
 
-onMounted(() => {
+const onLibraryUpdated = () => {
   void fetchPage(false);
+};
+
+onMounted(() => {
+  window.addEventListener(LIBRARY_UPDATED_EVENT, onLibraryUpdated);
+  void fetchPage(false);
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener(LIBRARY_UPDATED_EVENT, onLibraryUpdated);
 });
 </script>

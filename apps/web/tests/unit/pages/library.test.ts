@@ -205,6 +205,35 @@ describe('library page', () => {
     });
   });
 
+  it('refetches when a library-updated event is dispatched', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+      .mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    mountPage();
+    await flushPromises();
+
+    window.dispatchEvent(new Event('chapterverse:library-updated'));
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
+      query: { limit: 10, cursor: undefined, status: undefined },
+    });
+  });
+
+  it('registers and removes the library-updated event listener on mount/unmount', async () => {
+    const addSpy = vi.spyOn(window, 'addEventListener');
+    const removeSpy = vi.spyOn(window, 'removeEventListener');
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    wrapper.unmount();
+
+    expect(addSpy).toHaveBeenCalledWith('chapterverse:library-updated', expect.any(Function));
+    expect(removeSpy).toHaveBeenCalledWith('chapterverse:library-updated', expect.any(Function));
+  });
+
   it('filters by tag substring (case-insensitive)', async () => {
     apiRequest.mockResolvedValueOnce({
       items: [
