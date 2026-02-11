@@ -7,6 +7,7 @@ const state = vi.hoisted(() => ({
 }));
 
 const apiRequest = vi.hoisted(() => vi.fn());
+const toastAdd = vi.hoisted(() => vi.fn());
 const ApiClientErrorMock = vi.hoisted(
   () =>
     class ApiClientError extends Error {
@@ -26,6 +27,10 @@ vi.mock('~/utils/api', () => ({
   ApiClientError: ApiClientErrorMock,
 }));
 
+vi.mock('primevue/usetoast', () => ({
+  useToast: () => ({ add: toastAdd }),
+}));
+
 vi.mock('#imports', () => ({
   useRoute: () => state.route,
 }));
@@ -38,6 +43,12 @@ const mountPage = () =>
       plugins: [[PrimeVue, { ripple: false }]],
       stubs: {
         NuxtLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+        Dialog: {
+          name: 'Dialog',
+          props: ['visible', 'header'],
+          emits: ['update:visible'],
+          template: '<div v-if="visible" v-bind="$attrs"><slot /></div>',
+        },
         Select: {
           props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
           emits: ['update:modelValue'],
@@ -69,6 +80,7 @@ const mountPage = () =>
 describe('library page', () => {
   beforeEach(() => {
     apiRequest.mockReset();
+    toastAdd.mockReset();
     state.route = { fullPath: '/library' };
   });
 
@@ -436,5 +448,207 @@ describe('library page', () => {
 
     expect(wrapper.find('[data-test="library-load-more"]').exists()).toBe(false);
     expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('opens remove confirm and deletes an item on confirm', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: 'https://example.com/cover.jpg',
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ deleted: true });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-remove"]').trigger('click');
+    expect(wrapper.find('[data-test="library-remove-dialog"]').exists()).toBe(true);
+
+    await wrapper.get('[data-test="library-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/item-1', { method: 'DELETE' });
+    expect(wrapper.text()).not.toContain('Book A');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Removed from your library.' }),
+    );
+  });
+
+  it('handles 404 already-removed by toasting and refreshing', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: [],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: [],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Not found', 'not_found', 404))
+      .mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-remove"]').trigger('click');
+    await wrapper.get('[data-test="library-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+      }),
+    );
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls.length).toBe(2);
+  });
+
+  it('closes the remove dialog on cancel (and does not close while loading)', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: [],
+          cover_url: null,
+          status: 'to_read',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-remove"]').trigger('click');
+    expect(wrapper.find('[data-test="library-remove-dialog"]').exists()).toBe(true);
+
+    (wrapper.vm as any).removeConfirmLoading = true;
+    await flushPromises();
+    (wrapper.vm as any).cancelRemoveConfirm();
+    await flushPromises();
+    expect(wrapper.find('[data-test="library-remove-dialog"]').exists()).toBe(true);
+
+    (wrapper.vm as any).removeConfirmLoading = false;
+    await flushPromises();
+    (wrapper.vm as any).cancelRemoveConfirm();
+    await flushPromises();
+    expect(wrapper.find('[data-test="library-remove-dialog"]').exists()).toBe(false);
+  });
+
+  it('shows an error toast and keeps the dialog open when delete fails', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: [],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: [],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-remove"]').trigger('click');
+    await wrapper.get('[data-test="library-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/item-1', { method: 'DELETE' });
+    expect(wrapper.find('[data-test="library-remove-dialog"]').exists()).toBe(true);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'Unable to remove this item right now.',
+      }),
+    );
+  });
+
+  it('renders the remove dialog message when the pending item is null (covers nullish branches)', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).pendingRemoveItem = null;
+    (wrapper.vm as any).removeConfirmOpen = true;
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="library-remove-dialog"]').text()).toContain('Remove ""');
+  });
+
+  it('falls back to an empty title when pending item is missing work_title', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).pendingRemoveItem = { id: 'item-1', work_id: 'work-1' } as any;
+    (wrapper.vm as any).removeConfirmOpen = true;
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="library-remove-dialog"]').text()).toContain('Remove ""');
+  });
+
+  it('does nothing when confirming remove without a pending item', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).pendingRemoveItem = null;
+    await flushPromises();
+    await (wrapper.vm as any).confirmRemove();
+    await flushPromises();
+
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls.length).toBe(1);
+  });
+
+  it('falls back to an empty title when pending item has a null work_title', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).pendingRemoveItem = { id: 'item-1', work_id: 'work-1', work_title: null };
+    (wrapper.vm as any).removeConfirmOpen = true;
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="library-remove-dialog"]').text()).toContain('Remove ""');
   });
 });

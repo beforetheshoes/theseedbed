@@ -11,6 +11,8 @@ const state = vi.hoisted(() => ({
 }));
 
 const apiRequest = vi.hoisted(() => vi.fn());
+const toastAdd = vi.hoisted(() => vi.fn());
+const navigateToMock = vi.hoisted(() => vi.fn());
 const ApiClientErrorMock = vi.hoisted(
   () =>
     class ApiClientError extends Error {
@@ -30,8 +32,13 @@ vi.mock('~/utils/api', () => ({
   ApiClientError: ApiClientErrorMock,
 }));
 
+vi.mock('primevue/usetoast', () => ({
+  useToast: () => ({ add: toastAdd }),
+}));
+
 vi.mock('#imports', () => ({
   useRoute: () => state.route,
+  navigateTo: navigateToMock,
 }));
 
 import BookDetailPage from '../../../app/pages/books/[workId].vue';
@@ -51,13 +58,13 @@ const mountPage = () =>
           props: ['visible', 'header'],
           emits: ['update:visible'],
           template:
-            '<div v-if="visible" data-test="dialog"><slot /></div><div v-else data-test="dialog-hidden"></div>',
+            '<div v-if="visible" v-bind="$attrs"><div data-test="dialog"><slot /></div></div><div v-else data-test="dialog-hidden"></div>',
         },
         Button: {
           props: ['label', 'loading'],
           emits: ['click'],
           template:
-            '<button :disabled="loading" @click="$emit(`click`, $event)"><slot :class="`p-button`">{{ label }}</slot></button>',
+            '<button v-bind="$attrs" :disabled="loading" @click="$emit(`click`, $event)"><slot :class="`p-button`">{{ label }}</slot></button>',
         },
         InputText: {
           props: ['modelValue', 'placeholder'],
@@ -153,6 +160,8 @@ describe('book detail page', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-02-08T00:00:00.000Z'));
     apiRequest.mockReset();
+    toastAdd.mockReset();
+    navigateToMock.mockReset();
     state.route.fullPath = '/books/work-1';
     state.route.params.workId = 'work-1';
   });
@@ -183,6 +192,256 @@ describe('book detail page', () => {
     expect(wrapper.findAll('[data-test="book-detail-cover-placeholder"]').length).toBe(1);
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/works/work-1');
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/by-work/work-1');
+  });
+
+  it('removes a library item after confirmation and redirects back to the library', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+
+      if (url === '/api/v1/library/items/item-1' && method === 'DELETE') {
+        return { deleted: true };
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="book-remove-open"]').trigger('click');
+    expect(wrapper.find('[data-test="book-remove-dialog"]').exists()).toBe(true);
+
+    await wrapper.get('[data-test="book-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/item-1', { method: 'DELETE' });
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Removed from your library.' }),
+    );
+    expect(navigateToMock).toHaveBeenCalledWith('/library');
+  });
+
+  it('handles 404 already-removed delete by toasting and redirecting', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+
+      if (url === '/api/v1/library/items/item-1' && method === 'DELETE') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="book-remove-open"]').trigger('click');
+    await wrapper.get('[data-test="book-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+      }),
+    );
+    expect(navigateToMock).toHaveBeenCalledWith('/library');
+  });
+
+  it('surfaces non-404 remove errors without closing the dialog', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+
+      if (url === '/api/v1/library/items/item-1' && method === 'DELETE') {
+        throw new ApiClientErrorMock('Server error', 'server_error', 500);
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="book-remove-open"]').trigger('click');
+    await wrapper.get('[data-test="book-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect(wrapper.find('[data-test="book-remove-dialog"]').exists()).toBe(true);
+    expect(wrapper.get('[data-test="book-detail-error"]').text()).toContain('Server error');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Server error' }),
+    );
+    expect(navigateToMock).not.toHaveBeenCalled();
+  });
+
+  it('closes the remove dialog on cancel unless loading (covers cancel branches and empty-title branch)', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        return { items: [] };
+      }
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="book-remove-open"]').trigger('click');
+    (wrapper.vm as any).work = null;
+    await flushPromises();
+    const findRemoveDialog = () => {
+      const dialogs = wrapper.findAllComponents({ name: 'Dialog' });
+      const match = dialogs.find((d: any) => d.props?.('header') === 'Remove from library');
+      expect(match).toBeTruthy();
+      return match!;
+    };
+    expect(findRemoveDialog().find('[data-test="dialog"]').text()).toContain('Remove ""');
+
+    (wrapper.vm as any).removeConfirmLoading = true;
+    await flushPromises();
+    (wrapper.vm as any).cancelRemoveConfirm();
+    await flushPromises();
+    expect(findRemoveDialog().props('visible')).toBe(true);
+    expect(findRemoveDialog().find('[data-test="dialog"]').exists()).toBe(true);
+
+    (wrapper.vm as any).removeConfirmLoading = false;
+    await flushPromises();
+    expect((wrapper.vm as any).removeConfirmLoading).toBe(false);
+    (wrapper.vm as any).cancelRemoveConfirm();
+    await flushPromises();
+    expect((wrapper.vm as any).removeConfirmOpen).toBe(false);
+    expect(findRemoveDialog().props('visible')).toBe(false);
+    expect(findRemoveDialog().find('[data-test="dialog"]').exists()).toBe(false);
   });
 
   it('loads details and supports CRUD flows (happy path)', async () => {
