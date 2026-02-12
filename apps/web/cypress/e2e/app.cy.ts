@@ -1,20 +1,18 @@
 describe('home page', () => {
-  it('renders the app title', () => {
+  it('redirects / to login when signed out', () => {
     cy.visit('/');
-    cy.get('[data-test="hero-title"]').should('contain', 'The Seedbed');
-    cy.get('[data-test="primary-cta"]').should('contain', 'Explore library');
-    cy.get('[data-test="primary-cta"]').should('have.attr', 'href', '/library');
-    cy.get('[data-test="hero-email-input"]').should('exist');
+    cy.get('html', { timeout: 15000 }).should('have.attr', 'data-app-ready', 'true');
+    cy.location('pathname').should('eq', '/login');
+    cy.get('[data-test="login-card"]').should('contain', 'Welcome back');
   });
 
   it('renders search and library pages', () => {
     cy.visit('/books/search');
-    cy.get('[data-test="search-card"]', { timeout: 15000 }).should(
-      'contain',
-      'Search and import books',
-    );
+    cy.get('html', { timeout: 15000 }).should('have.attr', 'data-app-ready', 'true');
+    cy.get('[data-test="login-card"]', { timeout: 15000 }).should('contain', 'Welcome back');
 
     cy.visit('/library');
-    cy.get('[data-test="library-card"]', { timeout: 15000 }).should('contain', 'Your library');
+    cy.get('html', { timeout: 15000 }).should('have.attr', 'data-app-ready', 'true');
+    cy.get('[data-test="login-card"]', { timeout: 15000 }).should('contain', 'Welcome back');
   });
 });

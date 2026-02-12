@@ -1,21 +1,26 @@
 <template>
-  <div class="min-h-screen bg-slate-950/5 text-slate-900">
-    <section class="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-12">
-      <Card class="shadow-lg" data-test="search-card">
-        <template #title>
-          <div class="flex items-center justify-between gap-4">
-            <div class="flex items-center gap-3 text-2xl font-semibold">
-              <i class="pi pi-search text-emerald-600" aria-hidden="true"></i>
-              <span>Search and import books</span>
-            </div>
-            <NuxtLink to="/library" class="text-sm font-medium text-emerald-700 hover:underline">
-              View library
-            </NuxtLink>
+  <Card data-test="search-card">
+    <template #title>
+      <div class="flex items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <i class="pi pi-search text-primary" aria-hidden="true"></i>
+          <div>
+            <p class="font-serif text-xl font-semibold tracking-tight">Search and import books</p>
+            <p class="text-sm text-[var(--p-text-muted-color)]">
+              Import from Open Library into your library.
+            </p>
           </div>
-        </template>
-        <template #content>
-          <div class="flex flex-col gap-4">
-            <div class="grid gap-4 md:grid-cols-[1fr_200px]">
+        </div>
+        <Button asChild v-slot="slotProps" size="small" severity="secondary" variant="outlined">
+          <NuxtLink to="/library" :class="slotProps.class">View library</NuxtLink>
+        </Button>
+      </div>
+    </template>
+    <template #content>
+      <div class="flex flex-col gap-4">
+        <Card>
+          <template #content>
+            <div class="grid w-full gap-3 md:grid-cols-[1fr_220px]">
               <InputText
                 v-model="query"
                 class="w-full"
@@ -30,84 +35,107 @@
                 data-test="status-select"
               />
             </div>
+          </template>
+        </Card>
 
-            <p v-if="hint" class="text-sm text-slate-600" data-test="search-hint">{{ hint }}</p>
-            <p
-              v-if="error"
-              class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700"
-              data-test="search-error"
-            >
-              {{ error }}
-            </p>
-            <NuxtLink
-              v-if="authRequired"
-              :to="loginHref"
-              class="text-sm font-medium text-emerald-700 hover:underline"
-              data-test="search-login-link"
-            >
-              Sign in to continue
-            </NuxtLink>
-            <p
-              v-if="message"
-              class="rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-700"
-              data-test="search-message"
-            >
-              {{ message }}
-            </p>
+        <p v-if="hint" class="text-sm text-[var(--p-text-muted-color)]" data-test="search-hint">
+          {{ hint }}
+        </p>
+        <Message v-if="error" severity="error" :closable="false" data-test="search-error">{{
+          error
+        }}</Message>
 
-            <div v-if="loading" class="text-sm text-slate-600" data-test="search-loading">
-              Searching...
-            </div>
+        <!-- Skeleton loading -->
+        <div v-if="loading" class="grid gap-3 md:grid-cols-2" data-test="search-loading">
+          <Card v-for="n in 4" :key="n">
+            <template #content>
+              <div class="flex flex-col gap-3">
+                <Skeleton width="75%" height="1.25rem" />
+                <Skeleton width="50%" height="1rem" />
+                <Skeleton width="25%" height="0.75rem" />
+                <Skeleton width="100%" height="2.25rem" borderRadius="0.5rem" class="mt-auto" />
+              </div>
+            </template>
+          </Card>
+        </div>
 
-            <div v-if="results.length" class="grid gap-3 md:grid-cols-2" data-test="search-results">
-              <Card
-                v-for="(book, index) in results"
-                :key="book.work_key"
-                class="border border-slate-200/70"
-              >
-                <template #content>
-                  <div class="flex h-full flex-col gap-3">
-                    <div>
-                      <p class="text-base font-semibold text-slate-900">{{ book.title }}</p>
-                      <p class="text-sm text-slate-600">
-                        {{ book.author_names.join(', ') || 'Unknown author' }}
-                      </p>
-                      <p v-if="book.first_publish_year" class="text-xs text-slate-500">
-                        First published: {{ book.first_publish_year }}
-                      </p>
-                    </div>
-                    <Button
-                      label="Import and add"
-                      class="mt-auto"
-                      :loading="importingWorkKey === book.work_key"
-                      :data-test="`search-add-${index}`"
-                      @click="importAndAdd(book.work_key)"
-                    />
+        <div
+          v-else-if="results.length"
+          class="grid gap-3 md:grid-cols-2"
+          data-test="search-results"
+        >
+          <Card v-for="(book, index) in results" :key="book.work_key">
+            <template #content>
+              <div class="flex h-full items-start gap-4">
+                <div
+                  class="h-[120px] w-[80px] shrink-0 overflow-hidden rounded-lg border border-[var(--p-content-border-color)] bg-black/5 dark:bg-white/5"
+                  data-test="search-item-thumb"
+                >
+                  <Image
+                    v-if="book.cover_url"
+                    :src="book.cover_url"
+                    alt=""
+                    :preview="false"
+                    class="h-full w-full"
+                    image-class="h-full w-full object-cover"
+                    data-test="search-item-cover"
+                  />
+                  <Skeleton
+                    v-else
+                    class="h-full w-full"
+                    borderRadius="0.5rem"
+                    data-test="search-item-cover-skeleton"
+                  />
+                </div>
+
+                <div class="flex h-full min-w-0 flex-1 flex-col gap-3">
+                  <div class="min-w-0">
+                    <p class="font-serif text-base font-semibold tracking-tight">
+                      {{ book.title }}
+                    </p>
+                    <p class="truncate text-sm text-[var(--p-text-muted-color)]">
+                      {{ book.author_names.join(', ') || 'Unknown author' }}
+                    </p>
+                    <p
+                      v-if="book.first_publish_year"
+                      class="text-xs text-[var(--p-text-muted-color)]"
+                    >
+                      First published: {{ book.first_publish_year }}
+                    </p>
                   </div>
-                </template>
-              </Card>
-            </div>
-          </div>
-        </template>
-      </Card>
-    </section>
-  </div>
+
+                  <Button
+                    label="Import and add"
+                    class="mt-auto self-start"
+                    :loading="importingWorkKey === book.work_key"
+                    :data-test="`search-add-${index}`"
+                    @click="importAndAdd(book.work_key)"
+                  />
+                </div>
+              </div>
+            </template>
+          </Card>
+        </div>
+      </div>
+    </template>
+  </Card>
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
-import { useRoute } from '#imports';
-import Button from 'primevue/button';
-import Card from 'primevue/card';
-import InputText from 'primevue/inputtext';
-import Select from 'primevue/select';
+definePageMeta({ layout: 'app', middleware: 'auth' });
+
+import { onBeforeUnmount, ref, watch } from 'vue';
+import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
+
+const toast = useToast();
 
 type SearchItem = {
   work_key: string;
   title: string;
   author_names: string[];
   first_publish_year: number | null;
+  cover_url: string | null;
 };
 
 const query = ref('');
@@ -118,11 +146,6 @@ const error = ref('');
 const message = ref('');
 const hint = ref('Type at least 2 characters to search.');
 const importingWorkKey = ref<string | null>(null);
-const authRequired = ref(false);
-const route = useRoute();
-const loginHref = computed(
-  () => `/login?returnTo=${encodeURIComponent(route.fullPath || '/books/search')}`,
-);
 
 const statusOptions = [
   { label: 'To read', value: 'to_read' },
@@ -144,7 +167,6 @@ const runSearch = async () => {
   error.value = '';
   message.value = '';
   hint.value = '';
-  authRequired.value = false;
 
   try {
     const payload = await apiRequest<{ items: SearchItem[] }>('/api/v1/books/search', {
@@ -162,7 +184,6 @@ const runSearch = async () => {
     results.value = [];
     if (err instanceof ApiClientError) {
       error.value = err.message;
-      authRequired.value = err.code === 'auth_required';
     } else {
       error.value = 'Unable to search books right now.';
     }
@@ -174,7 +195,7 @@ const runSearch = async () => {
 const importAndAdd = async (workKey: string) => {
   error.value = '';
   message.value = '';
-  authRequired.value = false;
+
   importingWorkKey.value = workKey;
 
   try {
@@ -191,13 +212,13 @@ const importAndAdd = async (workKey: string) => {
       },
     });
 
-    message.value = libraryResult.created
+    const msg = libraryResult.created
       ? 'Book imported and added to your library.'
       : 'Book is already in your library.';
+    toast.add({ severity: 'success', summary: msg, life: 3000 });
   } catch (err) {
     if (err instanceof ApiClientError) {
       error.value = err.message;
-      authRequired.value = err.code === 'auth_required';
     } else {
       error.value = 'Unable to import this book right now.';
     }

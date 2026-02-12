@@ -10,7 +10,22 @@ from starlette.responses import Response
 from app.core.audit import write_api_audit_log
 from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
-from app.routers import books, health, library, me, protected, version
+from app.core.schema_guard import run_schema_guard
+from app.routers import (
+    books,
+    editions,
+    health,
+    highlights,
+    library,
+    library_search,
+    me,
+    notes,
+    protected,
+    reviews,
+    sessions,
+    version,
+    works,
+)
 
 
 def create_app() -> FastAPI:
@@ -20,6 +35,11 @@ def create_app() -> FastAPI:
         description="API for The Seedbed book tracking application",
         version=settings.api_version,
     )
+
+    @app.on_event("startup")
+    def _schema_guard_startup() -> None:
+        run_schema_guard()
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=list(settings.cors_allowed_origins),
@@ -54,6 +74,14 @@ def create_app() -> FastAPI:
     app.include_router(version.router)
     app.include_router(protected.router)
     app.include_router(books.router)
+    app.include_router(editions.router)
     app.include_router(me.router)
     app.include_router(library.router)
+    app.include_router(library_search.router)
+    app.include_router(sessions.router)
+    app.include_router(notes.router)
+    app.include_router(highlights.router)
+    app.include_router(reviews.public_router)
+    app.include_router(reviews.router)
+    app.include_router(works.router)
     return app

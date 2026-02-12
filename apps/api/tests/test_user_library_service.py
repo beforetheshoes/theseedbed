@@ -13,19 +13,25 @@ from app.services.user_library import (
     _encode_cursor,
     create_or_get_library_item,
     delete_library_item,
+    get_library_item_by_work,
+    get_library_item_by_work_detail,
     get_or_create_profile,
     list_library_items,
+    search_library_items,
     update_library_item,
     update_profile,
 )
 
 
 class FakeExecuteResult:
-    def __init__(self, rows: list[tuple[Any, str]]) -> None:
+    def __init__(self, rows: list[tuple[Any, ...]]) -> None:
         self._rows = rows
 
-    def all(self) -> list[tuple[Any, str]]:
+    def all(self) -> list[tuple[Any, ...]]:
         return self._rows
+
+    def first(self) -> tuple[Any, ...] | None:
+        return self._rows[0] if self._rows else None
 
 
 class FakeSession:
@@ -33,7 +39,8 @@ class FakeSession:
         self.get_map: dict[tuple[type[Any], Any], Any] = {}
         self.scalar_values: list[Any] = []
         self.added: list[Any] = []
-        self.execute_rows: list[tuple[Any, str]] = []
+        self.execute_rows: list[tuple[Any, ...]] = []
+        self.execute_results: list[list[tuple[Any, ...]]] = []
         self.deleted: list[Any] = []
         self.committed = False
 
@@ -56,6 +63,8 @@ class FakeSession:
         self.committed = True
 
     def execute(self, _stmt: Any) -> FakeExecuteResult:
+        if self.execute_results:
+            return FakeExecuteResult(self.execute_results.pop(0))
         return FakeExecuteResult(self.execute_rows)
 
     def delete(self, obj: Any) -> None:
@@ -79,6 +88,40 @@ def test_cursor_decode_invalid_raises() -> None:
 def test_default_handle() -> None:
     user_id = uuid.UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
     assert _default_handle(user_id) == "user_aaaaaaaa"
+
+
+def test_search_library_items_shapes_items_and_authors() -> None:
+    session = FakeSession()
+    # First execute: base search rows
+    work_id = uuid.uuid4()
+    session.execute_results = [
+        [
+            (
+                work_id,
+                "Title",
+                "https://example.com/cover.jpg",
+                "/works/OL1W",
+            )
+        ],
+        # Second execute: author names by work
+        [(work_id, "B Author"), (work_id, "A Author"), (work_id, "A Author")],
+    ]
+
+    items = search_library_items(
+        session,  # type: ignore[arg-type]
+        user_id=uuid.uuid4(),
+        query="ti",
+        limit=10,
+    )
+    assert items == [
+        {
+            "work_id": str(work_id),
+            "work_title": "Title",
+            "author_names": ["A Author", "B Author"],
+            "cover_url": "https://example.com/cover.jpg",
+            "openlibrary_work_key": "/works/OL1W",
+        }
+    ]
 
 
 def test_get_or_create_profile_creates_when_missing() -> None:
@@ -270,7 +313,20 @@ def test_list_library_items_returns_cursor() -> None:
             "created_at": now,
         },
     )()
-    session.execute_rows = [(item1, "One"), (item2, "Two")]
+    session.execute_results = [
+        [
+            (
+                item1,
+                "One",
+                "First description",
+                None,
+                dt.datetime(2026, 2, 10, 12, 0, tzinfo=dt.UTC),
+            ),
+            (item2, "Two", None, "https://example.com/cover.jpg", None),
+        ],
+        # Author lookup for the page.
+        [(item1.work_id, "Author A"), (item1.work_id, "Author A")],
+    ]
 
     result = list_library_items(
         cast(Any, session),
@@ -282,7 +338,22 @@ def test_list_library_items_returns_cursor() -> None:
         visibility=None,
     )
     assert len(result["items"]) == 1
+    assert result["items"][0]["cover_url"] in (None, "https://example.com/cover.jpg")
+    assert result["items"][0]["work_description"] == "First description"
+    assert result["items"][0]["author_names"] == ["Author A"]
+    assert result["items"][0]["last_read_at"] == "2026-02-10T12:00:00+00:00"
     assert result["next_cursor"] is not None
+
+
+def test_get_library_item_by_work_returns_none_when_missing() -> None:
+    session = FakeSession()
+    session.scalar_values = [None]
+    item = get_library_item_by_work(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        work_id=uuid.uuid4(),
+    )
+    assert item is None
 
 
 def test_update_library_item_requires_at_least_one_field() -> None:
@@ -363,3 +434,30 @@ def test_delete_library_item_deletes_and_commits() -> None:
 
     assert session.deleted == [item]
     assert session.committed is True
+
+
+def test_get_library_item_by_work_detail_returns_cover_url() -> None:
+    session = FakeSession()
+    item = type(
+        "Item",
+        (),
+        {
+            "id": uuid.uuid4(),
+            "work_id": uuid.uuid4(),
+            "preferred_edition_id": None,
+            "status": "reading",
+            "visibility": "private",
+            "rating": None,
+            "tags": [],
+            "created_at": dt.datetime.now(tz=dt.UTC).replace(microsecond=0),
+        },
+    )()
+    session.execute_results = [[(item, "https://example.com/cover.jpg")]]
+
+    result = get_library_item_by_work_detail(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        work_id=item.work_id,
+    )
+    assert result is not None
+    assert result["cover_url"] == "https://example.com/cover.jpg"

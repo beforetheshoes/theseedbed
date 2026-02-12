@@ -62,10 +62,13 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
                     "id": str(uuid.uuid4()),
                     "work_id": str(uuid.uuid4()),
                     "work_title": "Book",
+                    "author_names": ["Author A"],
+                    "cover_url": None,
                     "status": status or "to_read",
                     "visibility": "private",
                     "rating": None,
                     "tags": [],
+                    "last_read_at": None,
                     "created_at": dt.datetime.now(tz=dt.UTC).isoformat(),
                 }
             ],
@@ -78,10 +81,12 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             SimpleNamespace(
                 id=uuid.uuid4(),
                 work_id=uuid.uuid4(),
+                preferred_edition_id=None,
                 status="to_read",
                 visibility="private",
                 rating=None,
                 tags=None,
+                created_at=dt.datetime.now(tz=dt.UTC),
             ),
             True,
         ),
@@ -91,6 +96,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         lambda session, *, user_id, item_id, updates: SimpleNamespace(
             id=item_id,
             work_id=uuid.uuid4(),
+            preferred_edition_id=updates.get("preferred_edition_id"),
             status=updates.get("status", "to_read"),
             visibility=updates.get("visibility", "private"),
             rating=updates.get("rating"),
@@ -139,6 +145,7 @@ def test_list_library_items(app: FastAPI) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["items"][0]["status"] == "reading"
+    assert "last_read_at" in response.json()["data"]["items"][0]
 
 
 def test_create_library_item(app: FastAPI) -> None:

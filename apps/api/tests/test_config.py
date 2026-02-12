@@ -13,6 +13,7 @@ def test_get_settings_blank_audience_and_reset_cache() -> None:
         os.environ["SUPABASE_JWT_AUDIENCE"] = ""
         os.environ["SUPABASE_JWT_SECRET"] = "local-secret"
         os.environ["SUPABASE_JWKS_CACHE_TTL_SECONDS"] = "120"
+        os.environ["SUPABASE_SERVICE_ROLE_KEY"] = ""
         os.environ["API_VERSION"] = "9.9.9"
         config_module.reset_settings_cache()
 
@@ -21,6 +22,9 @@ def test_get_settings_blank_audience_and_reset_cache() -> None:
         assert settings.supabase_jwt_audience is None
         assert settings.supabase_jwt_secret == "local-secret"
         assert settings.supabase_jwks_cache_ttl_seconds == 120
+        assert settings.supabase_service_role_key is None
+        assert settings.supabase_storage_covers_bucket == "covers"
+        assert settings.public_highlight_max_chars == 280
         assert settings.cors_allowed_origins == (
             "http://localhost:3000",
             "http://127.0.0.1:3000",
@@ -70,6 +74,91 @@ def test_get_settings_custom_cors_origins() -> None:
         os.environ.clear()
         os.environ.update(original_env)
         config_module.reset_settings_cache()
+
+
+def test_get_settings_parses_highlight_max_chars_and_bucket() -> None:
+    original_env = os.environ.copy()
+    try:
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
+        os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "role"
+        os.environ.pop("SUPABASE_SECRET_KEY", None)
+        os.environ["SUPABASE_STORAGE_COVERS_BUCKET"] = "mycovers"
+        os.environ["PUBLIC_HIGHLIGHT_MAX_CHARS"] = "123"
+        config_module.reset_settings_cache()
+
+        settings = config_module.get_settings()
+        assert settings.supabase_service_role_key == "role"
+        assert settings.supabase_storage_covers_bucket == "mycovers"
+        assert settings.public_highlight_max_chars == 123
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+        config_module.reset_settings_cache()
+
+
+def test_get_settings_prefers_secret_key_over_service_role_key() -> None:
+    original_env = os.environ.copy()
+    try:
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
+        os.environ["SUPABASE_SERVICE_ROLE_KEY"] = "legacy-service-role"
+        os.environ["SUPABASE_SECRET_KEY"] = "sb_secret_example"
+        config_module.reset_settings_cache()
+
+        settings = config_module.get_settings()
+        assert settings.supabase_service_role_key == "sb_secret_example"
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+        config_module.reset_settings_cache()
+
+
+def test_get_settings_highlight_max_chars_defaults_and_clamps() -> None:
+    original_env = os.environ.copy()
+    try:
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
+        os.environ["PUBLIC_HIGHLIGHT_MAX_CHARS"] = "not-a-number"
+        config_module.reset_settings_cache()
+        assert config_module.get_settings().public_highlight_max_chars == 280
+
+        os.environ["PUBLIC_HIGHLIGHT_MAX_CHARS"] = "0"
+        config_module.reset_settings_cache()
+        assert config_module.get_settings().public_highlight_max_chars == 1
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+        config_module.reset_settings_cache()
+
+
+def test_get_settings_storage_bucket_blank_defaults() -> None:
+    original_env = os.environ.copy()
+    try:
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
+        os.environ["SUPABASE_STORAGE_COVERS_BUCKET"] = "   "
+        config_module.reset_settings_cache()
+        assert config_module.get_settings().supabase_storage_covers_bucket == "covers"
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+        config_module.reset_settings_cache()
+
+
+def test_internal_config_helpers_cover_edge_branches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert config_module._normalize_env(None) is None
+    assert config_module._normalize_env("   ") is None
+    assert config_module._fallback_supabase_url_for_env("dev") is None
+
+    # APP_CONFIG_DIR set but not a directory should fall through.
+    marker = tmp_path / "not-a-dir"
+    marker.write_text("x", encoding="utf-8")
+    monkeypatch.setenv("APP_CONFIG_DIR", str(marker))
+    repo_root = config_module._find_repo_root()
+    assert repo_root != marker
+
+    # Force start_dir to '/' so start_dir.parents is empty, covering the fallback.
+    monkeypatch.setattr(config_module, "__file__", "/config.py")
+    assert str(config_module._find_repo_root()) == "/"
 
 
 def test_get_settings_falls_back_supabase_url_for_prod_env(tmp_path: Path) -> None:

@@ -9,8 +9,9 @@ from typing import Any, Literal, TypeAlias
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
-from app.db.models.bibliography import Work
-from app.db.models.users import LibraryItem, User
+from app.db.models.bibliography import Author, Edition, Work, WorkAuthor
+from app.db.models.external_provider import ExternalId
+from app.db.models.users import LibraryItem, ReadingSession, User
 
 LibraryItemStatus: TypeAlias = Literal[
     "to_read",
@@ -51,7 +52,10 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         return profile
 
     profile = User(
-        id=user_id, handle=_default_handle(user_id), display_name=None, avatar_url=None
+        id=user_id,
+        handle=_default_handle(user_id),
+        display_name=None,
+        avatar_url=None,
     )
     session.add(profile)
     session.commit()
@@ -141,9 +145,35 @@ def list_library_items(
     tag: str | None,
     visibility: str | None,
 ) -> dict[str, Any]:
+    last_read_subquery = (
+        sa.select(
+            ReadingSession.library_item_id.label("library_item_id"),
+            sa.func.max(ReadingSession.started_at).label("last_read_at"),
+        )
+        .where(ReadingSession.user_id == user_id)
+        .group_by(ReadingSession.library_item_id)
+        .subquery()
+    )
+
     stmt = (
-        sa.select(LibraryItem, Work.title)
+        sa.select(
+            LibraryItem,
+            Work.title,
+            Work.description,
+            sa.func.coalesce(
+                LibraryItem.cover_override_url,
+                Edition.cover_url,
+                Work.default_cover_url,
+            ).label("cover_url"),
+            last_read_subquery.c.last_read_at,
+        )
         .join(Work, Work.id == LibraryItem.work_id)
+        .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
+        .join(
+            last_read_subquery,
+            last_read_subquery.c.library_item_id == LibraryItem.id,
+            isouter=True,
+        )
         .where(LibraryItem.user_id == user_id)
         .order_by(LibraryItem.created_at.desc(), LibraryItem.id.desc())
     )
@@ -170,17 +200,43 @@ def list_library_items(
     has_next = len(rows) > limit
     selected = rows[:limit]
 
+    # Avoid N+1: fetch author names for the works in the current page in one query.
+    author_names_by_work: dict[uuid.UUID, list[str]] = {}
+    work_ids = [
+        item.work_id
+        for item, _work_title, _work_description, _cover_url, _last_read in selected
+    ]
+    if work_ids:
+        author_rows = session.execute(
+            sa.select(WorkAuthor.work_id, Author.name)
+            .join(Author, Author.id == WorkAuthor.author_id)
+            .where(WorkAuthor.work_id.in_(work_ids))
+        ).all()
+        for work_id, author_name in author_rows:
+            author_names_by_work.setdefault(work_id, []).append(author_name)
+        for work_id, names in author_names_by_work.items():
+            # Stable ordering for UI and tests.
+            author_names_by_work[work_id] = sorted(set(names))
+
     items: list[dict[str, Any]] = []
-    for item, work_title in selected:
+    for item, work_title, work_description, cover_url, last_read_at in selected:
         items.append(
             {
                 "id": str(item.id),
                 "work_id": str(item.work_id),
                 "work_title": work_title,
+                "work_description": work_description,
+                "author_names": author_names_by_work.get(item.work_id, []),
+                "cover_url": cover_url,
                 "status": item.status,
                 "visibility": item.visibility,
                 "rating": item.rating,
                 "tags": item.tags or [],
+                "last_read_at": (
+                    last_read_at.isoformat()
+                    if isinstance(last_read_at, dt.datetime)
+                    else None
+                ),
                 "created_at": item.created_at.isoformat(),
             }
         )
@@ -191,6 +247,138 @@ def list_library_items(
         next_cursor = _encode_cursor(last_item.created_at, last_item.id)
 
     return {"items": items, "next_cursor": next_cursor}
+
+
+def get_library_item_by_work_detail(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    work_id: uuid.UUID,
+) -> dict[str, Any] | None:
+    row = session.execute(
+        sa.select(
+            LibraryItem,
+            sa.func.coalesce(
+                LibraryItem.cover_override_url,
+                Edition.cover_url,
+                Work.default_cover_url,
+            ).label("cover_url"),
+        )
+        .join(Work, Work.id == LibraryItem.work_id)
+        .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
+        .where(LibraryItem.user_id == user_id, LibraryItem.work_id == work_id)
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    item, cover_url = row
+    return {
+        "id": str(item.id),
+        "work_id": str(item.work_id),
+        "preferred_edition_id": (
+            str(item.preferred_edition_id) if item.preferred_edition_id else None
+        ),
+        "cover_url": cover_url,
+        "status": item.status,
+        "visibility": item.visibility,
+        "rating": item.rating,
+        "tags": item.tags or [],
+        "created_at": item.created_at.isoformat(),
+    }
+
+
+def search_library_items(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    query: str,
+    limit: int,
+) -> list[dict[str, Any]]:
+    trimmed = query.strip()
+    if not trimmed:
+        return []
+
+    pattern = f"%{trimmed}%"
+
+    stmt = (
+        sa.select(
+            LibraryItem.work_id,
+            Work.title.label("work_title"),
+            sa.func.coalesce(
+                LibraryItem.cover_override_url,
+                Edition.cover_url,
+                Work.default_cover_url,
+            ).label("cover_url"),
+            ExternalId.provider_id.label("openlibrary_work_key"),
+        )
+        .join(Work, Work.id == LibraryItem.work_id)
+        .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
+        .join(
+            ExternalId,
+            sa.and_(
+                ExternalId.entity_type == "work",
+                ExternalId.entity_id == Work.id,
+                ExternalId.provider == "openlibrary",
+            ),
+            isouter=True,
+        )
+        .join(WorkAuthor, WorkAuthor.work_id == Work.id, isouter=True)
+        .join(Author, Author.id == WorkAuthor.author_id, isouter=True)
+        .where(LibraryItem.user_id == user_id)
+        .where(
+            sa.or_(
+                Work.title.ilike(pattern),
+                Author.name.ilike(pattern),
+                sa.cast(LibraryItem.tags, sa.Text).ilike(pattern),
+            )
+        )
+        # Postgres DISTINCT ON to avoid duplicate rows from author joins.
+        .distinct(LibraryItem.work_id)
+        .order_by(LibraryItem.work_id, Work.title.asc())
+        .limit(limit)
+    )
+
+    rows = session.execute(stmt).all()
+    work_ids = [work_id for work_id, _title, _cover_url, _key in rows]
+
+    author_names_by_work: dict[uuid.UUID, list[str]] = {}
+    if work_ids:
+        author_rows = session.execute(
+            sa.select(WorkAuthor.work_id, Author.name)
+            .join(Author, Author.id == WorkAuthor.author_id)
+            .where(WorkAuthor.work_id.in_(work_ids))
+        ).all()
+        for work_id, author_name in author_rows:
+            author_names_by_work.setdefault(work_id, []).append(author_name)
+        for work_id, names in author_names_by_work.items():
+            author_names_by_work[work_id] = sorted(set(names))
+
+    items: list[dict[str, Any]] = []
+    for work_id, work_title, cover_url, openlibrary_work_key in rows:
+        items.append(
+            {
+                "work_id": str(work_id),
+                "work_title": work_title,
+                "author_names": author_names_by_work.get(work_id, []),
+                "cover_url": cover_url,
+                "openlibrary_work_key": openlibrary_work_key,
+            }
+        )
+    return items
+
+
+def get_library_item_by_work(
+    session: Session,
+    *,
+    user_id: uuid.UUID,
+    work_id: uuid.UUID,
+) -> LibraryItem | None:
+    return session.scalar(
+        sa.select(LibraryItem).where(
+            LibraryItem.user_id == user_id,
+            LibraryItem.work_id == work_id,
+        )
+    )
 
 
 def update_library_item(

@@ -1,19 +1,21 @@
 <template>
-  <div class="min-h-screen bg-slate-950/5 text-slate-900">
-    <section class="mx-auto flex w-full max-w-lg flex-col gap-4 px-6 py-16 text-center">
-      <i class="pi pi-spinner pi-spin text-3xl text-emerald-600" aria-hidden="true"></i>
-      <h1 class="text-2xl font-semibold">Finishing sign-in</h1>
-      <p class="text-sm text-slate-600">
-        {{ message }}
-      </p>
-      <p v-if="error" class="rounded-md bg-rose-50 px-3 py-2 text-sm text-rose-700">
-        {{ error }}
-      </p>
-    </section>
-  </div>
+  <Card class="text-center" data-test="auth-callback-card">
+    <template #content>
+      <div class="flex flex-col items-center gap-4 py-6">
+        <i class="pi pi-spinner pi-spin text-3xl text-primary" aria-hidden="true"></i>
+        <h1 class="font-serif text-2xl font-semibold tracking-tight">Finishing sign-in</h1>
+        <p class="text-sm text-[var(--p-text-muted-color)]">
+          {{ message }}
+        </p>
+        <Message v-if="error" severity="error" :closable="false">{{ error }}</Message>
+      </div>
+    </template>
+  </Card>
 </template>
 
 <script setup lang="ts">
+definePageMeta({ layout: 'auth' });
+
 import { onMounted, ref } from 'vue';
 import { navigateTo, useRoute, useSupabaseClient } from '#imports';
 
@@ -23,12 +25,86 @@ const route = useRoute();
 const message = ref('Validating your session…');
 const error = ref('');
 
-const resolveReturnTo = () =>
-  typeof route.query.returnTo === 'string' && route.query.returnTo ? route.query.returnTo : '/';
+const RETURN_TO_STORAGE_KEY = 'seedbed.auth.returnTo';
+const RETURN_TO_MAX_AGE_MS = 30 * 60 * 1000;
+
+const resolveStoredReturnTo = () => {
+  const storage = globalThis.localStorage;
+  if (
+    !storage ||
+    typeof storage.getItem !== 'function' ||
+    typeof storage.removeItem !== 'function'
+  ) {
+    return '';
+  }
+
+  try {
+    const raw = storage.getItem(RETURN_TO_STORAGE_KEY);
+    if (!raw) {
+      return '';
+    }
+
+    storage.removeItem(RETURN_TO_STORAGE_KEY);
+
+    const parsed = JSON.parse(raw) as { path?: unknown; at?: unknown };
+    const path = typeof parsed.path === 'string' ? parsed.path : '';
+    const at = typeof parsed.at === 'number' ? parsed.at : 0;
+
+    if (!path) {
+      return '';
+    }
+
+    if (at && Date.now() - at > RETURN_TO_MAX_AGE_MS) {
+      return '';
+    }
+
+    return path;
+  } catch {
+    return '';
+  }
+};
+
+const resolveReturnTo = () => {
+  const queryReturnTo =
+    typeof route.query.returnTo === 'string' && route.query.returnTo ? route.query.returnTo : '';
+  if (queryReturnTo) {
+    return queryReturnTo;
+  }
+
+  const storedReturnTo = resolveStoredReturnTo();
+  if (storedReturnTo) {
+    return storedReturnTo;
+  }
+
+  return '/';
+};
+
+const resolveOAuthError = () => {
+  const code = typeof route.query.error === 'string' ? route.query.error : '';
+  const description =
+    typeof route.query.error_description === 'string' ? route.query.error_description : '';
+
+  if (description) {
+    return description;
+  }
+
+  if (code) {
+    return `Authentication failed (${code}).`;
+  }
+
+  return '';
+};
 
 onMounted(async () => {
   if (!supabase) {
     error.value = 'Supabase client is not available.';
+    return;
+  }
+
+  const oauthError = resolveOAuthError();
+  if (oauthError) {
+    message.value = 'Sign-in failed.';
+    error.value = oauthError;
     return;
   }
 

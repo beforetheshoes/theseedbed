@@ -82,6 +82,9 @@ def _settings() -> Settings:
         supabase_jwt_audience="authenticated",
         supabase_jwt_secret=None,
         supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key=None,
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
         api_version="0.1.0",
     )
 
@@ -92,6 +95,9 @@ def _settings_with_secret() -> Settings:
         supabase_jwt_audience="authenticated",
         supabase_jwt_secret=JWT_SECRET,
         supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key=None,
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
         api_version="0.1.0",
     )
 
@@ -260,6 +266,9 @@ def test_decode_jwt_hs256_invalid_secret() -> None:
         supabase_jwt_audience="authenticated",
         supabase_jwt_secret="wrong-secret",
         supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key=None,
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
         api_version="0.1.0",
     )
     with pytest.raises(AuthError) as exc:
@@ -478,6 +487,9 @@ def test_decode_jwt_missing_supabase_url() -> None:
         supabase_jwt_audience="authenticated",
         supabase_jwt_secret=None,
         supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key=None,
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
         api_version="0.1.0",
     )
 
@@ -559,6 +571,9 @@ def test_fetch_jwks() -> None:
         supabase_jwt_audience="authenticated",
         supabase_jwt_secret=None,
         supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key=None,
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
         api_version="0.1.0",
     )
 
@@ -597,6 +612,9 @@ def test_get_jwks_cache_reuses_instance() -> None:
         supabase_jwt_audience=settings.supabase_jwt_audience,
         supabase_jwt_secret=settings.supabase_jwt_secret,
         supabase_jwks_cache_ttl_seconds=120,
+        supabase_service_role_key=settings.supabase_service_role_key,
+        supabase_storage_covers_bucket=settings.supabase_storage_covers_bucket,
+        public_highlight_max_chars=settings.public_highlight_max_chars,
         api_version=settings.api_version,
     )
     cache_three = asyncio.run(get_jwks_cache(settings_updated))

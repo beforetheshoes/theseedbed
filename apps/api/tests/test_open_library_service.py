@@ -93,6 +93,30 @@ def test_fetch_work_bundle_collects_author_and_first_edition() -> None:
     assert bundle.cover_url == "https://covers.openlibrary.org/b/id/12-L.jpg"
 
 
+def test_fetch_work_bundle_falls_back_to_edition_cover_when_work_missing() -> None:
+    requests: list[str] = []
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": []},
+        "/works/OL1W/editions.json": {"entries": [{"key": "/books/OL3M"}]},
+        "/books/OL3M.json": {"covers": [99], "isbn_10": ["123"], "publishers": ["Pub"]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+
+    assert bundle.edition is not None
+    assert bundle.edition["key"] == "/books/OL3M"
+    assert bundle.cover_url == "https://covers.openlibrary.org/b/id/99-L.jpg"
+    assert "/books/OL3M.json" in requests
+
+
 def test_request_retries_on_5xx() -> None:
     calls = {"count": 0}
 
@@ -206,3 +230,131 @@ def test_request_raises_after_retry_exhausted() -> None:
     client = OpenLibraryClient(transport=httpx.MockTransport(handler), max_retries=2)
     with pytest.raises(httpx.HTTPStatusError):
         asyncio.run(client.search_books(query="boom"))
+
+
+def test_search_books_filters_invalid_docs() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "docs": [
+                    "not-a-dict",
+                    {"key": "/works/OL1W"},  # missing title
+                    {"title": "No key"},
+                    {"key": "/works/OL2W", "title": "Ok", "cover_i": "nope"},
+                ]
+            },
+        )
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.search_books(query="q"))
+    assert [item.work_key for item in result.items] == ["/works/OL2W"]
+    assert result.items[0].cover_url is None
+
+
+def test_fetch_work_bundle_handles_missing_editions_and_description_string() -> None:
+    responses = {
+        "/works/OL1W.json": {
+            "title": "Book A",
+            "description": "Desc",
+            "authors": [],
+            "covers": [],
+        },
+        "/works/OL1W/editions.json": {"entries": []},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+    assert bundle.description == "Desc"
+    assert bundle.edition is None
+
+
+def test_fetch_work_bundle_parses_edition_fields_defensively() -> None:
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": []},
+        "/works/OL1W/editions.json": {
+            "entries": [{"key": "/books/OL3M", "isbn_10": "nope", "publishers": "nope"}]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+    assert bundle.edition is not None
+    assert bundle.edition["isbn10"] is None
+    assert bundle.edition["publisher"] is None
+
+
+def test_fetch_cover_ids_for_work_prefers_work_payload() -> None:
+    requests: list[str] = []
+
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": [10, 11, 10]},
+        "/works/OL1W/editions.json": {"entries": [{"covers": [1, 2, 3]}]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request.url.path)
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    cover_ids = asyncio.run(client.fetch_cover_ids_for_work(work_key="OL1W"))
+    assert cover_ids == [10, 11]
+    assert "/works/OL1W.json" in requests
+
+
+def test_fetch_cover_ids_for_work_falls_back_to_editions() -> None:
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": []},
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {"covers": [1, 2, 2]},
+                {"covers": [3]},
+                {"covers": ["nope", 4]},
+                "not-a-dict",
+            ]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    cover_ids = asyncio.run(
+        client.fetch_cover_ids_for_work(work_key="/works/OL1W", editions_limit=50)
+    )
+    assert cover_ids == [1, 2, 3, 4]
+
+
+def test_fetch_cover_ids_for_work_returns_empty_when_entries_invalid() -> None:
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "authors": [], "covers": []},
+        "/works/OL1W/editions.json": {"entries": "nope"},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    cover_ids = asyncio.run(client.fetch_cover_ids_for_work(work_key="OL1W"))
+    assert cover_ids == []

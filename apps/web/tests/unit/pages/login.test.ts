@@ -31,6 +31,22 @@ import LoginPage from '../../../app/pages/login.vue';
 
 describe('login page', () => {
   beforeEach(() => {
+    const storage: Record<string, string> = {};
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: (key: string) => (key in storage ? storage[key] : null),
+        setItem: (key: string, value: string) => {
+          storage[key] = String(value);
+        },
+        removeItem: (key: string) => {
+          delete storage[key];
+        },
+        clear: () => {
+          Object.keys(storage).forEach((key) => delete storage[key]);
+        },
+      },
+      writable: true,
+    });
     Object.defineProperty(globalThis, 'location', {
       value: { origin: 'https://staging.theseedbed.app' },
       writable: true,
@@ -114,9 +130,12 @@ describe('login page', () => {
     const redirectUrl = new globalThis.URL(call.options.emailRedirectTo);
 
     expect(redirectUrl.pathname).toBe('/auth/callback');
-    expect(redirectUrl.searchParams.get('returnTo')).toBe(
-      '/oauth/consent?authorization_id=auth-123',
-    );
+    expect(redirectUrl.searchParams.get('returnTo')).toBeNull();
+
+    const stored = globalThis.localStorage?.getItem('seedbed.auth.returnTo');
+    expect(stored).toBeTruthy();
+    const parsed = stored ? JSON.parse(stored) : null;
+    expect(parsed.path).toBe('/oauth/consent?authorization_id=auth-123');
   });
 
   it('starts Apple OAuth sign-in', async () => {
@@ -130,6 +149,23 @@ describe('login page', () => {
 
     expect(authMocks.signInWithOAuth).toHaveBeenCalledWith({
       provider: 'apple',
+      options: {
+        redirectTo: expect.any(String),
+      },
+    });
+  });
+
+  it('starts Google OAuth sign-in', async () => {
+    const wrapper = mount(LoginPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await wrapper.get('[data-test="login-google"]').trigger('click');
+
+    expect(authMocks.signInWithOAuth).toHaveBeenCalledWith({
+      provider: 'google',
       options: {
         redirectTo: expect.any(String),
       },
@@ -166,6 +202,20 @@ describe('login page', () => {
     expect(wrapper.text()).toContain('Apple down');
   });
 
+  it('shows an error when Google OAuth fails', async () => {
+    authMocks.signInWithOAuth.mockResolvedValueOnce({ error: { message: 'Google down' } });
+
+    const wrapper = mount(LoginPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await wrapper.get('[data-test="login-google"]').trigger('click');
+
+    expect(wrapper.text()).toContain('Google down');
+  });
+
   it('falls back when Supabase client is missing', async () => {
     state.supabase = null;
 
@@ -177,6 +227,21 @@ describe('login page', () => {
 
     await wrapper.get('[data-test="login-apple"]').trigger('click');
 
+    expect(wrapper.text()).toContain('Supabase client is not available.');
+  });
+
+  it('shows an error when Supabase is unavailable for Google OAuth', async () => {
+    state.supabase = null;
+
+    const wrapper = mount(LoginPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await wrapper.get('[data-test="login-google"]').trigger('click');
+
+    expect(authMocks.signInWithOAuth).not.toHaveBeenCalled();
     expect(wrapper.text()).toContain('Supabase client is not available.');
   });
 
@@ -229,71 +294,5 @@ describe('login page', () => {
     });
   });
 
-  it('shows a debug banner on preview hosts', async () => {
-    Object.defineProperty(globalThis, 'location', {
-      value: {
-        origin: 'https://preview.vercel.app',
-        hostname: 'preview.vercel.app',
-      },
-      writable: true,
-    });
-
-    const wrapper = mount(LoginPage, {
-      global: {
-        plugins: [[PrimeVue, { ripple: false }]],
-      },
-    });
-
-    expect(wrapper.text()).toContain('Preview debug:');
-    expect(wrapper.text()).toContain('supabaseUrl=set');
-    expect(wrapper.text()).toContain('supabaseAnonKey=set');
-    expect(wrapper.text()).toContain('client=ready');
-    expect(wrapper.text()).toContain('plugin=loaded');
-  });
-
-  it('shows missing debug flags when config is unavailable', async () => {
-    state.supabase = null;
-    state.config = {
-      public: {
-        supabaseUrl: '',
-        supabaseAnonKey: '',
-      },
-    };
-    Object.defineProperty(globalThis, 'location', {
-      value: {
-        origin: 'https://preview.vercel.app',
-        hostname: 'preview.vercel.app',
-      },
-      writable: true,
-    });
-
-    const wrapper = mount(LoginPage, {
-      global: {
-        plugins: [[PrimeVue, { ripple: false }]],
-      },
-    });
-
-    expect(wrapper.text()).toContain('supabaseUrl=missing');
-    expect(wrapper.text()).toContain('supabaseAnonKey=missing');
-    expect(wrapper.text()).toContain('client=missing');
-    expect(wrapper.text()).toContain('plugin=loaded');
-  });
-
-  it('skips the debug banner on production hosts', async () => {
-    Object.defineProperty(globalThis, 'location', {
-      value: {
-        origin: 'https://theseedbed.app',
-        hostname: 'theseedbed.app',
-      },
-      writable: true,
-    });
-
-    const wrapper = mount(LoginPage, {
-      global: {
-        plugins: [[PrimeVue, { ripple: false }]],
-      },
-    });
-
-    expect(wrapper.text()).not.toContain('Preview debug:');
-  });
+  // Debug banners were intentionally removed; errors are surfaced via PrimeVue Message blocks.
 });

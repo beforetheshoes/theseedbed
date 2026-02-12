@@ -20,6 +20,10 @@ logs
 .fleet
 .idea
 
+# Cypress artifacts
+cypress/screenshots
+cypress/videos
+
 # Local env files
 .env
 .env.*

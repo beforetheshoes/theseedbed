@@ -24,6 +24,7 @@ def test_users_table_schema() -> None:
         "handle",
         "display_name",
         "avatar_url",
+        "actor_uri",
         "created_at",
         "updated_at",
     }
@@ -71,6 +72,10 @@ def test_library_items_table_schema() -> None:
         "visibility",
         "rating",
         "tags",
+        "cover_override_url",
+        "cover_override_storage_path",
+        "cover_override_set_by",
+        "cover_override_set_at",
         "created_at",
         "updated_at",
     }

@@ -165,21 +165,25 @@ def test_import_openlibrary_bundle_uses_existing_records() -> None:
             raw={},
         ),
     ]
+    work_model = Work(
+        id=work_id, title="Book", description=None, default_cover_url=None
+    )
+    edition_model = Edition(
+        id=edition_id,
+        work_id=work_id,
+        publisher=None,
+        publish_date=None,
+        language=None,
+        format=None,
+        cover_url=None,
+    )
     session.get_map = {
-        (Work, work_id): Work(id=work_id, title="Book", description=None),
+        (Work, work_id): work_model,
         (Author, author_id): Author(id=author_id, name="Author A"),
         (
             Edition,
             edition_id,
-        ): Edition(
-            id=edition_id,
-            work_id=work_id,
-            publisher=None,
-            publish_date=None,
-            language=None,
-            format=None,
-            cover_url=None,
-        ),
+        ): edition_model,
     }
 
     def fake_get_external(
@@ -209,6 +213,97 @@ def test_import_openlibrary_bundle_uses_existing_records() -> None:
     assert result["work"]["created"] is False
     assert result["authors_created"] == 0
     assert result["edition"]["created"] is False
+    assert work_model.default_cover_url == _bundle().cover_url
+    assert edition_model.cover_url == _bundle().cover_url
+
+
+def test_import_openlibrary_bundle_does_not_overwrite_existing_covers() -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    author_id = uuid.uuid4()
+    edition_id = uuid.uuid4()
+
+    work_external = ExternalId(
+        entity_type="work",
+        entity_id=work_id,
+        provider="openlibrary",
+        provider_id="/works/OL1W",
+    )
+    author_external = ExternalId(
+        entity_type="author",
+        entity_id=author_id,
+        provider="openlibrary",
+        provider_id="/authors/OL2A",
+    )
+    edition_external = ExternalId(
+        entity_type="edition",
+        entity_id=edition_id,
+        provider="openlibrary",
+        provider_id="/books/OL3M",
+    )
+
+    session.scalar_values = [
+        SourceRecord(
+            provider="openlibrary",
+            entity_type="work",
+            provider_id="/works/OL1W",
+            raw={},
+        ),
+        object(),
+        SourceRecord(
+            provider="openlibrary",
+            entity_type="edition",
+            provider_id="/books/OL3M",
+            raw={},
+        ),
+    ]
+    work_model = Work(
+        id=work_id,
+        title="Book",
+        description=None,
+        default_cover_url="existing-work-cover",
+    )
+    edition_model = Edition(
+        id=edition_id,
+        work_id=work_id,
+        publisher=None,
+        publish_date=None,
+        language=None,
+        format=None,
+        cover_url="existing-edition-cover",
+    )
+    session.get_map = {
+        (Work, work_id): work_model,
+        (Author, author_id): Author(id=author_id, name="Author A"),
+        (Edition, edition_id): edition_model,
+    }
+
+    def fake_get_external(
+        _session: FakeSession,
+        *,
+        entity_type: str,
+        provider: str,
+        provider_id: str,
+    ) -> ExternalId | None:
+        assert provider == "openlibrary"
+        mapping = {
+            ("work", "/works/OL1W"): work_external,
+            ("author", "/authors/OL2A"): author_external,
+            ("edition", "/books/OL3M"): edition_external,
+        }
+        return mapping.get((entity_type, provider_id))
+
+    import app.services.catalog as catalog
+
+    original = catalog._get_external_id
+    try:
+        catalog._get_external_id = cast(Any, fake_get_external)
+        import_openlibrary_bundle(cast(Any, session), bundle=_bundle())
+    finally:
+        catalog._get_external_id = original
+
+    assert work_model.default_cover_url == "existing-work-cover"
+    assert edition_model.cover_url == "existing-edition-cover"
 
 
 def test_import_openlibrary_bundle_raises_when_external_missing_target() -> None:

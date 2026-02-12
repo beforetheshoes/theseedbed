@@ -46,6 +46,7 @@ class User(Base):
     handle: Mapped[str] = mapped_column(sa.String(64), nullable=False)
     display_name: Mapped[str | None] = mapped_column(sa.String(255))
     avatar_url: Mapped[str | None] = mapped_column(sa.Text)
+    actor_uri: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
@@ -102,6 +103,14 @@ class LibraryItem(Base):
     )
     rating: Mapped[int | None] = mapped_column(sa.SmallInteger)
     tags: Mapped[list[str] | None] = mapped_column(ARRAY(sa.String(64)))
+    cover_override_url: Mapped[str | None] = mapped_column(sa.Text)
+    cover_override_storage_path: Mapped[str | None] = mapped_column(sa.Text)
+    cover_override_set_by: Mapped[uuid.UUID | None] = mapped_column(
+        sa.UUID(as_uuid=True)
+    )
+    cover_override_set_at: Mapped[dt.datetime | None] = mapped_column(
+        sa.DateTime(timezone=True)
+    )
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,

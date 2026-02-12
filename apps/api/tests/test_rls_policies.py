@@ -165,14 +165,18 @@ def _assert_insert_and_delete(
 
 @pytest.fixture(scope="session")
 def db_url() -> str:
-    return _get_db_url()
+    url = _get_db_url()
+    try:
+        with psycopg.connect(url, connect_timeout=1) as conn:
+            conn.execute("select 1;")
+    except psycopg.OperationalError:
+        pytest.skip("Local Supabase/Postgres not reachable; run `supabase start`.")
+    return url
 
 
-@pytest.fixture(scope="session")
-def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
+def _build_seed_data() -> dict[str, uuid.UUID]:
     user_1 = uuid.uuid4()
     user_2 = uuid.uuid4()
-    now = dt.datetime.now(tz=dt.UTC)
 
     author_1 = uuid.uuid4()
     author_2 = uuid.uuid4()
@@ -184,6 +188,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
 
     library_item_1 = uuid.uuid4()
     library_item_2 = uuid.uuid4()
+    library_item_3 = uuid.uuid4()
     reading_session_1 = uuid.uuid4()
     reading_session_2 = uuid.uuid4()
     reading_state_event_1 = uuid.uuid4()
@@ -194,228 +199,13 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
     highlight_2 = uuid.uuid4()
     review_1 = uuid.uuid4()
     review_2 = uuid.uuid4()
+    review_3 = uuid.uuid4()
     api_client_1 = uuid.uuid4()
     api_client_2 = uuid.uuid4()
     api_audit_log_1 = uuid.uuid4()
     api_audit_log_2 = uuid.uuid4()
 
-    with psycopg.connect(db_url, autocommit=True) as conn:
-        conn.execute("set role postgres;")
-        _insert_auth_user(conn, user_1, "user1@example.com")
-        _insert_auth_user(conn, user_2, "user2@example.com")
-
-        conn.execute(
-            """
-            insert into public.users (id, handle, display_name)
-            values (%s, %s, %s), (%s, %s, %s);
-            """,
-            (
-                user_1,
-                f"user_{user_1.hex[:8]}",
-                "User One",
-                user_2,
-                f"user_{user_2.hex[:8]}",
-                "User Two",
-            ),
-        )
-
-        conn.execute(
-            "insert into public.authors (id, name) values (%s, %s), (%s, %s);",
-            (author_1, "Author One", author_2, "Author Two"),
-        )
-        conn.execute(
-            "insert into public.works (id, title) values (%s, %s), (%s, %s);",
-            (work_1, "Work One", work_2, "Work Two"),
-        )
-        conn.execute(
-            "insert into public.editions (id, work_id, isbn10) values (%s, %s, %s);",
-            (edition_1, work_1, "1234567890"),
-        )
-        conn.execute(
-            "insert into public.work_authors (work_id, author_id) values (%s, %s);",
-            (work_1, author_1),
-        )
-        conn.execute(
-            """
-            insert into public.external_ids
-                (id, entity_type, entity_id, provider, provider_id)
-            values (%s, %s, %s, %s, %s);
-            """,
-            (external_id_1, "work", work_1, "openlibrary", "OL123"),
-        )
-        conn.execute(
-            """
-            insert into public.source_records
-                (id, provider, entity_type, provider_id, raw, fetched_at)
-            values (%s, %s, %s, %s, %s, %s);
-            """,
-            (
-                source_record_1,
-                "openlibrary",
-                "work",
-                "OL123",
-                Json({"title": "Work One"}),
-                now,
-            ),
-        )
-
-        conn.execute(
-            """
-            insert into public.library_items
-                (id, user_id, work_id, status, visibility)
-            values (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s);
-            """,
-            (
-                library_item_1,
-                user_1,
-                work_1,
-                "to_read",
-                "private",
-                library_item_2,
-                user_2,
-                work_2,
-                "reading",
-                "private",
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.reading_sessions
-                (id, user_id, library_item_id, started_at)
-            values (%s, %s, %s, %s), (%s, %s, %s, %s);
-            """,
-            (
-                reading_session_1,
-                user_1,
-                library_item_1,
-                now,
-                reading_session_2,
-                user_2,
-                library_item_2,
-                now,
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.reading_state_events
-                (id, user_id, library_item_id, event_type, occurred_at)
-            values (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s);
-            """,
-            (
-                reading_state_event_1,
-                user_1,
-                library_item_1,
-                "started",
-                now,
-                reading_state_event_2,
-                user_2,
-                library_item_2,
-                "started",
-                now,
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.notes
-                (id, user_id, library_item_id, title, body)
-            values (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s);
-            """,
-            (
-                note_1,
-                user_1,
-                library_item_1,
-                "Note One",
-                "Note body one",
-                note_2,
-                user_2,
-                library_item_2,
-                "Note Two",
-                "Note body two",
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.highlights
-                (id, user_id, library_item_id, quote)
-            values (%s, %s, %s, %s), (%s, %s, %s, %s);
-            """,
-            (
-                highlight_1,
-                user_1,
-                library_item_1,
-                "Highlight one",
-                highlight_2,
-                user_2,
-                library_item_2,
-                "Highlight two",
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.reviews
-                (id, user_id, library_item_id, title, body, rating)
-            values (%s, %s, %s, %s, %s, %s), (%s, %s, %s, %s, %s, %s);
-            """,
-            (
-                review_1,
-                user_1,
-                library_item_1,
-                "Review One",
-                "Review body one",
-                7,
-                review_2,
-                user_2,
-                library_item_2,
-                "Review Two",
-                "Review body two",
-                8,
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.api_clients
-                (client_id, name, owner_user_id)
-            values (%s, %s, %s), (%s, %s, %s);
-            """,
-            (
-                api_client_1,
-                "Client One",
-                user_1,
-                api_client_2,
-                "Client Two",
-                user_2,
-            ),
-        )
-        conn.execute(
-            """
-            insert into public.api_audit_logs
-                (id, client_id, user_id, method, path, status, latency_ms, ip, occurred_at)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s),
-                   (%s, %s, %s, %s, %s, %s, %s, %s, %s);
-            """,
-            (
-                api_audit_log_1,
-                api_client_1,
-                user_1,
-                "GET",
-                "/v1/books",
-                200,
-                12,
-                "127.0.0.1",
-                now,
-                api_audit_log_2,
-                api_client_2,
-                user_2,
-                "POST",
-                "/v1/books",
-                201,
-                18,
-                "127.0.0.1",
-                now,
-            ),
-        )
-
-    data: dict[str, uuid.UUID] = {
+    return {
         "user_1": user_1,
         "user_2": user_2,
         "author_1": author_1,
@@ -427,6 +217,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
         "source_record_1": source_record_1,
         "library_item_1": library_item_1,
         "library_item_2": library_item_2,
+        "library_item_3": library_item_3,
         "reading_session_1": reading_session_1,
         "reading_session_2": reading_session_2,
         "reading_state_event_1": reading_state_event_1,
@@ -437,79 +228,361 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
         "highlight_2": highlight_2,
         "review_1": review_1,
         "review_2": review_2,
+        "review_3": review_3,
         "api_client_1": api_client_1,
         "api_client_2": api_client_2,
         "api_audit_log_1": api_audit_log_1,
         "api_audit_log_2": api_audit_log_2,
     }
 
+
+def _seed_rls_data(
+    conn: psycopg.Connection, data: dict[str, uuid.UUID], now: dt.datetime
+) -> None:
+    user_1 = data["user_1"]
+    user_2 = data["user_2"]
+    external_provider_id = f"OL-{data['work_1'].hex[:12]}"
+    source_provider_id = f"OL-SRC-{data['source_record_1'].hex[:12]}"
+
+    _insert_auth_user(conn, user_1, f"user1-{user_1.hex}@example.com")
+    _insert_auth_user(conn, user_2, f"user2-{user_2.hex}@example.com")
+
+    conn.execute(
+        """
+        insert into public.users (id, handle, display_name)
+        values (%s, %s, %s), (%s, %s, %s);
+        """,
+        (
+            user_1,
+            f"user_{user_1.hex[:8]}",
+            "User One",
+            user_2,
+            f"user_{user_2.hex[:8]}",
+            "User Two",
+        ),
+    )
+
+    conn.execute(
+        "insert into public.authors (id, name) values (%s, %s), (%s, %s);",
+        (data["author_1"], "Author One", data["author_2"], "Author Two"),
+    )
+    conn.execute(
+        "insert into public.works (id, title) values (%s, %s), (%s, %s);",
+        (data["work_1"], "Work One", data["work_2"], "Work Two"),
+    )
+    conn.execute(
+        "insert into public.editions (id, work_id, isbn10) values (%s, %s, %s);",
+        (data["edition_1"], data["work_1"], "1234567890"),
+    )
+    conn.execute(
+        "insert into public.work_authors (work_id, author_id) values (%s, %s);",
+        (data["work_1"], data["author_1"]),
+    )
+    conn.execute(
+        """
+        insert into public.external_ids
+            (id, entity_type, entity_id, provider, provider_id)
+        values (%s, %s, %s, %s, %s);
+        """,
+        (
+            data["external_id_1"],
+            "work",
+            data["work_1"],
+            "openlibrary",
+            external_provider_id,
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.source_records
+            (id, provider, entity_type, provider_id, raw, fetched_at)
+        values (%s, %s, %s, %s, %s, %s);
+        """,
+        (
+            data["source_record_1"],
+            "openlibrary",
+            "work",
+            source_provider_id,
+            Json({"title": "Work One"}),
+            now,
+        ),
+    )
+
+    conn.execute(
+        """
+        insert into public.library_items
+            (id, user_id, work_id, status, visibility)
+        values
+            (%s, %s, %s, %s, %s),
+            (%s, %s, %s, %s, %s),
+            (%s, %s, %s, %s, %s);
+        """,
+        (
+            data["library_item_1"],
+            user_1,
+            data["work_1"],
+            "to_read",
+            "private",
+            data["library_item_2"],
+            user_2,
+            data["work_2"],
+            "reading",
+            "private",
+            data["library_item_3"],
+            user_2,
+            data["work_1"],
+            "to_read",
+            "private",
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.reading_sessions
+            (id, user_id, library_item_id, started_at)
+        values (%s, %s, %s, %s), (%s, %s, %s, %s);
+        """,
+        (
+            data["reading_session_1"],
+            user_1,
+            data["library_item_1"],
+            now,
+            data["reading_session_2"],
+            user_2,
+            data["library_item_2"],
+            now,
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.reading_state_events
+            (id, user_id, library_item_id, event_type, occurred_at)
+        values (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s);
+        """,
+        (
+            data["reading_state_event_1"],
+            user_1,
+            data["library_item_1"],
+            "started",
+            now,
+            data["reading_state_event_2"],
+            user_2,
+            data["library_item_2"],
+            "started",
+            now,
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.notes
+            (id, user_id, library_item_id, title, body)
+        values (%s, %s, %s, %s, %s), (%s, %s, %s, %s, %s);
+        """,
+        (
+            data["note_1"],
+            user_1,
+            data["library_item_1"],
+            "Note One",
+            "Note body one",
+            data["note_2"],
+            user_2,
+            data["library_item_2"],
+            "Note Two",
+            "Note body two",
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.highlights
+            (id, user_id, library_item_id, quote)
+        values (%s, %s, %s, %s), (%s, %s, %s, %s);
+        """,
+        (
+            data["highlight_1"],
+            user_1,
+            data["library_item_1"],
+            "Highlight one",
+            data["highlight_2"],
+            user_2,
+            data["library_item_2"],
+            "Highlight two",
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.reviews
+            (id, user_id, library_item_id, title, body, rating, visibility)
+        values
+            (%s, %s, %s, %s, %s, %s, %s),
+            (%s, %s, %s, %s, %s, %s, %s),
+            (%s, %s, %s, %s, %s, %s, %s);
+        """,
+        (
+            data["review_1"],
+            user_1,
+            data["library_item_1"],
+            "Review One",
+            "Review body one",
+            7,
+            "private",
+            data["review_2"],
+            user_2,
+            data["library_item_2"],
+            "Review Two",
+            "Review body two",
+            8,
+            "public",
+            data["review_3"],
+            user_2,
+            data["library_item_3"],
+            "Review Three",
+            "Review body three",
+            6,
+            "unlisted",
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.api_clients
+            (client_id, name, owner_user_id)
+        values (%s, %s, %s), (%s, %s, %s);
+        """,
+        (
+            data["api_client_1"],
+            "Client One",
+            user_1,
+            data["api_client_2"],
+            "Client Two",
+            user_2,
+        ),
+    )
+    conn.execute(
+        """
+        insert into public.api_audit_logs
+            (id, client_id, user_id, method, path, status, latency_ms, ip, occurred_at)
+        values (%s, %s, %s, %s, %s, %s, %s, %s, %s),
+               (%s, %s, %s, %s, %s, %s, %s, %s, %s);
+        """,
+        (
+            data["api_audit_log_1"],
+            data["api_client_1"],
+            user_1,
+            "GET",
+            "/v1/books",
+            200,
+            12,
+            "127.0.0.1",
+            now,
+            data["api_audit_log_2"],
+            data["api_client_2"],
+            user_2,
+            "POST",
+            "/v1/books",
+            201,
+            18,
+            "127.0.0.1",
+            now,
+        ),
+    )
+
+
+def _cleanup_rls_data(conn: psycopg.Connection, data: dict[str, uuid.UUID]) -> None:
+    conn.execute(
+        "delete from public.api_audit_logs where id in (%s, %s);",
+        (data["api_audit_log_1"], data["api_audit_log_2"]),
+    )
+    conn.execute(
+        "delete from public.api_clients where client_id in (%s, %s);",
+        (data["api_client_1"], data["api_client_2"]),
+    )
+    conn.execute(
+        "delete from public.reviews where id in (%s, %s, %s);",
+        (data["review_1"], data["review_2"], data["review_3"]),
+    )
+    conn.execute(
+        "delete from public.highlights where id in (%s, %s);",
+        (data["highlight_1"], data["highlight_2"]),
+    )
+    conn.execute(
+        "delete from public.notes where id in (%s, %s);",
+        (data["note_1"], data["note_2"]),
+    )
+    conn.execute(
+        "delete from public.reading_state_events where id in (%s, %s);",
+        (data["reading_state_event_1"], data["reading_state_event_2"]),
+    )
+    conn.execute(
+        "delete from public.reading_sessions where id in (%s, %s);",
+        (data["reading_session_1"], data["reading_session_2"]),
+    )
+    conn.execute(
+        "delete from public.library_items where id in (%s, %s, %s);",
+        (data["library_item_1"], data["library_item_2"], data["library_item_3"]),
+    )
+    conn.execute(
+        "delete from public.work_authors where work_id = %s and author_id = %s;",
+        (data["work_1"], data["author_1"]),
+    )
+    conn.execute(
+        "delete from public.editions where id = %s;",
+        (data["edition_1"],),
+    )
+    conn.execute(
+        "delete from public.works where id in (%s, %s);",
+        (data["work_1"], data["work_2"]),
+    )
+    conn.execute(
+        "delete from public.authors where id in (%s, %s);",
+        (data["author_1"], data["author_2"]),
+    )
+    conn.execute(
+        "delete from public.external_ids where id = %s;",
+        (data["external_id_1"],),
+    )
+    conn.execute(
+        "delete from public.source_records where id = %s;",
+        (data["source_record_1"],),
+    )
+    conn.execute(
+        "delete from public.users where id in (%s, %s);",
+        (data["user_1"], data["user_2"]),
+    )
+    conn.execute(
+        "delete from auth.users where id in (%s, %s);",
+        (data["user_1"], data["user_2"]),
+    )
+
+
+@pytest.fixture(scope="session")
+def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
+    data = _build_seed_data()
+    now = dt.datetime.now(tz=dt.UTC)
+
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        conn.execute("set role postgres;")
+        try:
+            _seed_rls_data(conn, data, now)
+        except Exception:
+            _cleanup_rls_data(conn, data)
+            raise
+
     try:
         yield data
     finally:
         with psycopg.connect(db_url, autocommit=True) as conn:
             conn.execute("set role postgres;")
-            conn.execute(
-                "delete from public.api_audit_logs where id in (%s, %s);",
-                (api_audit_log_1, api_audit_log_2),
-            )
-            conn.execute(
-                "delete from public.api_clients where client_id in (%s, %s);",
-                (api_client_1, api_client_2),
-            )
-            conn.execute(
-                "delete from public.reviews where id in (%s, %s);",
-                (review_1, review_2),
-            )
-            conn.execute(
-                "delete from public.highlights where id in (%s, %s);",
-                (highlight_1, highlight_2),
-            )
-            conn.execute(
-                "delete from public.notes where id in (%s, %s);",
-                (note_1, note_2),
-            )
-            conn.execute(
-                "delete from public.reading_state_events where id in (%s, %s);",
-                (reading_state_event_1, reading_state_event_2),
-            )
-            conn.execute(
-                "delete from public.reading_sessions where id in (%s, %s);",
-                (reading_session_1, reading_session_2),
-            )
-            conn.execute(
-                "delete from public.library_items where id in (%s, %s);",
-                (library_item_1, library_item_2),
-            )
-            conn.execute(
-                "delete from public.work_authors where work_id = %s and author_id = %s;",
-                (work_1, author_1),
-            )
-            conn.execute(
-                "delete from public.editions where id = %s;",
-                (edition_1,),
-            )
-            conn.execute(
-                "delete from public.works where id in (%s, %s);",
-                (work_1, work_2),
-            )
-            conn.execute(
-                "delete from public.authors where id in (%s, %s);",
-                (author_1, author_2),
-            )
-            conn.execute(
-                "delete from public.external_ids where id = %s;",
-                (external_id_1,),
-            )
-            conn.execute(
-                "delete from public.source_records where id = %s;",
-                (source_record_1,),
-            )
-            conn.execute(
-                "delete from public.users where id in (%s, %s);", (user_1, user_2)
-            )
-            conn.execute(
-                "delete from auth.users where id in (%s, %s);", (user_1, user_2)
-            )
+            _cleanup_rls_data(conn, data)
+
+
+def test_seed_data_can_be_reapplied(db_url: str) -> None:
+    for _ in range(2):
+        data = _build_seed_data()
+        now = dt.datetime.now(tz=dt.UTC)
+        with psycopg.connect(db_url, autocommit=True) as conn:
+            conn.execute("set role postgres;")
+            try:
+                _seed_rls_data(conn, data, now)
+            finally:
+                _cleanup_rls_data(conn, data)
 
 
 def test_policies_present(db_url: str) -> None:
@@ -545,6 +618,15 @@ def test_policies_present(db_url: str) -> None:
             assert qual and f"{column} = auth.uid()" in qual
             assert with_check and f"{column} = auth.uid()" in with_check
 
+        # Explicit shared read for public reviews (authenticated only).
+        public_reviews_key = ("reviews", "reviews_public_read")
+        assert public_reviews_key in policies
+        _, _, cmd, roles, qual, with_check = policies[public_reviews_key]
+        assert cmd == "SELECT"
+        assert roles and "authenticated" in roles
+        assert qual and "visibility" in qual and "'public'" in qual
+        assert with_check is None
+
         for table in READ_ONLY_TABLES:
             key = (table, f"{table}_read")
             assert key in policies
@@ -572,7 +654,6 @@ def test_policies_present(db_url: str) -> None:
         ("reading_state_events", "user_id", "id", "reading_state_event_2"),
         ("notes", "user_id", "id", "note_2"),
         ("highlights", "user_id", "id", "highlight_2"),
-        ("reviews", "user_id", "id", "review_2"),
         ("api_clients", "owner_user_id", "client_id", "api_client_2"),
     ],
 )
@@ -628,6 +709,105 @@ def test_user_scoped_reads_and_updates(
             (user_2,),
         ).rowcount
         assert blocked_update == 0
+
+
+def test_reviews_public_read_for_authenticated(
+    db_url: str, seed_data: dict[str, uuid.UUID]
+) -> None:
+    user_1 = seed_data["user_1"]
+    user_2 = seed_data["user_2"]
+    review_public = seed_data["review_2"]
+    review_unlisted = seed_data["review_3"]
+
+    with _authenticated_conn(db_url, user_1) as conn:
+        # Can read other users' explicitly public reviews.
+        row = conn.execute(
+            "select count(*) from public.reviews where id = %s and user_id = %s;",
+            (review_public, user_2),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 1
+
+        # Cannot read other users' unlisted reviews (treated as private in RLS).
+        row = conn.execute(
+            "select count(*) from public.reviews where id = %s and user_id = %s;",
+            (review_unlisted, user_2),
+        ).fetchone()
+        assert row is not None
+        assert row[0] == 0
+
+
+def test_all_public_tables_accounted_for(db_url: str) -> None:
+    expected = {
+        "alembic_version",
+        "users",
+        "library_items",
+        "reading_sessions",
+        "reading_state_events",
+        "notes",
+        "highlights",
+        "reviews",
+        "api_clients",
+        "api_audit_logs",
+        "authors",
+        "works",
+        "editions",
+        "work_authors",
+        "external_ids",
+        "source_records",
+    }
+    # Some Supabase images may include extension tables in public.
+    ignored = {
+        "spatial_ref_sys",
+    }
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        rows = conn.execute(
+            """
+            select table_name
+            from information_schema.tables
+            where table_schema = 'public'
+              and table_type = 'BASE TABLE';
+            """
+        ).fetchall()
+    tables = {row[0] for row in rows}
+
+    unknown = tables - expected - ignored
+    missing = expected - tables
+    assert not missing
+    assert not unknown
+
+
+def test_alembic_version_is_not_accessible_to_client_roles(db_url: str) -> None:
+    # This check is only meaningful once the Supabase migration that revokes
+    # privileges has been applied to the database. Local Supabase instances may
+    # lag until `supabase db reset` / `supabase db push` is run.
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        migration_applied = conn.execute(
+            """
+            select 1
+            from supabase_migrations.schema_migrations
+            where version = '20260210211500'
+            limit 1;
+            """
+        ).fetchone()
+    if not migration_applied:
+        pytest.skip(
+            "Supabase migrations not up to date; apply latest Supabase migrations "
+            "(e.g. `supabase db reset` or `supabase db push`) to validate grants."
+        )
+
+    with psycopg.connect(db_url, autocommit=True) as conn:
+        # If anon/authenticated have any privileges on alembic_version, fail loudly.
+        rows = conn.execute(
+            """
+            select grantee, privilege_type
+            from information_schema.role_table_grants
+            where table_schema = 'public'
+              and table_name = 'alembic_version'
+              and grantee in ('anon', 'authenticated');
+            """
+        ).fetchall()
+    assert rows == []
 
 
 def test_api_audit_logs_scoped_read(
@@ -962,9 +1142,10 @@ def test_user_scoped_inserts_and_deletes(
 
 def test_users_insert_enforces_owner(db_url: str) -> None:
     user_id = uuid.uuid4()
+    user_email = f"user3-{user_id.hex}@example.com"
     with psycopg.connect(db_url, autocommit=True) as conn:
         conn.execute("set role postgres;")
-        _insert_auth_user(conn, user_id, "user3@example.com")
+        _insert_auth_user(conn, user_id, user_email)
 
     with _authenticated_conn(db_url, user_id) as conn:
         handle = f"user_{user_id.hex[:8]}"

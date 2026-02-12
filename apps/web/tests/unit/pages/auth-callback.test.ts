@@ -35,9 +35,27 @@ import CallbackPage from '../../../app/pages/auth/callback.vue';
 
 describe('auth callback page', () => {
   beforeEach(() => {
+    const storage: Record<string, string> = {};
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {
+        getItem: (key: string) => (key in storage ? storage[key] : null),
+        setItem: (key: string, value: string) => {
+          storage[key] = String(value);
+        },
+        removeItem: (key: string) => {
+          delete storage[key];
+        },
+        clear: () => {
+          Object.keys(storage).forEach((key) => delete storage[key]);
+        },
+      },
+      writable: true,
+    });
     state.supabase = { auth: authMocks };
     state.route = { query: { returnTo: '/oauth/consent?authorization_id=auth-123' } };
     navigateToMock.mockClear();
+    authMocks.getSession.mockClear();
+    authMocks.onAuthStateChange.mockClear();
     authMocks.getSession.mockResolvedValue({
       data: { session: { access_token: 'token-123' } },
       error: null,
@@ -95,8 +113,137 @@ describe('auth callback page', () => {
     expect(wrapper.text()).toContain('bad session');
   });
 
+  it('surfaces OAuth callback errors without attempting a session lookup', async () => {
+    state.route = {
+      query: {
+        error: 'access_denied',
+        error_description: 'User denied the request',
+      },
+    };
+
+    const wrapper = mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Sign-in failed.');
+    expect(wrapper.text()).toContain('User denied the request');
+    expect(authMocks.getSession).not.toHaveBeenCalled();
+  });
+
+  it('surfaces OAuth callback codes when description is missing', async () => {
+    state.route = {
+      query: {
+        error: 'access_denied',
+      },
+    };
+
+    const wrapper = mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Sign-in failed.');
+    expect(wrapper.text()).toContain('Authentication failed (access_denied).');
+    expect(authMocks.getSession).not.toHaveBeenCalled();
+  });
+
   it('defaults to the root path when returnTo is missing', async () => {
     state.route = { query: {} };
+
+    mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(navigateToMock).toHaveBeenCalledWith('/');
+  });
+
+  it('defaults to the root path when localStorage is not available', async () => {
+    state.route = { query: {} };
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: {},
+      writable: true,
+    });
+
+    mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(navigateToMock).toHaveBeenCalledWith('/');
+  });
+
+  it('uses stored returnTo when query is missing', async () => {
+    state.route = { query: {} };
+    globalThis.localStorage?.setItem(
+      'seedbed.auth.returnTo',
+      JSON.stringify({ path: '/library', at: Date.now() }),
+    );
+
+    mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(navigateToMock).toHaveBeenCalledWith('/library');
+    expect(globalThis.localStorage?.getItem('seedbed.auth.returnTo')).toBeNull();
+  });
+
+  it('ignores stored returnTo when it is invalid JSON', async () => {
+    state.route = { query: {} };
+    globalThis.localStorage?.setItem('seedbed.auth.returnTo', 'not-json');
+
+    mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(navigateToMock).toHaveBeenCalledWith('/');
+  });
+
+  it('ignores stored returnTo when path is missing', async () => {
+    state.route = { query: {} };
+    globalThis.localStorage?.setItem(
+      'seedbed.auth.returnTo',
+      JSON.stringify({ path: '', at: Date.now() }),
+    );
+
+    mount(CallbackPage, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+      },
+    });
+
+    await flushPromises();
+
+    expect(navigateToMock).toHaveBeenCalledWith('/');
+  });
+
+  it('ignores stored returnTo when it is too old', async () => {
+    state.route = { query: {} };
+    globalThis.localStorage?.setItem(
+      'seedbed.auth.returnTo',
+      JSON.stringify({ path: '/library', at: Date.now() - 31 * 60 * 1000 }),
+    );
 
     mount(CallbackPage, {
       global: {

@@ -29,6 +29,9 @@ Then:
 - Select a table, e.g. `notes`
 - Confirm RLS is enabled and policies exist for
   SELECT/INSERT/UPDATE/DELETE with `user_id = auth.uid()`
+- Note: `visibility = 'unlisted'` is treated as **private** in RLS.
+- For `reviews`, expect an additional SELECT policy allowing authenticated users to read rows
+  where `visibility = 'public'`.
 
 ## Verify in SQL editor
 
@@ -64,3 +67,6 @@ where schemaname = 'public'
   )
 order by tablename, policyname;
 ```
+
+Expected notes:
+- `reviews_public_read` exists and only allows `SELECT` where `visibility = 'public'`.

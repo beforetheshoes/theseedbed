@@ -15,6 +15,9 @@ class Settings:
     supabase_jwt_audience: str | None
     supabase_jwt_secret: str | None
     supabase_jwks_cache_ttl_seconds: int
+    supabase_service_role_key: str | None
+    supabase_storage_covers_bucket: str
+    public_highlight_max_chars: int
     api_version: str
     cors_allowed_origins: tuple[str, ...] = (
         "http://localhost:3000",
@@ -136,6 +139,17 @@ def _parse_cors_origins() -> tuple[str, ...]:
     return tuple(origin.strip() for origin in raw_origins.split(",") if origin.strip())
 
 
+def _parse_public_highlight_max_chars() -> int:
+    raw_value = os.getenv("PUBLIC_HIGHLIGHT_MAX_CHARS", "").strip()
+    if not raw_value:
+        return 280
+    try:
+        value = int(raw_value)
+    except ValueError:
+        return 280
+    return max(value, 1)
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Settings are cached; call reset_settings_cache when env values change."""
@@ -151,7 +165,20 @@ def get_settings() -> Settings:
     jwt_secret: str | None = os.getenv("SUPABASE_JWT_SECRET", "").strip()
     if not jwt_secret:
         jwt_secret = None
+    # Supabase legacy: "service_role" key.
+    # Supabase current: "secret" key (sb_secret_...), which should be used server-side only.
+    # Support both env vars to avoid Render/GHA/env drift.
+    service_role_key: str | None = (
+        os.getenv("SUPABASE_SECRET_KEY", "").strip()
+        or os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+    if not service_role_key:
+        service_role_key = None
     ttl_seconds = _parse_ttl_seconds()
+    covers_bucket = os.getenv("SUPABASE_STORAGE_COVERS_BUCKET", "covers").strip()
+    if not covers_bucket:
+        covers_bucket = "covers"
+    public_highlight_max_chars = _parse_public_highlight_max_chars()
     cors_allowed_origins = _parse_cors_origins()
     api_version = os.getenv("API_VERSION", "0.1.0").strip()
     return Settings(
@@ -159,6 +186,9 @@ def get_settings() -> Settings:
         supabase_jwt_audience=audience,
         supabase_jwt_secret=jwt_secret,
         supabase_jwks_cache_ttl_seconds=ttl_seconds,
+        supabase_service_role_key=service_role_key,
+        supabase_storage_covers_bucket=covers_bucket,
+        public_highlight_max_chars=public_highlight_max_chars,
         cors_allowed_origins=cors_allowed_origins,
         api_version=api_version,
     )

@@ -62,6 +62,24 @@ Local development is fully independent of hosting. You can build and run the app
 make supabase-health
 ```
 
+## Hosted RLS verification
+
+See `docs/supabase-hosted-rls-verification.md`.
+
+## Hosted migrations (automatic)
+
+GitHub Actions applies database migrations automatically:
+- On merge/push to `development`: pushes migrations to staging.
+- On merge/push to `main`: pushes migrations to production (staging-first workflow still applies).
+
+Required GitHub Actions secrets (prefer environment-scoped secrets):
+- `SUPABASE_ACCESS_TOKEN`
+- `SUPABASE_STAGING_DB_PASSWORD`
+- `SUPABASE_PROD_DB_PASSWORD`
+- `RENDER_API_KEY` (API deploy is triggered after migrations)
+
+Workflow: `.github/workflows/supabase-db-push.yml`
+
 ## When to use `supabase link`
 
 Think of `supabase link` as "point the CLI at a hosted project." It is **not** used for local dev.
@@ -88,6 +106,10 @@ Tip: you can avoid a persistent link by passing `--project-ref` to a command, or
 
 We do not share staging/production secrets via files. Only public values (anon key + URL) should be used in frontend configs. Server secrets live in hosting/CI.
 
+Apple OAuth policy:
+- Hosted staging/production Apple client ID/secret are managed in Supabase Dashboard.
+- Local `.env` Apple vars are optional and only needed when testing Apple auth against a local Supabase stack.
+
 ## CLI notes
 
 After projects are created, link/push config:
@@ -99,6 +121,21 @@ supabase config push
 supabase link --project-ref <production-ref>
 supabase config push
 ```
+
+## Staging workflow (migrations-first)
+
+Staging deploys break when the API runs ahead of the Supabase schema. The workflow is:
+
+1) Create a Supabase SQL migration in `supabase/migrations/`.
+2) Create a matching Alembic revision in `apps/api/alembic/versions/` (CI uses Alembic to build the test DB).
+3) Apply migrations to staging before deploying API changes:
+
+```bash
+supabase link --project-ref kypwcksvicrbrrwscdze
+supabase db push
+```
+
+4) Then merge/deploy API to staging.
 
 ## Deployment
 
