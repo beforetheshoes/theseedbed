@@ -4,7 +4,7 @@ import base64
 import datetime as dt
 import json
 import uuid
-from typing import Any
+from typing import Any, Literal, TypeAlias
 
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
@@ -12,8 +12,16 @@ from sqlalchemy.orm import Session
 from app.db.models.bibliography import Work
 from app.db.models.users import LibraryItem, User
 
-DEFAULT_LIBRARY_STATUS = "to_read"
-DEFAULT_LIBRARY_VISIBILITY = "private"
+LibraryItemStatus: TypeAlias = Literal[
+    "to_read",
+    "reading",
+    "completed",
+    "abandoned",
+]
+LibraryItemVisibility: TypeAlias = Literal["private", "public"]
+
+DEFAULT_LIBRARY_STATUS: LibraryItemStatus = "to_read"
+DEFAULT_LIBRARY_VISIBILITY: LibraryItemVisibility = "private"
 
 
 def _default_handle(user_id: uuid.UUID) -> str:
@@ -86,8 +94,8 @@ def create_or_get_library_item(
     *,
     user_id: uuid.UUID,
     work_id: uuid.UUID,
-    status: str | None,
-    visibility: str | None,
+    status: LibraryItemStatus | None,
+    visibility: LibraryItemVisibility | None,
     rating: int | None,
     tags: list[str] | None,
     preferred_edition_id: uuid.UUID | None,

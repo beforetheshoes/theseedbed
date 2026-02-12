@@ -12,6 +12,8 @@ from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
 from app.services.user_library import (
+    LibraryItemStatus,
+    LibraryItemVisibility,
     create_or_get_library_item,
     delete_library_item,
     list_library_items,
@@ -22,16 +24,16 @@ from app.services.user_library import (
 class CreateLibraryItemRequest(BaseModel):
     work_id: uuid.UUID
     preferred_edition_id: uuid.UUID | None = None
-    status: str | None = Field(default=None, max_length=32)
-    visibility: str | None = Field(default=None, max_length=32)
+    status: LibraryItemStatus | None = None
+    visibility: LibraryItemVisibility | None = None
     rating: int | None = Field(default=None, ge=0, le=10)
     tags: list[str] | None = None
 
 
 class UpdateLibraryItemRequest(BaseModel):
     preferred_edition_id: uuid.UUID | None = None
-    status: str | None = Field(default=None, max_length=32)
-    visibility: str | None = Field(default=None, max_length=32)
+    status: LibraryItemStatus | None = None
+    visibility: LibraryItemVisibility | None = None
     rating: int | None = Field(default=None, ge=0, le=10)
     tags: list[str] | None = None
 

@@ -15,6 +15,9 @@ from app.db.session import get_db_session
 from app.routers.library import router as library_router
 from app.routers.me import router as me_router
 
+VALID_LIBRARY_STATUSES = ("to_read", "reading", "completed", "abandoned")
+VALID_LIBRARY_VISIBILITIES = ("private", "public")
+
 
 @pytest.fixture
 def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
@@ -148,6 +151,104 @@ def test_create_library_item(app: FastAPI) -> None:
     assert response.json()["data"]["created"] is True
 
 
+@pytest.mark.parametrize("status", VALID_LIBRARY_STATUSES)
+def test_create_library_item_accepts_valid_status_values(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch, status: str
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.library.create_or_get_library_item",
+        lambda session, **kwargs: (
+            SimpleNamespace(
+                id=uuid.uuid4(),
+                work_id=kwargs["work_id"],
+                status=kwargs["status"],
+                visibility=kwargs.get("visibility") or "private",
+                rating=kwargs.get("rating"),
+                tags=kwargs.get("tags"),
+            ),
+            True,
+        ),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items",
+        json={"work_id": str(uuid.uuid4()), "status": status},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == status
+
+
+@pytest.mark.parametrize("visibility", VALID_LIBRARY_VISIBILITIES)
+def test_create_library_item_accepts_valid_visibility_values(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch, visibility: str
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.library.create_or_get_library_item",
+        lambda session, **kwargs: (
+            SimpleNamespace(
+                id=uuid.uuid4(),
+                work_id=kwargs["work_id"],
+                status=kwargs.get("status") or "to_read",
+                visibility=kwargs["visibility"],
+                rating=kwargs.get("rating"),
+                tags=kwargs.get("tags"),
+            ),
+            True,
+        ),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items",
+        json={"work_id": str(uuid.uuid4()), "visibility": visibility},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["visibility"] == visibility
+
+
+def test_create_library_item_rejects_invalid_status_before_service_call(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    def _create_or_get(*_args: object, **_kwargs: object) -> tuple[object, bool]:
+        nonlocal called
+        called = True
+        return object(), True
+
+    monkeypatch.setattr(
+        "app.routers.library.create_or_get_library_item", _create_or_get
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items",
+        json={"work_id": str(uuid.uuid4()), "status": "paused"},
+    )
+    assert response.status_code == 422
+    assert called is False
+
+
+def test_create_library_item_rejects_invalid_visibility_before_service_call(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    def _create_or_get(*_args: object, **_kwargs: object) -> tuple[object, bool]:
+        nonlocal called
+        called = True
+        return object(), True
+
+    monkeypatch.setattr(
+        "app.routers.library.create_or_get_library_item", _create_or_get
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items",
+        json={"work_id": str(uuid.uuid4()), "visibility": "friends_only"},
+    )
+    assert response.status_code == 422
+    assert called is False
+
+
 def test_create_library_item_returns_404(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -185,6 +286,72 @@ def test_patch_library_item(app: FastAPI) -> None:
     payload = response.json()["data"]
     assert payload["status"] == "reading"
     assert payload["tags"] == ["memoir"]
+
+
+@pytest.mark.parametrize("status", VALID_LIBRARY_STATUSES)
+def test_patch_library_item_accepts_valid_status_values(
+    app: FastAPI, status: str
+) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/library/items/{uuid.uuid4()}",
+        json={"status": status},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["status"] == status
+
+
+@pytest.mark.parametrize("visibility", VALID_LIBRARY_VISIBILITIES)
+def test_patch_library_item_accepts_valid_visibility_values(
+    app: FastAPI, visibility: str
+) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/library/items/{uuid.uuid4()}",
+        json={"visibility": visibility},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["visibility"] == visibility
+
+
+def test_patch_library_item_rejects_invalid_status_before_service_call(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    def _update(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        return object()
+
+    monkeypatch.setattr("app.routers.library.update_library_item", _update)
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/library/items/{uuid.uuid4()}",
+        json={"status": "paused"},
+    )
+    assert response.status_code == 422
+    assert called is False
+
+
+def test_patch_library_item_rejects_invalid_visibility_before_service_call(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    called = False
+
+    def _update(*_args: object, **_kwargs: object) -> object:
+        nonlocal called
+        called = True
+        return object()
+
+    monkeypatch.setattr("app.routers.library.update_library_item", _update)
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/library/items/{uuid.uuid4()}",
+        json={"visibility": "friends_only"},
+    )
+    assert response.status_code == 422
+    assert called is False
 
 
 def test_patch_library_item_returns_400(
