@@ -67,6 +67,9 @@ async def search_books(
                 }
                 for item in response.items
             ],
+            "next_page": response.next_page,
+            "has_more": response.has_more,
+            "num_found": response.num_found,
             "cache_hit": response.cache_hit,
         }
     )

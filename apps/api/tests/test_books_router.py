@@ -37,6 +37,12 @@ class FakeOpenLibrary:
                     cover_url=None,
                 )
             ],
+            query=query,
+            limit=limit,
+            page=page,
+            num_found=22,
+            has_more=True,
+            next_page=2,
             cache_hit=True,
         )
 
@@ -113,7 +119,11 @@ def test_search_books(app: FastAPI) -> None:
     client = TestClient(app)
     response = client.get("/api/v1/books/search", params={"query": "q"})
     assert response.status_code == 200
-    assert response.json()["data"]["items"][0]["title"] == "q"
+    payload = response.json()["data"]
+    assert payload["items"][0]["title"] == "q"
+    assert payload["next_page"] == 2
+    assert payload["has_more"] is True
+    assert payload["num_found"] == 22
 
 
 def test_get_open_library_client_constructs_client() -> None:

@@ -38,6 +38,25 @@ vi.mock('primevue/usetoast', () => ({
 
 import SearchPage from '../../../app/pages/books/search.vue';
 
+const searchResponse = (
+  items: Array<{
+    work_key: string;
+    title: string;
+    author_names: string[];
+    first_publish_year: number | null;
+    cover_url: string | null;
+  }>,
+  nextPage: number | null = null,
+) => ({
+  items,
+  next_page: nextPage,
+});
+
+const deferred = <T>() => {
+  const { promise, resolve, reject } = Promise.withResolvers<T>();
+  return { promise, resolve, reject };
+};
+
 const mountPage = () =>
   mount(SearchPage, {
     global: {
@@ -76,8 +95,8 @@ describe('books search page', () => {
   });
 
   it('searches books with debounce', async () => {
-    apiRequest.mockResolvedValueOnce({
-      items: [
+    apiRequest.mockResolvedValueOnce(
+      searchResponse([
         {
           work_key: '/works/OL1W',
           title: 'Book A',
@@ -85,8 +104,8 @@ describe('books search page', () => {
           first_publish_year: 2000,
           cover_url: 'https://example.com/cover.jpg',
         },
-      ],
-    });
+      ]),
+    );
 
     const wrapper = mountPage();
 
@@ -98,11 +117,11 @@ describe('books search page', () => {
     });
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.find('[data-test="search-item-cover"]').exists()).toBe(true);
-    expect(wrapper.find('[data-test="search-item-cover-skeleton"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="search-item-cover-placeholder"]').exists()).toBe(false);
   });
 
   it('clears the prior debounce timer when query changes rapidly', async () => {
-    apiRequest.mockResolvedValue({ items: [] });
+    apiRequest.mockResolvedValue(searchResponse([]));
     const wrapper = mountPage();
 
     await wrapper.get('[data-test="search-input"]').setValue('ha');
@@ -113,7 +132,7 @@ describe('books search page', () => {
   });
 
   it('shows empty-state hint when no results are found', async () => {
-    apiRequest.mockResolvedValueOnce({ items: [] });
+    apiRequest.mockResolvedValueOnce(searchResponse([]));
     const wrapper = mountPage();
 
     await wrapper.get('[data-test="search-input"]').setValue('unknown');
@@ -123,8 +142,8 @@ describe('books search page', () => {
   });
 
   it('renders unknown author fallback and no first-publish label when missing', async () => {
-    apiRequest.mockResolvedValueOnce({
-      items: [
+    apiRequest.mockResolvedValueOnce(
+      searchResponse([
         {
           work_key: '/works/OL1W',
           title: 'Book A',
@@ -132,8 +151,8 @@ describe('books search page', () => {
           first_publish_year: null,
           cover_url: null,
         },
-      ],
-    });
+      ]),
+    );
 
     const wrapper = mountPage();
 
@@ -166,8 +185,8 @@ describe('books search page', () => {
 
   it('imports and adds a searched book', async () => {
     apiRequest
-      .mockResolvedValueOnce({
-        items: [
+      .mockResolvedValueOnce(
+        searchResponse([
           {
             work_key: '/works/OL1W',
             title: 'Book A',
@@ -175,8 +194,8 @@ describe('books search page', () => {
             first_publish_year: 2000,
             cover_url: null,
           },
-        ],
-      })
+        ]),
+      )
       .mockResolvedValueOnce({ work: { id: 'work-1' } })
       .mockResolvedValueOnce({ created: true });
 
@@ -197,12 +216,14 @@ describe('books search page', () => {
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: expect.stringContaining('added') }),
     );
+    expect(wrapper.get('[data-test="search-add-0"]').text()).toContain('Added');
+    expect(wrapper.get('[data-test="search-add-0"]').attributes('disabled')).toBeDefined();
   });
 
   it('uses the currently selected status when adding to library', async () => {
     apiRequest
-      .mockResolvedValueOnce({
-        items: [
+      .mockResolvedValueOnce(
+        searchResponse([
           {
             work_key: '/works/OL1W',
             title: 'Book A',
@@ -210,8 +231,8 @@ describe('books search page', () => {
             first_publish_year: 2000,
             cover_url: null,
           },
-        ],
-      })
+        ]),
+      )
       .mockResolvedValueOnce({ work: { id: 'work-1' } })
       .mockResolvedValueOnce({ created: true });
 
@@ -230,8 +251,8 @@ describe('books search page', () => {
 
   it('shows duplicate message when already in library', async () => {
     apiRequest
-      .mockResolvedValueOnce({
-        items: [
+      .mockResolvedValueOnce(
+        searchResponse([
           {
             work_key: '/works/OL1W',
             title: 'Book A',
@@ -239,8 +260,8 @@ describe('books search page', () => {
             first_publish_year: 2000,
             cover_url: null,
           },
-        ],
-      })
+        ]),
+      )
       .mockResolvedValueOnce({ work: { id: 'work-1' } })
       .mockResolvedValueOnce({ created: false });
 
@@ -256,12 +277,14 @@ describe('books search page', () => {
         summary: expect.stringContaining('already in your library'),
       }),
     );
+    expect(wrapper.get('[data-test="search-add-0"]').text()).toContain('Already in library');
   });
 
-  it('shows api client errors from import flow', async () => {
+  it('dispatches library updated event after successful add', async () => {
+    const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
     apiRequest
-      .mockResolvedValueOnce({
-        items: [
+      .mockResolvedValueOnce(
+        searchResponse([
           {
             work_key: '/works/OL1W',
             title: 'Book A',
@@ -269,8 +292,35 @@ describe('books search page', () => {
             first_publish_year: 2000,
             cover_url: null,
           },
-        ],
-      })
+        ]),
+      )
+      .mockResolvedValueOnce({ work: { id: 'work-1' } })
+      .mockResolvedValueOnce({ created: true });
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-add-0"]').trigger('click');
+
+    expect(dispatchSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'chapterverse:library-updated' }),
+    );
+    dispatchSpy.mockRestore();
+  });
+
+  it('shows api client errors from import flow', async () => {
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL1W',
+            title: 'Book A',
+            author_names: ['Author A'],
+            first_publish_year: 2000,
+            cover_url: null,
+          },
+        ]),
+      )
       .mockRejectedValueOnce(new ApiClientErrorMock('Import denied', 'denied', 403));
 
     const wrapper = mountPage();
@@ -284,8 +334,8 @@ describe('books search page', () => {
 
   it('shows generic errors from import flow', async () => {
     apiRequest
-      .mockResolvedValueOnce({
-        items: [
+      .mockResolvedValueOnce(
+        searchResponse([
           {
             work_key: '/works/OL1W',
             title: 'Book A',
@@ -293,8 +343,8 @@ describe('books search page', () => {
             first_publish_year: 2000,
             cover_url: null,
           },
-        ],
-      })
+        ]),
+      )
       .mockRejectedValueOnce(new Error('boom'));
 
     const wrapper = mountPage();
@@ -321,9 +371,9 @@ describe('books search page', () => {
     expect(() => wrapper.unmount()).not.toThrow();
   });
 
-  it('renders a skeleton thumbnail when cover_url is missing', async () => {
-    apiRequest.mockResolvedValueOnce({
-      items: [
+  it('renders a placeholder thumbnail when cover_url is missing', async () => {
+    apiRequest.mockResolvedValueOnce(
+      searchResponse([
         {
           work_key: '/works/OL1W',
           title: 'Book A',
@@ -331,14 +381,305 @@ describe('books search page', () => {
           first_publish_year: 2000,
           cover_url: null,
         },
-      ],
-    });
+      ]),
+    );
 
     const wrapper = mountPage();
 
     await wrapper.get('[data-test="search-input"]').setValue('harry');
     await vi.advanceTimersByTimeAsync(350);
 
-    expect(wrapper.find('[data-test="search-item-cover-skeleton"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="search-item-cover-placeholder"]').exists()).toBe(true);
+  });
+
+  it('falls back to placeholder when cover image fails to load', async () => {
+    apiRequest.mockResolvedValueOnce(
+      searchResponse([
+        {
+          work_key: '/works/OL1W',
+          title: 'Book A',
+          author_names: ['Author A'],
+          first_publish_year: 2000,
+          cover_url: 'https://example.com/cover.jpg',
+        },
+      ]),
+    );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-item-cover"]').trigger('error');
+
+    expect(wrapper.find('[data-test="search-item-cover"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="search-item-cover-placeholder"]').exists()).toBe(true);
+  });
+
+  it('shows and uses load more to append additional pages', async () => {
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse(
+          [
+            {
+              work_key: '/works/OL1W',
+              title: 'Book A',
+              author_names: ['Author A'],
+              first_publish_year: 2000,
+              cover_url: null,
+            },
+          ],
+          2,
+        ),
+      )
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL2W',
+            title: 'Book B',
+            author_names: ['Author B'],
+            first_publish_year: 2001,
+            cover_url: null,
+          },
+        ]),
+      );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(wrapper.find('[data-test="search-load-more"]').exists()).toBe(true);
+    await wrapper.get('[data-test="search-load-more"]').trigger('click');
+    await Promise.resolve();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/books/search', {
+      query: { query: 'harry', limit: 10, page: 2 },
+    });
+    expect(wrapper.text()).toContain('Book A');
+    expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.find('[data-test="search-load-more"]').exists()).toBe(false);
+  });
+
+  it('keeps existing results when load more fails', async () => {
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse(
+          [
+            {
+              work_key: '/works/OL1W',
+              title: 'Book A',
+              author_names: ['Author A'],
+              first_publish_year: 2000,
+              cover_url: null,
+            },
+          ],
+          2,
+        ),
+      )
+      .mockRejectedValueOnce(new ApiClientErrorMock('Try later', 'request_failed', 500));
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-load-more"]').trigger('click');
+    await Promise.resolve();
+
+    expect(wrapper.text()).toContain('Book A');
+    expect(wrapper.get('[data-test="search-error"]').text()).toContain('Try later');
+  });
+
+  it('shows generic message when load more throws a non-api error', async () => {
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse(
+          [
+            {
+              work_key: '/works/OL1W',
+              title: 'Book A',
+              author_names: ['Author A'],
+              first_publish_year: 2000,
+              cover_url: null,
+            },
+          ],
+          2,
+        ),
+      )
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-load-more"]').trigger('click');
+    await Promise.resolve();
+
+    expect(wrapper.get('[data-test="search-error"]').text()).toContain('Unable to load more');
+  });
+
+  it('ignores stale search error when a newer query succeeds', async () => {
+    const firstSearch = deferred<ReturnType<typeof searchResponse>>();
+    apiRequest
+      .mockImplementationOnce(() => firstSearch.promise)
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL2W',
+            title: 'Book B',
+            author_names: ['Author B'],
+            first_publish_year: 2001,
+            cover_url: null,
+          },
+        ]),
+      );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-input"]').setValue('harriet');
+    await vi.advanceTimersByTimeAsync(350);
+
+    firstSearch.reject(new Error('stale error'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.find('[data-test="search-error"]').exists()).toBe(false);
+  });
+
+  it('ignores stale search success when a newer query succeeds', async () => {
+    const firstSearch = deferred<ReturnType<typeof searchResponse>>();
+    apiRequest
+      .mockImplementationOnce(() => firstSearch.promise)
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL2W',
+            title: 'Book B',
+            author_names: ['Author B'],
+            first_publish_year: 2001,
+            cover_url: null,
+          },
+        ]),
+      );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-input"]').setValue('harriet');
+    await vi.advanceTimersByTimeAsync(350);
+
+    firstSearch.resolve(
+      searchResponse([
+        {
+          work_key: '/works/OL1W',
+          title: 'Book A',
+          author_names: ['Author A'],
+          first_publish_year: 2000,
+          cover_url: null,
+        },
+      ]),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(wrapper.text()).toContain('Book B');
+    expect(wrapper.text()).not.toContain('Book A');
+  });
+
+  it('ignores stale load-more response when query changes', async () => {
+    const staleLoadMore = deferred<ReturnType<typeof searchResponse>>();
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse(
+          [
+            {
+              work_key: '/works/OL1W',
+              title: 'Book A',
+              author_names: ['Author A'],
+              first_publish_year: 2000,
+              cover_url: null,
+            },
+          ],
+          2,
+        ),
+      )
+      .mockImplementationOnce(() => staleLoadMore.promise)
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL9W',
+            title: 'Book Z',
+            author_names: ['Author Z'],
+            first_publish_year: 2009,
+            cover_url: null,
+          },
+        ]),
+      );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-load-more"]').trigger('click');
+
+    await wrapper.get('[data-test="search-input"]').setValue('zebra');
+    await vi.advanceTimersByTimeAsync(350);
+    staleLoadMore.resolve(
+      searchResponse([
+        {
+          work_key: '/works/OL2W',
+          title: 'Book B',
+          author_names: ['Author B'],
+          first_publish_year: 2001,
+          cover_url: null,
+        },
+      ]),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(wrapper.text()).toContain('Book Z');
+    expect(wrapper.text()).not.toContain('Book B');
+  });
+
+  it('ignores stale load-more error when query changes', async () => {
+    const staleLoadMore = deferred<ReturnType<typeof searchResponse>>();
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse(
+          [
+            {
+              work_key: '/works/OL1W',
+              title: 'Book A',
+              author_names: ['Author A'],
+              first_publish_year: 2000,
+              cover_url: null,
+            },
+          ],
+          2,
+        ),
+      )
+      .mockImplementationOnce(() => staleLoadMore.promise)
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL9W',
+            title: 'Book Z',
+            author_names: ['Author Z'],
+            first_publish_year: 2009,
+            cover_url: null,
+          },
+        ]),
+      );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-load-more"]').trigger('click');
+    await wrapper.get('[data-test="search-input"]').setValue('zebra');
+    await vi.advanceTimersByTimeAsync(350);
+
+    staleLoadMore.reject(new Error('stale load more error'));
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(wrapper.find('[data-test="search-error"]').exists()).toBe(false);
+    expect(wrapper.text()).toContain('Book Z');
   });
 });

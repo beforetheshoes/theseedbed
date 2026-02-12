@@ -71,21 +71,15 @@
                   class="h-[120px] w-[80px] shrink-0 overflow-hidden rounded-lg border border-[var(--p-content-border-color)] bg-black/5 dark:bg-white/5"
                   data-test="search-item-thumb"
                 >
-                  <Image
-                    v-if="book.cover_url"
-                    :src="book.cover_url"
+                  <img
+                    v-if="shouldRenderCover(book)"
+                    :src="book.cover_url || ''"
                     alt=""
-                    :preview="false"
-                    class="h-full w-full"
-                    image-class="h-full w-full object-cover"
+                    class="h-full w-full object-cover"
                     data-test="search-item-cover"
+                    @error="onCoverError(book.work_key)"
                   />
-                  <Skeleton
-                    v-else
-                    class="h-full w-full"
-                    borderRadius="0.5rem"
-                    data-test="search-item-cover-skeleton"
-                  />
+                  <CoverPlaceholder v-else data-test="search-item-cover-placeholder" />
                 </div>
 
                 <div class="flex h-full min-w-0 flex-1 flex-col gap-3">
@@ -105,9 +99,10 @@
                   </div>
 
                   <Button
-                    label="Import and add"
+                    :label="addButtonLabel(book.work_key)"
                     class="mt-auto self-start"
                     :loading="importingWorkKey === book.work_key"
+                    :disabled="isAddButtonDisabled(book.work_key)"
                     :data-test="`search-add-${index}`"
                     @click="importAndAdd(book.work_key)"
                   />
@@ -115,6 +110,15 @@
               </div>
             </template>
           </Card>
+
+          <Button
+            v-if="nextPage !== null"
+            label="Load more"
+            class="md:col-span-2 justify-self-start"
+            :loading="loadingMore"
+            data-test="search-load-more"
+            @click="loadMore"
+          />
         </div>
       </div>
     </template>
@@ -127,6 +131,7 @@ definePageMeta({ layout: 'app', middleware: 'auth' });
 import { onBeforeUnmount, ref, watch } from 'vue';
 import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
+import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 
 const toast = useToast();
 
@@ -138,14 +143,27 @@ type SearchItem = {
   cover_url: string | null;
 };
 
+type SearchResponse = {
+  items: SearchItem[];
+  next_page: number | null;
+};
+
+type AddedStatus = 'added' | 'already_exists';
+
+const LIBRARY_UPDATED_EVENT = 'chapterverse:library-updated';
+
 const query = ref('');
 const status = ref('to_read');
 const loading = ref(false);
+const loadingMore = ref(false);
 const results = ref<SearchItem[]>([]);
+const nextPage = ref<number | null>(null);
 const error = ref('');
-const message = ref('');
 const hint = ref('Type at least 2 characters to search.');
 const importingWorkKey = ref<string | null>(null);
+const activeQuery = ref('');
+const brokenCoverKeys = ref(new Set<string>());
+const addedStatusByWorkKey = ref<Record<string, AddedStatus>>({});
 
 const statusOptions = [
   { label: 'To read', value: 'to_read' },
@@ -154,47 +172,88 @@ const statusOptions = [
 ];
 
 let searchTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let searchRequestSeq = 0;
+
+const shouldRenderCover = (book: SearchItem): boolean =>
+  Boolean(book.cover_url) && !brokenCoverKeys.value.has(book.work_key);
+
+const onCoverError = (workKey: string) => {
+  const next = new Set(brokenCoverKeys.value);
+  next.add(workKey);
+  brokenCoverKeys.value = next;
+};
+
+const addButtonLabel = (workKey: string): string => {
+  const addedStatus = addedStatusByWorkKey.value[workKey];
+  if (addedStatus === 'added') return 'Added';
+  if (addedStatus === 'already_exists') return 'Already in library';
+  return 'Import and add';
+};
+
+const isAddButtonDisabled = (workKey: string): boolean =>
+  Boolean(addedStatusByWorkKey.value[workKey]) || importingWorkKey.value === workKey;
+
+const fetchSearchPage = async (page: number): Promise<SearchResponse> =>
+  apiRequest<SearchResponse>('/api/v1/books/search', {
+    query: {
+      query: activeQuery.value,
+      limit: 10,
+      page,
+    },
+  });
 
 const runSearch = async () => {
   const trimmed = query.value.trim();
   if (trimmed.length < 2) {
     results.value = [];
+    nextPage.value = null;
+    activeQuery.value = '';
+    brokenCoverKeys.value = new Set();
+    addedStatusByWorkKey.value = {};
+    error.value = '';
     hint.value = 'Type at least 2 characters to search.';
     return;
   }
 
+  const currentSeq = ++searchRequestSeq;
+  activeQuery.value = trimmed;
   loading.value = true;
   error.value = '';
-  message.value = '';
   hint.value = '';
 
   try {
-    const payload = await apiRequest<{ items: SearchItem[] }>('/api/v1/books/search', {
-      query: {
-        query: trimmed,
-        limit: 10,
-        page: 1,
-      },
-    });
+    const payload = await fetchSearchPage(1);
+    if (currentSeq !== searchRequestSeq) {
+      return;
+    }
     results.value = payload.items;
+    nextPage.value = payload.next_page;
+    brokenCoverKeys.value = new Set();
+    addedStatusByWorkKey.value = {};
     if (!payload.items.length) {
       hint.value = 'No books found. Try another search.';
     }
   } catch (err) {
+    if (currentSeq !== searchRequestSeq) {
+      return;
+    }
     results.value = [];
+    nextPage.value = null;
     if (err instanceof ApiClientError) {
       error.value = err.message;
     } else {
       error.value = 'Unable to search books right now.';
     }
   } finally {
-    loading.value = false;
+    if (currentSeq === searchRequestSeq) {
+      loading.value = false;
+    }
   }
 };
 
 const importAndAdd = async (workKey: string) => {
+  if (isAddButtonDisabled(workKey)) return;
   error.value = '';
-  message.value = '';
 
   importingWorkKey.value = workKey;
 
@@ -215,6 +274,13 @@ const importAndAdd = async (workKey: string) => {
     const msg = libraryResult.created
       ? 'Book imported and added to your library.'
       : 'Book is already in your library.';
+    addedStatusByWorkKey.value = {
+      ...addedStatusByWorkKey.value,
+      [workKey]: libraryResult.created ? 'added' : 'already_exists',
+    };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(LIBRARY_UPDATED_EVENT));
+    }
     toast.add({ severity: 'success', summary: msg, life: 3000 });
   } catch (err) {
     if (err instanceof ApiClientError) {
@@ -224,6 +290,38 @@ const importAndAdd = async (workKey: string) => {
     }
   } finally {
     importingWorkKey.value = null;
+  }
+};
+
+const loadMore = async () => {
+  if (nextPage.value === null || loadingMore.value) return;
+  const page = nextPage.value;
+  const queryAtRequest = activeQuery.value;
+
+  loadingMore.value = true;
+  error.value = '';
+
+  try {
+    const payload = await fetchSearchPage(page);
+    if (queryAtRequest !== activeQuery.value) {
+      return;
+    }
+
+    const seen = new Set(results.value.map((item) => item.work_key));
+    const nextItems = payload.items.filter((item) => !seen.has(item.work_key));
+    results.value = [...results.value, ...nextItems];
+    nextPage.value = payload.next_page;
+  } catch (err) {
+    if (queryAtRequest !== activeQuery.value) {
+      return;
+    }
+    if (err instanceof ApiClientError) {
+      error.value = err.message;
+    } else {
+      error.value = 'Unable to load more books right now.';
+    }
+  } finally {
+    loadingMore.value = false;
   }
 };
 
