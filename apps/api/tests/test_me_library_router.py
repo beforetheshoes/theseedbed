@@ -65,6 +65,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
                     "visibility": "private",
                     "rating": None,
                     "tags": [],
+                    "last_read_at": None,
                     "created_at": dt.datetime.now(tz=dt.UTC).isoformat(),
                 }
             ],
@@ -141,6 +142,7 @@ def test_list_library_items(app: FastAPI) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["items"][0]["status"] == "reading"
+    assert "last_read_at" in response.json()["data"]["items"][0]
 
 
 def test_create_library_item(app: FastAPI) -> None:

@@ -24,7 +24,7 @@ const home = computed<BreadcrumbItem | undefined>(() => undefined);
 const items = computed<BreadcrumbItem[]>(() => {
   const path = route.path || '/';
   if (path === '/library') {
-    return [{ label: 'Library' }];
+    return [];
   }
   if (path === '/books/search') {
     return [{ label: 'Library', to: '/library' }, { label: 'Add books' }];
