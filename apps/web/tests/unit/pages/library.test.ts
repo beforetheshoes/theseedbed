@@ -95,7 +95,15 @@ const mountPage = () =>
             @click="
               $emit(
                 'update:modelValue',
-                $attrs['data-test'] === 'library-sort-select' ? 'title_asc' : 'reading',
+                $attrs['data-test'] === 'library-sort-select'
+                  ? 'title_asc'
+                  : $attrs['data-test'] === 'library-status-filter'
+                    ? 'reading'
+                    : $attrs['data-test'] === 'library-visibility-filter'
+                      ? 'public'
+                      : $attrs['data-test'] === 'library-item-status-edit'
+                        ? 'completed'
+                        : 'public',
               )
             "
           ></button>`,
@@ -145,7 +153,7 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: undefined },
+      query: { limit: 10, cursor: undefined, status: undefined, visibility: undefined },
     });
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.findAll('[data-test="library-item-cover"]').length).toBeGreaterThan(0);
@@ -192,7 +200,7 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: 'cursor-1', status: undefined },
+      query: { limit: 10, cursor: 'cursor-1', status: undefined, visibility: undefined },
     });
     expect(wrapper.text()).toContain('Book B');
     expect(wrapper.findAll('[data-test="library-item-cover-placeholder"]').length).toBeGreaterThan(
@@ -240,7 +248,22 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: 'reading' },
+      query: { limit: 10, cursor: undefined, status: 'reading', visibility: undefined },
+    });
+  });
+
+  it('refetches when visibility filter changes', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+      .mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await wrapper.get('[data-test="library-visibility-filter"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
+      query: { limit: 10, cursor: undefined, status: undefined, visibility: 'public' },
     });
   });
 
@@ -256,7 +279,7 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: undefined },
+      query: { limit: 10, cursor: undefined, status: undefined, visibility: undefined },
     });
   });
 
@@ -1374,6 +1397,302 @@ describe('library page', () => {
 
     expect(wrapper.find('[data-test="library-load-more"]').exists()).toBe(false);
     expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('patches status inline and updates the local item', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'private',
+        tags: ['Favorites'],
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items/item-1', {
+      method: 'PATCH',
+      body: { status: 'completed' },
+    });
+    expect((wrapper.vm as any).items[0].status).toBe('completed');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Status updated.' }),
+    );
+  });
+
+  it('patches visibility inline and reverts when update fails', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-visibility-edit"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items/item-1', {
+      method: 'PATCH',
+      body: { visibility: 'public' },
+    });
+    expect((wrapper.vm as any).items[0].visibility).toBe('private');
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'Unable to update this item right now.',
+      }),
+    );
+  });
+
+  it('refetches when inline update returns 404', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Not found', 'not_found', 404))
+      .mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
+    await flushPromises();
+
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls.length).toBe(2);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+      }),
+    );
+  });
+
+  it('shows ApiClientError message for inline update failures', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Invalid transition', 'invalid_status', 400));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'error',
+        summary: 'Invalid transition',
+      }),
+    );
+  });
+
+  it('ignores invalid inline edit payloads and in-flight updates', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'to_read',
+          visibility: 'private',
+          tags: ['Favorites'],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).onStatusEdit(item, 123);
+    (wrapper.vm as any).onStatusEdit(item, 'invalid-status');
+    (wrapper.vm as any).onVisibilityEdit(item, 'friends-only');
+    (wrapper.vm as any).itemFieldUpdates['item-1:status'] = true;
+    (wrapper.vm as any).onStatusEdit(item, 'completed');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('updates via table mode inline controls', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'private',
+        tags: ['Favorites'],
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'public',
+        tags: ['Favorites'],
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    (wrapper.vm as any).viewMode = 'table';
+    await flushPromises();
+
+    const editControls = wrapper.findAll('[data-test="library-item-status-edit"]');
+    await editControls.at(0)!.trigger('click');
+    await flushPromises();
+    await wrapper.findAll('[data-test="library-item-visibility-edit"]').at(0)!.trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items/item-1', {
+      method: 'PATCH',
+      body: { status: 'completed' },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/v1/library/items/item-1', {
+      method: 'PATCH',
+      body: { visibility: 'public' },
+    });
+  });
+
+  it('updates via grid mode inline controls', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'private',
+        tags: ['Favorites'],
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'public',
+        tags: ['Favorites'],
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    (wrapper.vm as any).viewMode = 'grid';
+    await flushPromises();
+
+    await wrapper.findAll('[data-test="library-item-status-edit"]').at(0)!.trigger('click');
+    await flushPromises();
+    await wrapper.findAll('[data-test="library-item-visibility-edit"]').at(0)!.trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items/item-1', {
+      method: 'PATCH',
+      body: { status: 'completed' },
+    });
+    expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/v1/library/items/item-1', {
+      method: 'PATCH',
+      body: { visibility: 'public' },
+    });
   });
 
   it('opens remove confirm and deletes an item on confirm', async () => {
