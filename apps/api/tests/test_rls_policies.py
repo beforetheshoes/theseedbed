@@ -206,11 +206,15 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
     api_client_2 = uuid.uuid4()
     api_audit_log_1 = uuid.uuid4()
     api_audit_log_2 = uuid.uuid4()
+    user_1_email = f"user1-{user_1.hex}@example.com"
+    user_2_email = f"user2-{user_2.hex}@example.com"
+    external_provider_id = f"OL-{work_1.hex[:12]}"
+    source_provider_id = f"OL-SRC-{source_record_1.hex[:12]}"
 
     with psycopg.connect(db_url, autocommit=True) as conn:
         conn.execute("set role postgres;")
-        _insert_auth_user(conn, user_1, "user1@example.com")
-        _insert_auth_user(conn, user_2, "user2@example.com")
+        _insert_auth_user(conn, user_1, user_1_email)
+        _insert_auth_user(conn, user_2, user_2_email)
 
         conn.execute(
             """
@@ -249,7 +253,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
                 (id, entity_type, entity_id, provider, provider_id)
             values (%s, %s, %s, %s, %s);
             """,
-            (external_id_1, "work", work_1, "openlibrary", "OL123"),
+            (external_id_1, "work", work_1, "openlibrary", external_provider_id),
         )
         conn.execute(
             """
@@ -261,7 +265,7 @@ def seed_data(db_url: str) -> Iterator[dict[str, uuid.UUID]]:
                 source_record_1,
                 "openlibrary",
                 "work",
-                "OL123",
+                source_provider_id,
                 Json({"title": "Work One"}),
                 now,
             ),
@@ -1099,9 +1103,10 @@ def test_user_scoped_inserts_and_deletes(
 
 def test_users_insert_enforces_owner(db_url: str) -> None:
     user_id = uuid.uuid4()
+    user_email = f"user3-{user_id.hex}@example.com"
     with psycopg.connect(db_url, autocommit=True) as conn:
         conn.execute("set role postgres;")
-        _insert_auth_user(conn, user_id, "user3@example.com")
+        _insert_auth_user(conn, user_id, user_email)
 
     with _authenticated_conn(db_url, user_id) as conn:
         handle = f"user_{user_id.hex[:8]}"

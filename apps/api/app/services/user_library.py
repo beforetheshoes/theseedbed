@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models.bibliography import Author, Edition, Work, WorkAuthor
 from app.db.models.external_provider import ExternalId
-from app.db.models.users import LibraryItem, User
+from app.db.models.users import LibraryItem, ReadingSession, User
 
 DEFAULT_LIBRARY_STATUS = "to_read"
 DEFAULT_LIBRARY_VISIBILITY = "private"
@@ -137,18 +137,35 @@ def list_library_items(
     tag: str | None,
     visibility: str | None,
 ) -> dict[str, Any]:
+    last_read_subquery = (
+        sa.select(
+            ReadingSession.library_item_id.label("library_item_id"),
+            sa.func.max(ReadingSession.started_at).label("last_read_at"),
+        )
+        .where(ReadingSession.user_id == user_id)
+        .group_by(ReadingSession.library_item_id)
+        .subquery()
+    )
+
     stmt = (
         sa.select(
             LibraryItem,
             Work.title,
+            Work.description,
             sa.func.coalesce(
                 LibraryItem.cover_override_url,
                 Edition.cover_url,
                 Work.default_cover_url,
             ).label("cover_url"),
+            last_read_subquery.c.last_read_at,
         )
         .join(Work, Work.id == LibraryItem.work_id)
         .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
+        .join(
+            last_read_subquery,
+            last_read_subquery.c.library_item_id == LibraryItem.id,
+            isouter=True,
+        )
         .where(LibraryItem.user_id == user_id)
         .order_by(LibraryItem.created_at.desc(), LibraryItem.id.desc())
     )
@@ -177,7 +194,10 @@ def list_library_items(
 
     # Avoid N+1: fetch author names for the works in the current page in one query.
     author_names_by_work: dict[uuid.UUID, list[str]] = {}
-    work_ids = [item.work_id for item, _work_title, _cover_url in selected]
+    work_ids = [
+        item.work_id
+        for item, _work_title, _work_description, _cover_url, _last_read in selected
+    ]
     if work_ids:
         author_rows = session.execute(
             sa.select(WorkAuthor.work_id, Author.name)
@@ -191,18 +211,24 @@ def list_library_items(
             author_names_by_work[work_id] = sorted(set(names))
 
     items: list[dict[str, Any]] = []
-    for item, work_title, cover_url in selected:
+    for item, work_title, work_description, cover_url, last_read_at in selected:
         items.append(
             {
                 "id": str(item.id),
                 "work_id": str(item.work_id),
                 "work_title": work_title,
+                "work_description": work_description,
                 "author_names": author_names_by_work.get(item.work_id, []),
                 "cover_url": cover_url,
                 "status": item.status,
                 "visibility": item.visibility,
                 "rating": item.rating,
                 "tags": item.tags or [],
+                "last_read_at": (
+                    last_read_at.isoformat()
+                    if isinstance(last_read_at, dt.datetime)
+                    else None
+                ),
                 "created_at": item.created_at.isoformat(),
             }
         )

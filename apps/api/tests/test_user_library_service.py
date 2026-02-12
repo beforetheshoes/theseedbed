@@ -39,7 +39,7 @@ class FakeSession:
         self.get_map: dict[tuple[type[Any], Any], Any] = {}
         self.scalar_values: list[Any] = []
         self.added: list[Any] = []
-        self.execute_rows: list[tuple[Any, str, Any]] = []
+        self.execute_rows: list[tuple[Any, ...]] = []
         self.execute_results: list[list[tuple[Any, ...]]] = []
         self.deleted: list[Any] = []
         self.committed = False
@@ -314,7 +314,16 @@ def test_list_library_items_returns_cursor() -> None:
         },
     )()
     session.execute_results = [
-        [(item1, "One", None), (item2, "Two", "https://example.com/cover.jpg")],
+        [
+            (
+                item1,
+                "One",
+                "First description",
+                None,
+                dt.datetime(2026, 2, 10, 12, 0, tzinfo=dt.UTC),
+            ),
+            (item2, "Two", None, "https://example.com/cover.jpg", None),
+        ],
         # Author lookup for the page.
         [(item1.work_id, "Author A"), (item1.work_id, "Author A")],
     ]
@@ -330,7 +339,9 @@ def test_list_library_items_returns_cursor() -> None:
     )
     assert len(result["items"]) == 1
     assert result["items"][0]["cover_url"] in (None, "https://example.com/cover.jpg")
+    assert result["items"][0]["work_description"] == "First description"
     assert result["items"][0]["author_names"] == ["Author A"]
+    assert result["items"][0]["last_read_at"] == "2026-02-10T12:00:00+00:00"
     assert result["next_cursor"] is not None
 
 

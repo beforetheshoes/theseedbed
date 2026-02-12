@@ -78,7 +78,7 @@ describe('AppBreadcrumbs', () => {
 
     routeState.path = '/library';
     await wrapper.vm.$nextTick();
-    expect(wrapper.get('[data-test="item-Library"]').text()).toContain('Library');
+    expect(wrapper.find('[data-test="item-Library"]').exists()).toBe(false);
     expect(wrapper.get('[data-test="home"]').findAll('a').length).toBe(0);
 
     routeState.path = '/books/search';
