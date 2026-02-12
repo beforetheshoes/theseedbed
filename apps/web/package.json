@@ -19,7 +19,7 @@
   "dependencies": {
     "@nuxtjs/supabase": "^1.6.0",
     "@primevue/nuxt-module": "^4.3.3",
-    "@primevue/themes": "^4.3.3",
+    "@primeuix/themes": "^2.0.3",
     "@supabase/supabase-js": "^2.56.1",
     "nuxt": "^4.2.2",
     "primeicons": "^7.0.0",

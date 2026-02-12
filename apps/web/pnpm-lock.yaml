@@ -10,12 +10,12 @@ importers:
       '@nuxtjs/supabase':
         specifier: ^1.6.0
         version: 1.6.2
+      '@primeuix/themes':
+        specifier: ^2.0.3
+        version: 2.0.3
       '@primevue/nuxt-module':
         specifier: ^4.3.3
         version: 4.5.4(@babel/parser@7.28.5)(magicast@0.5.1)(vue@3.5.26(typescript@5.9.3))
-      '@primevue/themes':
-        specifier: ^4.3.3
-        version: 4.5.4
       '@supabase/supabase-js':
         specifier: ^2.56.1
         version: 2.89.0
@@ -1911,10 +1911,10 @@ packages:
         integrity: sha512-LNtkJsTonNHF5ag+9s3+zQzm00+LRmffw68QRIHy6S/dam1JpdrrAnUzNYlWbaY7aE2EkZvQmx7Np7+PyHn+ow==,
       }
 
-  '@primeuix/themes@2.0.2':
+  '@primeuix/themes@2.0.3':
     resolution:
       {
-        integrity: sha512-prwQvA3tDGBz8yWSUenaJUttEMCEvPvxwOfFhDPmSe1vwsfVKL2Nmh5eZvtPFQnxmIOPsHZS7zc0/L3CzJ83Eg==,
+        integrity: sha512-3fS1883mtCWhgUgNf/feiaaDSOND4EBIOu9tZnzJlJ8QtYyL6eFLcA6V3ymCWqLVXQ1+lTVEZv1gl47FIdXReg==,
       }
 
   '@primeuix/utils@0.6.3':
@@ -1965,13 +1965,6 @@ packages:
     resolution:
       {
         integrity: sha512-ckffyeJcBCAVhi5IkiYcpQ8EVoNv0eSZhbxBdU3T5wz5bYgo0jd9dAetMc5D2j+vGLBqcTZQnqy8eTwcN3rZHQ==,
-      }
-    engines: { node: '>=12.11.0' }
-
-  '@primevue/themes@4.5.4':
-    resolution:
-      {
-        integrity: sha512-rUFZxMHLanTZdvZq4zgZPk+KRBZ3s7fE3bBK32OrZBkHQhEJmkJ7Ftd4w4QFlXyz1B7c+k5invZiOOCjwHXg9Q==,
       }
     engines: { node: '>=12.11.0' }
 
@@ -9720,7 +9713,7 @@ snapshots:
     dependencies:
       '@primeuix/styled': 0.7.4
 
-  '@primeuix/themes@2.0.2':
+  '@primeuix/themes@2.0.3':
     dependencies:
       '@primeuix/styled': 0.7.4
 
@@ -9769,11 +9762,6 @@ snapshots:
       - magicast
       - supports-color
       - vue
-
-  '@primevue/themes@4.5.4':
-    dependencies:
-      '@primeuix/styled': 0.7.4
-      '@primeuix/themes': 2.0.2
 
   '@rolldown/pluginutils@1.0.0-beta.53': {}
 
