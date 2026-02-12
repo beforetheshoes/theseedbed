@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+echo "[pre-push] Running make quality..."
+make quality
+
+echo "[pre-push] quality checks passed."

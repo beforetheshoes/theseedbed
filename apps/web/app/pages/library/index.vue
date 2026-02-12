@@ -20,7 +20,7 @@
           <Card>
             <template #content>
               <div
-                class="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-5"
+                class="grid w-full grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5 2xl:grid-cols-6"
               >
                 <SelectButton
                   v-model="viewMode"
@@ -37,6 +37,14 @@
                   option-label="label"
                   option-value="value"
                   data-test="library-status-filter"
+                  class="min-w-0 w-full"
+                />
+                <Select
+                  v-model="visibilityFilter"
+                  :options="visibilityFilters"
+                  option-label="label"
+                  option-value="value"
+                  data-test="library-visibility-filter"
                   class="min-w-0 w-full"
                 />
                 <InputText
@@ -172,7 +180,7 @@
                 </template>
               </Column>
 
-              <Column v-if="isColumnVisible('status')" class="min-w-[8rem]">
+              <Column v-if="isColumnVisible('status')" class="min-w-[12rem]">
                 <template #header>
                   <button
                     type="button"
@@ -185,11 +193,51 @@
                   </button>
                 </template>
                 <template #body="slotProps">
-                  <div class="flex justify-center">
+                  <div class="flex flex-col items-center gap-2">
                     <div class="library-meta-chip" data-test="library-item-status-chip">
                       <i class="pi pi-bookmark text-xs" aria-hidden="true"></i>
                       <span>{{ libraryStatusLabel(slotProps.data.status) }}</span>
                     </div>
+                    <Select
+                      :model-value="slotProps.data.status"
+                      :options="statusEditOptions"
+                      option-label="label"
+                      option-value="value"
+                      size="small"
+                      data-test="library-item-status-edit"
+                      :data-item-id="slotProps.data.id"
+                      class="w-full"
+                      :loading="isItemFieldUpdating(slotProps.data.id, 'status')"
+                      :disabled="isItemUpdating(slotProps.data.id)"
+                      @update:model-value="onStatusEdit(slotProps.data, $event)"
+                    />
+                  </div>
+                </template>
+              </Column>
+
+              <Column class="min-w-[12rem]">
+                <template #header>
+                  <span class="library-header-label">Visibility</span>
+                </template>
+                <template #body="slotProps">
+                  <div class="flex flex-col items-center gap-2">
+                    <div class="library-meta-chip" data-test="library-item-visibility-chip">
+                      <i class="pi pi-eye text-xs" aria-hidden="true"></i>
+                      <span>{{ libraryVisibilityLabel(slotProps.data.visibility) }}</span>
+                    </div>
+                    <Select
+                      :model-value="slotProps.data.visibility"
+                      :options="visibilityEditOptions"
+                      option-label="label"
+                      option-value="value"
+                      size="small"
+                      data-test="library-item-visibility-edit"
+                      :data-item-id="slotProps.data.id"
+                      class="w-full"
+                      :loading="isItemFieldUpdating(slotProps.data.id, 'visibility')"
+                      :disabled="isItemUpdating(slotProps.data.id)"
+                      @update:model-value="onVisibilityEdit(slotProps.data, $event)"
+                    />
                   </div>
                 </template>
               </Column>
@@ -318,6 +366,7 @@
                       aria-label="Remove from library"
                       class="opacity-70 transition-opacity hover:opacity-100"
                       data-test="library-item-remove"
+                      :disabled="isItemUpdating(slotProps.data.id)"
                       @click="openRemoveConfirm(slotProps.data)"
                     />
                   </div>
@@ -381,6 +430,13 @@
                                 <span>{{ libraryStatusLabel(item.status) }}</span>
                               </div>
                               <div
+                                class="library-meta-chip"
+                                data-test="library-item-visibility-chip"
+                              >
+                                <i class="pi pi-eye text-xs" aria-hidden="true"></i>
+                                <span>{{ libraryVisibilityLabel(item.visibility) }}</span>
+                              </div>
+                              <div
                                 class="flex min-w-[7rem] flex-col items-center justify-center gap-0.5 text-center text-xs"
                                 data-test="library-item-rating"
                               >
@@ -413,6 +469,34 @@
                               <div v-if="remainingTagCount(item.tags, 2)" class="library-meta-chip">
                                 +{{ remainingTagCount(item.tags, 2) }}
                               </div>
+                              <div class="w-full grid grid-cols-1 gap-2 sm:grid-cols-2">
+                                <Select
+                                  :model-value="item.status"
+                                  :options="statusEditOptions"
+                                  option-label="label"
+                                  option-value="value"
+                                  size="small"
+                                  data-test="library-item-status-edit"
+                                  :data-item-id="item.id"
+                                  class="w-full"
+                                  :loading="isItemFieldUpdating(item.id, 'status')"
+                                  :disabled="isItemUpdating(item.id)"
+                                  @update:model-value="onStatusEdit(item, $event)"
+                                />
+                                <Select
+                                  :model-value="item.visibility"
+                                  :options="visibilityEditOptions"
+                                  option-label="label"
+                                  option-value="value"
+                                  size="small"
+                                  data-test="library-item-visibility-edit"
+                                  :data-item-id="item.id"
+                                  class="w-full"
+                                  :loading="isItemFieldUpdating(item.id, 'visibility')"
+                                  :disabled="isItemUpdating(item.id)"
+                                  @update:model-value="onVisibilityEdit(item, $event)"
+                                />
+                              </div>
                             </div>
                           </div>
 
@@ -425,6 +509,7 @@
                               class="self-start opacity-70 transition-opacity hover:opacity-100"
                               aria-label="Remove from library"
                               data-test="library-item-remove"
+                              :disabled="isItemUpdating(item.id)"
                               @click.stop="openRemoveConfirm(item)"
                             />
                           </div>
@@ -479,6 +564,7 @@
                                   class="opacity-70 transition-opacity hover:opacity-100"
                                   aria-label="Remove from library"
                                   data-test="library-item-remove"
+                                  :disabled="isItemUpdating(item.id)"
                                   @click.stop="openRemoveConfirm(item)"
                                 />
                               </div>
@@ -488,6 +574,13 @@
                               >
                                 <i class="pi pi-bookmark text-xs" aria-hidden="true"></i>
                                 <span>{{ libraryStatusLabel(item.status) }}</span>
+                              </div>
+                              <div
+                                class="library-meta-chip mx-auto justify-center whitespace-nowrap"
+                                data-test="library-item-visibility-chip"
+                              >
+                                <i class="pi pi-eye text-xs" aria-hidden="true"></i>
+                                <span>{{ libraryVisibilityLabel(item.visibility) }}</span>
                               </div>
                               <div
                                 class="mx-auto flex min-w-[7rem] flex-col items-center gap-0.5 text-center text-xs"
@@ -556,6 +649,34 @@
                             <div v-if="remainingTagCount(item.tags, 2)" class="library-meta-chip">
                               +{{ remainingTagCount(item.tags, 2) }}
                             </div>
+                          </div>
+                          <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <Select
+                              :model-value="item.status"
+                              :options="statusEditOptions"
+                              option-label="label"
+                              option-value="value"
+                              size="small"
+                              data-test="library-item-status-edit"
+                              :data-item-id="item.id"
+                              class="w-full"
+                              :loading="isItemFieldUpdating(item.id, 'status')"
+                              :disabled="isItemUpdating(item.id)"
+                              @update:model-value="onStatusEdit(item, $event)"
+                            />
+                            <Select
+                              :model-value="item.visibility"
+                              :options="visibilityEditOptions"
+                              option-label="label"
+                              option-value="value"
+                              size="small"
+                              data-test="library-item-visibility-edit"
+                              :data-item-id="item.id"
+                              class="w-full"
+                              :loading="isItemFieldUpdating(item.id, 'visibility')"
+                              :disabled="isItemUpdating(item.id)"
+                              @update:model-value="onVisibilityEdit(item, $event)"
+                            />
                           </div>
                         </div>
 
@@ -650,6 +771,8 @@ const markdownRenderer = new MarkdownIt({
 const EMPTY_DESCRIPTION_LABEL = 'No description available.';
 
 type LibraryViewMode = 'current' | 'grid' | 'table';
+type LibraryItemStatus = 'to_read' | 'reading' | 'completed' | 'abandoned';
+type LibraryItemVisibility = 'private' | 'public';
 type SortMode =
   | 'newest'
   | 'oldest'
@@ -681,8 +804,8 @@ type LibraryItem = {
   friend_recommendations_count?: number | null;
   author_names?: string[];
   cover_url?: string | null;
-  status: string;
-  visibility: string;
+  status: LibraryItemStatus;
+  visibility: LibraryItemVisibility;
   rating?: number | null;
   tags?: string[];
   last_read_at?: string | null;
@@ -718,6 +841,7 @@ const DEFAULT_TABLE_COLUMNS = [
 const items = ref<LibraryItem[]>([]);
 const viewMode = ref<LibraryViewMode>('current');
 const statusFilter = ref<string>('');
+const visibilityFilter = ref<string>('');
 const tagFilter = ref('');
 const sortMode = ref<SortMode>('newest');
 const tableColumns = ref<TableColumnKey[]>([...DEFAULT_TABLE_COLUMNS]);
@@ -729,6 +853,7 @@ const error = ref('');
 const pendingRemoveItem = ref<LibraryItem | null>(null);
 const removeConfirmOpen = ref(false);
 const removeConfirmLoading = ref(false);
+const itemFieldUpdates = ref<Record<string, boolean>>({});
 
 const viewModeOptions = [
   { label: 'List', value: 'current' },
@@ -741,7 +866,17 @@ const statusFilters = [
   { label: 'To read', value: 'to_read' },
   { label: 'Reading', value: 'reading' },
   { label: 'Completed', value: 'completed' },
-];
+  { label: 'Abandoned', value: 'abandoned' },
+] satisfies Array<{ label: string; value: '' | LibraryItemStatus }>;
+
+const visibilityFilters = [
+  { label: 'All visibilities', value: '' },
+  { label: 'Private', value: 'private' },
+  { label: 'Public', value: 'public' },
+] satisfies Array<{ label: string; value: '' | LibraryItemVisibility }>;
+
+const statusEditOptions = statusFilters.filter((option) => option.value !== '');
+const visibilityEditOptions = visibilityFilters.filter((option) => option.value !== '');
 
 const sortOptions = [
   { label: 'Newest first', value: 'newest' },
@@ -901,6 +1036,9 @@ const ratingLabel = (value?: number | null) => {
   return `${value}/10`;
 };
 
+const libraryVisibilityLabel = (value: LibraryItemVisibility) =>
+  value === 'public' ? 'Public' : 'Private';
+
 const visibleTags = (tags?: string[], max = 2) => (tags || []).slice(0, max);
 
 const remainingTagCount = (tags?: string[], max = 2) => Math.max(0, (tags || []).length - max);
@@ -965,6 +1103,83 @@ const displayItems = computed(() => {
   return sorted;
 });
 
+const itemFieldUpdateKey = (
+  itemId: string,
+  field: 'status' | 'visibility',
+): `${string}:${'status' | 'visibility'}` => `${itemId}:${field}`;
+
+const isItemFieldUpdating = (itemId: string, field: 'status' | 'visibility') =>
+  Boolean(itemFieldUpdates.value[itemFieldUpdateKey(itemId, field)]);
+
+const isItemUpdating = (itemId: string) =>
+  isItemFieldUpdating(itemId, 'status') || isItemFieldUpdating(itemId, 'visibility');
+
+const setItemFieldUpdating = (itemId: string, field: 'status' | 'visibility', next: boolean) => {
+  const key = itemFieldUpdateKey(itemId, field);
+  if (next) {
+    itemFieldUpdates.value = { ...itemFieldUpdates.value, [key]: true };
+    return;
+  }
+  const remaining = { ...itemFieldUpdates.value };
+  delete remaining[key];
+  itemFieldUpdates.value = remaining;
+};
+
+const updateLibraryItemField = async <TField extends 'status' | 'visibility'>(
+  item: LibraryItem,
+  field: TField,
+  nextValue: LibraryItem[TField],
+) => {
+  if (item[field] === nextValue) return;
+  if (isItemFieldUpdating(item.id, field)) return;
+
+  const previousValue = item[field];
+  item[field] = nextValue;
+  setItemFieldUpdating(item.id, field, true);
+
+  try {
+    const payload = await apiRequest<LibraryItem>(`/api/v1/library/items/${item.id}`, {
+      method: 'PATCH',
+      body: { [field]: nextValue },
+    });
+    item.status = payload.status;
+    item.visibility = payload.visibility;
+    toast.add({
+      severity: 'success',
+      summary: field === 'status' ? 'Status updated.' : 'Visibility updated.',
+      life: 2200,
+    });
+  } catch (err) {
+    item[field] = previousValue;
+    if (err instanceof ApiClientError && err.status === 404) {
+      toast.add({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+        life: 3000,
+      });
+      await fetchPage(false);
+    } else {
+      const msg =
+        err instanceof ApiClientError ? err.message : 'Unable to update this item right now.';
+      toast.add({ severity: 'error', summary: msg, life: 3000 });
+    }
+  } finally {
+    setItemFieldUpdating(item.id, field, false);
+  }
+};
+
+const onStatusEdit = (item: LibraryItem, next: unknown) => {
+  if (typeof next !== 'string') return;
+  if (!statusEditOptions.some((option) => option.value === next)) return;
+  void updateLibraryItemField(item, 'status', next as LibraryItemStatus);
+};
+
+const onVisibilityEdit = (item: LibraryItem, next: unknown) => {
+  if (typeof next !== 'string') return;
+  if (!visibilityEditOptions.some((option) => option.value === next)) return;
+  void updateLibraryItemField(item, 'visibility', next as LibraryItemVisibility);
+};
+
 const fetchPage = async (append = false) => {
   error.value = '';
   if (append) {
@@ -981,6 +1196,7 @@ const fetchPage = async (append = false) => {
           limit: 10,
           cursor: append ? nextCursor.value : undefined,
           status: statusFilter.value || undefined,
+          visibility: visibilityFilter.value || undefined,
         },
       },
     );
@@ -1045,7 +1261,7 @@ const loadMore = async () => {
   await fetchPage(true);
 };
 
-watch(statusFilter, () => {
+watch([statusFilter, visibilityFilter], () => {
   void fetchPage(false);
 });
 
