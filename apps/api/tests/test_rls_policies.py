@@ -204,10 +204,6 @@ def _build_seed_data() -> dict[str, uuid.UUID]:
     api_client_2 = uuid.uuid4()
     api_audit_log_1 = uuid.uuid4()
     api_audit_log_2 = uuid.uuid4()
-    user_1_email = f"user1-{user_1.hex}@example.com"
-    user_2_email = f"user2-{user_2.hex}@example.com"
-    external_provider_id = f"OL-{work_1.hex[:12]}"
-    source_provider_id = f"OL-SRC-{source_record_1.hex[:12]}"
 
     return {
         "user_1": user_1,
