@@ -35,6 +35,12 @@ class OpenLibraryWorkBundle:
 @dataclass
 class OpenLibrarySearchResponse:
     items: list[OpenLibrarySearchResult]
+    query: str
+    limit: int
+    page: int
+    num_found: int | None
+    has_more: bool
+    next_page: int | None
     cache_hit: bool
 
 
@@ -186,7 +192,16 @@ class OpenLibraryClient:
         cache_key = f"{normalized_query.lower()}::{limit}::{page}"
         cached = self._cache.get(cache_key)
         if cached is not None:
-            return OpenLibrarySearchResponse(items=cached.items, cache_hit=True)
+            return OpenLibrarySearchResponse(
+                items=cached.items,
+                query=cached.query,
+                limit=cached.limit,
+                page=cached.page,
+                num_found=cached.num_found,
+                has_more=cached.has_more,
+                next_page=cached.next_page,
+                cache_hit=True,
+            )
 
         payload = await self._request_json(
             "/search.json",
@@ -226,7 +241,25 @@ class OpenLibraryClient:
                 )
             )
 
-        result = OpenLibrarySearchResponse(items=items, cache_hit=False)
+        raw_num_found = payload.get("numFound")
+        num_found = raw_num_found if isinstance(raw_num_found, int) else None
+        has_more = (
+            page * limit < num_found
+            if isinstance(num_found, int)
+            else len(items) == limit
+        )
+        next_page = page + 1 if has_more else None
+
+        result = OpenLibrarySearchResponse(
+            items=items,
+            query=normalized_query,
+            limit=limit,
+            page=page,
+            num_found=num_found,
+            has_more=has_more,
+            next_page=next_page,
+            cache_hit=False,
+        )
         self._cache.set(cache_key, result)
         return result
 

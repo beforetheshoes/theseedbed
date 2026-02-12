@@ -58,6 +58,12 @@ def test_search_books_uses_user_agent_and_cache() -> None:
     assert seen_user_agents == ["SeedbedTest/1.0 (dev@example.com)"]
     assert first.cache_hit is False
     assert second.cache_hit is True
+    assert first.query == "book"
+    assert first.limit == 5
+    assert first.page == 1
+    assert first.num_found is None
+    assert first.has_more is False
+    assert first.next_page is None
     assert first.items[0].title == "Book A"
 
 
@@ -250,6 +256,48 @@ def test_search_books_filters_invalid_docs() -> None:
     result = asyncio.run(client.search_books(query="q"))
     assert [item.work_key for item in result.items] == ["/works/OL2W"]
     assert result.items[0].cover_url is None
+
+
+def test_search_books_sets_num_found_and_next_page_from_total() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "numFound": 13,
+                "docs": [
+                    {"key": "/works/OL1W", "title": "One"},
+                    {"key": "/works/OL2W", "title": "Two"},
+                    {"key": "/works/OL3W", "title": "Three"},
+                    {"key": "/works/OL4W", "title": "Four"},
+                    {"key": "/works/OL5W", "title": "Five"},
+                ],
+            },
+        )
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.search_books(query="q", limit=5, page=2))
+    assert result.num_found == 13
+    assert result.has_more is True
+    assert result.next_page == 3
+
+
+def test_search_books_uses_short_page_fallback_when_total_missing() -> None:
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "docs": [
+                    {"key": "/works/OL1W", "title": "One"},
+                    {"key": "/works/OL2W", "title": "Two"},
+                ]
+            },
+        )
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    result = asyncio.run(client.search_books(query="q", limit=5, page=1))
+    assert result.num_found is None
+    assert result.has_more is False
+    assert result.next_page is None
 
 
 def test_fetch_work_bundle_handles_missing_editions_and_description_string() -> None:
