@@ -36,7 +36,6 @@
           data-test="topbar-search-scope"
         />
       </div>
-
       <Popover
         ref="popoverRef"
         :dismissable="true"
@@ -44,6 +43,27 @@
         data-test="topbar-search-popover"
       >
         <div class="w-[min(760px,92vw)] p-2 lg:w-[min(760px,52vw)]">
+          <div class="mb-2 grid grid-cols-3 gap-2">
+            <InputText
+              v-model="languageFilter"
+              class="w-full"
+              placeholder="Lang (eng)"
+              data-test="topbar-search-language"
+            />
+            <InputText
+              v-model="yearFromFilter"
+              class="w-full"
+              placeholder="Year from"
+              data-test="topbar-search-year-from"
+            />
+            <InputText
+              v-model="yearToFilter"
+              class="w-full"
+              placeholder="Year to"
+              data-test="topbar-search-year-to"
+            />
+          </div>
+
           <Message
             v-if="errorMessage"
             severity="error"
@@ -199,6 +219,23 @@
             optionValue="value"
             data-test="topbar-search-scope-mobile"
           />
+          <div class="grid grid-cols-3 gap-2">
+            <InputText
+              v-model="languageFilter"
+              placeholder="Lang"
+              data-test="topbar-search-language-mobile"
+            />
+            <InputText
+              v-model="yearFromFilter"
+              placeholder="Year from"
+              data-test="topbar-search-year-from-mobile"
+            />
+            <InputText
+              v-model="yearToFilter"
+              placeholder="Year to"
+              data-test="topbar-search-year-to-mobile"
+            />
+          </div>
         </div>
 
         <Message
@@ -341,6 +378,9 @@ type OpenLibrarySearchItem = {
   author_names: string[];
   cover_url: string | null;
   first_publish_year: number | null;
+  edition_count?: number | null;
+  languages?: string[];
+  readable?: boolean;
 };
 
 type SearchOption = LibrarySearchItem | OpenLibrarySearchItem;
@@ -352,6 +392,9 @@ const toast = useToast();
 const mobileOpen = ref(false);
 const query = ref('');
 const scope = ref<SearchScope>('both');
+const languageFilter = ref('');
+const yearFromFilter = ref('');
+const yearToFilter = ref('');
 const scopeOptions = [
   { label: 'My Library', value: 'my' },
   { label: 'Global', value: 'global' },
@@ -453,15 +496,40 @@ const runSearch = async (trimmed: string) => {
     );
 
     if (scope.value === 'global' || scope.value === 'both') {
+      const parsedYearFrom = Number.parseInt(yearFromFilter.value.trim(), 10);
+      const parsedYearTo = Number.parseInt(yearToFilter.value.trim(), 10);
+      const queryParams: Record<string, string | number> = {
+        query: trimmed,
+        limit: 10,
+        page: 1,
+      };
+      const language = languageFilter.value.trim();
+      if (language) {
+        queryParams.language = language;
+      }
+      if (!Number.isNaN(parsedYearFrom)) {
+        queryParams.first_publish_year_from = parsedYearFrom;
+      }
+      if (!Number.isNaN(parsedYearTo)) {
+        queryParams.first_publish_year_to = parsedYearTo;
+      }
       const payload = await apiRequest<{ items: Omit<OpenLibrarySearchItem, 'kind'>[] }>(
         '/api/v1/books/search',
-        { query: { query: trimmed, limit: 10, page: 1 } },
+        { query: queryParams },
       );
       if (currentSeq !== requestSeq) {
         return;
       }
       nextOpenLibrary = payload.items
-        .map((item) => ({ kind: 'openlibrary', ...item }))
+        .map((item) => ({
+          kind: 'openlibrary' as const,
+          ...item,
+          edition_count: typeof item.edition_count === 'number' ? item.edition_count : null,
+          languages: Array.isArray(item.languages)
+            ? item.languages.filter((value): value is string => typeof value === 'string')
+            : [],
+          readable: Boolean(item.readable),
+        }))
         .filter((item) => (scope.value === 'both' ? !libraryKeys.has(item.work_key) : true));
     }
 
@@ -505,6 +573,7 @@ const scheduleSearch = (immediate: boolean) => {
 
 watch(query, () => scheduleSearch(false));
 watch(scope, () => scheduleSearch(true));
+watch([languageFilter, yearFromFilter, yearToFilter], () => scheduleSearch(true));
 
 const onFocus = () => {
   // Open the popover immediately when refocusing with an active query.

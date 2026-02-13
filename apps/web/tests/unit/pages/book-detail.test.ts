@@ -2333,4 +2333,216 @@ describe('book detail page', () => {
     await flushPromises();
     expect(wrapper.get('[data-test="book-detail-error"]').text()).toContain('Review denied');
   });
+
+  it('loads discovery sections when work has authors', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [{ id: 'author-1', name: 'Author A' }],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/related') {
+        return {
+          items: [
+            {
+              work_key: '/works/OL2W',
+              title: 'Related One',
+              cover_url: 'https://example.com/related.jpg',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/authors/author-1') {
+        return {
+          id: 'author-1',
+          name: 'Author A',
+          bio: 'Bio',
+          photo_url: null,
+          openlibrary_author_key: '/authors/OL1A',
+          works: [
+            {
+              work_key: '/works/OL9W',
+              title: 'Other Book',
+              cover_url: 'https://example.com/author-work.jpg',
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Related One');
+    expect(wrapper.text()).toContain('Other Book');
+  });
+
+  it('imports and navigates when selecting a related book', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [{ id: 'author-1', name: 'Author A' }],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/related' && method === 'GET') {
+        return {
+          items: [
+            {
+              work_key: '/works/OL2W',
+              title: 'Related One',
+              cover_url: 'https://example.com/related.jpg',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/authors/author-1' && method === 'GET') {
+        return {
+          id: 'author-1',
+          name: 'Author A',
+          bio: null,
+          photo_url: null,
+          openlibrary_author_key: '/authors/OL1A',
+          works: [],
+        };
+      }
+      if (url === '/api/v1/books/import' && method === 'POST') {
+        return { work: { id: 'work-2' } };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await wrapper.get('[data-test="related-book-/works/OL2W"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/import', {
+      method: 'POST',
+      body: { work_key: '/works/OL2W' },
+    });
+    expect(navigateToMock).toHaveBeenCalledWith('/books/work-2');
+  });
+
+  it('shows generic toast when importing a related book fails', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [{ id: 'author-1', name: 'Author A' }],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/related' && method === 'GET') {
+        return {
+          items: [
+            {
+              work_key: '/works/OL2W',
+              title: 'Related One',
+              cover_url: 'https://example.com/related.jpg',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/authors/author-1' && method === 'GET') {
+        return {
+          id: 'author-1',
+          name: 'Author A',
+          bio: null,
+          photo_url: null,
+          openlibrary_author_key: '/authors/OL1A',
+          works: [],
+        };
+      }
+      if (url === '/api/v1/books/import' && method === 'POST') {
+        throw new Error('boom');
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await wrapper.get('[data-test="related-book-/works/OL2W"]').trigger('click');
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Unable to open related book.' }),
+    );
+  });
+
+  it('binds remove dialog visibility through v-model updates', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return { id: 'item-1', work_id: 'work-1', status: 'reading', created_at: '2026-02-01' };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await emitDialogVisible(wrapper, 'Remove from library', true);
+    expect((wrapper.vm as any).removeConfirmOpen).toBe(true);
+    await emitDialogVisible(wrapper, 'Remove from library', false);
+    expect((wrapper.vm as any).removeConfirmOpen).toBe(false);
+  });
+
+  it('covers generic remove, cover-candidate fallback, and generic select-cover errors', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return { id: 'item-1', work_id: 'work-1', status: 'reading', created_at: '2026-02-01' };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1' && method === 'DELETE') throw new Error('boom');
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') return {};
+      if (url === '/api/v1/works/work-1/covers/select' && method === 'POST')
+        throw new Error('boom');
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    (wrapper.vm as any).libraryItem = { id: 'item-1' };
+    await (wrapper.vm as any).confirmRemove();
+    expect((wrapper.vm as any).error).toBe('Unable to remove this item right now.');
+    await (wrapper.vm as any).loadCoverCandidates();
+    expect((wrapper.vm as any).coverCandidates).toEqual([]);
+    await (wrapper.vm as any).selectCoverCandidate(1);
+    expect((wrapper.vm as any).coverError).toBe('Unable to set cover.');
+  });
 });

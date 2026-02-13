@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import asyncio
+import datetime as dt
 import os
 import random
+import re
 import time
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any, Generic, Literal, TypeVar, cast
 
 import httpx
+
+_ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_YEAR_RE = re.compile(r"(\d{4})")
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -17,6 +23,9 @@ class OpenLibrarySearchResult:
     author_names: list[str]
     first_publish_year: int | None
     cover_url: str | None
+    edition_count: int | None
+    languages: list[str]
+    readable: bool
 
 
 @dataclass(frozen=True)
@@ -32,6 +41,32 @@ class OpenLibraryWorkBundle:
     raw_edition: dict[str, Any] | None
 
 
+@dataclass(frozen=True)
+class OpenLibraryRelatedWork:
+    work_key: str
+    title: str
+    cover_url: str | None
+    first_publish_year: int | None
+    author_names: list[str]
+
+
+@dataclass(frozen=True)
+class OpenLibraryAuthorWork:
+    work_key: str
+    title: str
+    cover_url: str | None
+    first_publish_year: int | None
+
+
+@dataclass(frozen=True)
+class OpenLibraryAuthorProfile:
+    author_key: str
+    name: str
+    bio: str | None
+    photo_url: str | None
+    top_works: list[OpenLibraryAuthorWork]
+
+
 @dataclass
 class OpenLibrarySearchResponse:
     items: list[OpenLibrarySearchResult]
@@ -44,13 +79,13 @@ class OpenLibrarySearchResponse:
     cache_hit: bool
 
 
-class _TTLCache:
+class _TTLCache(Generic[T]):
     def __init__(self, *, ttl_seconds: int, max_entries: int) -> None:
         self._ttl_seconds = max(ttl_seconds, 1)
         self._max_entries = max(max_entries, 1)
-        self._items: dict[str, tuple[float, OpenLibrarySearchResponse]] = {}
+        self._items: dict[str, tuple[float, T]] = {}
 
-    def get(self, key: str) -> OpenLibrarySearchResponse | None:
+    def get(self, key: str) -> T | None:
         cached = self._items.get(key)
         if cached is None:
             return None
@@ -60,7 +95,7 @@ class _TTLCache:
             return None
         return value
 
-    def set(self, key: str, value: OpenLibrarySearchResponse) -> None:
+    def set(self, key: str, value: T) -> None:
         if len(self._items) >= self._max_entries:
             oldest_key = min(self._items.items(), key=lambda item: item[1][0])[0]
             self._items.pop(oldest_key, None)
@@ -96,6 +131,83 @@ def _extract_description(payload: dict[str, Any]) -> str | None:
     return None
 
 
+def _extract_language_codes(raw_languages: Any) -> list[str]:
+    if not isinstance(raw_languages, list):
+        return []
+    result: list[str] = []
+    for entry in raw_languages:
+        if isinstance(entry, dict):
+            key = entry.get("key")
+            if isinstance(key, str) and key.startswith("/languages/"):
+                result.append(key.removeprefix("/languages/"))
+                continue
+            code = entry.get("code")
+            if isinstance(code, str):
+                result.append(code)
+                continue
+        if isinstance(entry, str):
+            result.append(entry)
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for code in result:
+        normalized = code.strip().lower()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _first_list_string(values: Any) -> str | None:
+    if not isinstance(values, list):
+        return None
+    return next((v for v in values if isinstance(v, str)), None)
+
+
+def _parse_publish_year(raw: Any) -> int | None:
+    if isinstance(raw, int):
+        return raw if 0 < raw < 10000 else None
+    if isinstance(raw, str):
+        matched = _YEAR_RE.search(raw)
+        if not matched:
+            return None
+        parsed = int(matched.group(1))
+        return parsed if 0 < parsed < 10000 else None
+    return None
+
+
+def _parse_iso_publish_date(raw: Any) -> dt.date | None:
+    if not isinstance(raw, str):
+        return None
+    candidate = raw.strip()
+    if not _ISO_DATE_RE.match(candidate):
+        return None
+    try:
+        return dt.date.fromisoformat(candidate)
+    except ValueError:
+        return None
+
+
+def _normalize_subject(value: str) -> str:
+    return value.strip().replace(" ", "_").lower()
+
+
+def _extract_top_subjects(work_payload: dict[str, Any], *, limit: int = 3) -> list[str]:
+    subjects = work_payload.get("subjects")
+    if not isinstance(subjects, list):
+        return []
+    result: list[str] = []
+    for subject in subjects:
+        if not isinstance(subject, str):
+            continue
+        normalized = _normalize_subject(subject)
+        if normalized and normalized not in result:
+            result.append(normalized)
+        if len(result) >= limit:
+            break
+    return result
+
+
 class OpenLibraryClient:
     def __init__(
         self,
@@ -117,9 +229,13 @@ class OpenLibraryClient:
             or "TheSeedbed/0.1 (contact@theseedbed.app)"
         )
         self._max_retries = max(max_retries, 1)
-        self._cache = _TTLCache(
+        self._cache: _TTLCache[OpenLibrarySearchResponse] = _TTLCache(
             ttl_seconds=cache_ttl_seconds,
             max_entries=cache_max_entries,
+        )
+        self._metadata_cache: _TTLCache[Any] = _TTLCache(
+            ttl_seconds=60 * 60 * 24,
+            max_entries=512,
         )
         self._transport = transport
 
@@ -186,10 +302,39 @@ class OpenLibraryClient:
         raise RuntimeError("open library request failed")
 
     async def search_books(
-        self, *, query: str, limit: int = 10, page: int = 1
+        self,
+        *,
+        query: str,
+        limit: int = 10,
+        page: int = 1,
+        author: str | None = None,
+        subject: str | None = None,
+        language: str | None = None,
+        first_publish_year_from: int | None = None,
+        first_publish_year_to: int | None = None,
+        sort: Literal["relevance", "new", "old"] = "relevance",
     ) -> OpenLibrarySearchResponse:
         normalized_query = query.strip()
-        cache_key = f"{normalized_query.lower()}::{limit}::{page}"
+        normalized_author = (author or "").strip()
+        normalized_subject = (subject or "").strip()
+        normalized_language = (language or "").strip().lower()
+        q_parts = [f"title:{normalized_query}"]
+        if normalized_author:
+            q_parts.append(f"author:{normalized_author}")
+        if normalized_subject:
+            q_parts.append(f"subject:{normalized_subject}")
+        if normalized_language:
+            q_parts.append(f"language:{normalized_language}")
+        if first_publish_year_from is not None:
+            q_parts.append(f"first_publish_year:[{first_publish_year_from} TO *]")
+        if first_publish_year_to is not None:
+            q_parts.append(f"first_publish_year:[* TO {first_publish_year_to}]")
+        q = " ".join(q_parts)
+        sort_param = "new" if sort == "new" else "old" if sort == "old" else None
+        cache_key = (
+            f"{normalized_query.lower()}::{normalized_author.lower()}::{normalized_subject.lower()}::"
+            f"{normalized_language}::{first_publish_year_from}::{first_publish_year_to}::{sort_param}::{limit}::{page}"
+        )
         cached = self._cache.get(cache_key)
         if cached is not None:
             return OpenLibrarySearchResponse(
@@ -203,10 +348,18 @@ class OpenLibraryClient:
                 cache_hit=True,
             )
 
-        payload = await self._request_json(
-            "/search.json",
-            params={"q": normalized_query, "limit": limit, "page": page},
-        )
+        params: dict[str, str | int] = {
+            "q": q,
+            "limit": limit,
+            "page": page,
+            "fields": (
+                "key,title,author_name,first_publish_year,cover_i,edition_count,"
+                "language,has_fulltext,public_scan_b,ia"
+            ),
+        }
+        if sort_param is not None:
+            params["sort"] = sort_param
+        payload = await self._request_json("/search.json", params=params)
         docs = payload.get("docs", [])
         items: list[OpenLibrarySearchResult] = []
         for doc in docs:
@@ -238,6 +391,17 @@ class OpenLibraryClient:
                         else None
                     ),
                     cover_url=cover_url,
+                    edition_count=(
+                        doc.get("edition_count")
+                        if isinstance(doc.get("edition_count"), int)
+                        else None
+                    ),
+                    languages=_extract_language_codes(doc.get("language")),
+                    readable=bool(
+                        doc.get("has_fulltext")
+                        or doc.get("public_scan_b")
+                        or doc.get("ia")
+                    ),
                 )
             )
 
@@ -294,14 +458,46 @@ class OpenLibraryClient:
             raw_edition = await self._request_json(f"{normalized_edition_key}.json")
         else:
             editions_payload = await self._request_json(
-                f"{normalized_work_key}/editions.json", params={"limit": 1}
+                f"{normalized_work_key}/editions.json",
+                params={
+                    "limit": 20,
+                },
             )
             entries = editions_payload.get("entries", [])
-            if isinstance(entries, list) and entries and isinstance(entries[0], dict):
-                maybe_key = entries[0].get("key")
-                if isinstance(maybe_key, str):
-                    normalized_edition_key = maybe_key
-                    raw_edition = entries[0]
+            if isinstance(entries, list):
+                candidates = [entry for entry in entries if isinstance(entry, dict)]
+                scored: list[tuple[int, int, str, dict[str, Any]]] = []
+                for candidate in candidates:
+                    key = candidate.get("key")
+                    if not isinstance(key, str):
+                        continue
+                    score = 0
+                    if _first_list_string(candidate.get("isbn_13")):
+                        score += 3
+                    if _first_list_string(candidate.get("isbn_10")):
+                        score += 2
+                    if _first_list_string(candidate.get("publishers")):
+                        score += 1
+                    if isinstance(candidate.get("publish_date"), str):
+                        score += 1
+                    covers = candidate.get("covers")
+                    if isinstance(covers, list) and any(
+                        isinstance(value, int) and value > 0 for value in covers
+                    ):
+                        score += 1
+                    publish_year = (
+                        _parse_publish_year(candidate.get("publish_date")) or 0
+                    )
+                    scored.append((score, publish_year, key, candidate))
+                if scored:
+                    scored.sort(
+                        key=lambda item: (
+                            -item[0],
+                            -item[1],
+                            item[2],
+                        )
+                    )
+                    _, _, normalized_edition_key, raw_edition = scored[0]
 
         cover_url = None
         covers = work_payload.get("covers")
@@ -347,30 +543,26 @@ class OpenLibraryClient:
 
         edition: dict[str, Any] | None = None
         if raw_edition is not None and normalized_edition_key is not None:
-            isbn10 = None
-            isbn13 = None
-            isbn_10_values = raw_edition.get("isbn_10")
-            if isinstance(isbn_10_values, list):
-                isbn10 = next((v for v in isbn_10_values if isinstance(v, str)), None)
-            isbn_13_values = raw_edition.get("isbn_13")
-            if isinstance(isbn_13_values, list):
-                isbn13 = next((v for v in isbn_13_values if isinstance(v, str)), None)
+            isbn10 = _first_list_string(raw_edition.get("isbn_10"))
+            isbn13 = _first_list_string(raw_edition.get("isbn_13"))
+            edition_languages = _extract_language_codes(raw_edition.get("languages"))
             edition = {
                 "key": normalized_edition_key,
                 "isbn10": isbn10,
                 "isbn13": isbn13,
-                "publisher": next(
-                    (
-                        v
-                        for v in raw_edition.get("publishers", [])
-                        if isinstance(raw_edition.get("publishers"), list)
-                        and isinstance(v, str)
-                    ),
-                    None,
-                ),
+                "publisher": _first_list_string(raw_edition.get("publishers")),
                 "publish_date": (
                     raw_edition.get("publish_date")
                     if isinstance(raw_edition.get("publish_date"), str)
+                    else None
+                ),
+                "publish_date_iso": _parse_iso_publish_date(
+                    raw_edition.get("publish_date")
+                ),
+                "language": (edition_languages[0] if edition_languages else None),
+                "format": (
+                    raw_edition.get("physical_format")
+                    if isinstance(raw_edition.get("physical_format"), str)
                     else None
                 ),
             }
@@ -446,3 +638,159 @@ class OpenLibraryClient:
                 edition_cover_ids.append(cid)
 
         return _dedupe(edition_cover_ids)
+
+    async def fetch_related_works(
+        self,
+        *,
+        work_payload: dict[str, Any],
+        exclude_work_key: str,
+        per_subject_limit: int = 10,
+        max_items: int = 12,
+    ) -> list[OpenLibraryRelatedWork]:  # pragma: no cover
+        subjects = _extract_top_subjects(work_payload)
+        if not subjects:
+            return []
+        preferred_languages = set(
+            _extract_language_codes(work_payload.get("languages"))
+        )
+
+        language_matched: dict[str, OpenLibraryRelatedWork] = {}
+        fallback: dict[str, OpenLibraryRelatedWork] = {}
+        for subject in subjects:
+            cache_key = f"subject::{subject}::{per_subject_limit}"
+            payload = self._metadata_cache.get(cache_key)
+            if payload is None:
+                payload = await self._request_json(
+                    f"/subjects/{subject}.json",
+                    params={"limit": per_subject_limit},
+                )
+                self._metadata_cache.set(cache_key, payload)
+
+            works = payload.get("works", [])
+            if not isinstance(works, list):
+                continue
+            for item in works:
+                if not isinstance(item, dict):
+                    continue
+                work_key = item.get("key")
+                title = item.get("title")
+                if not isinstance(work_key, str) or not isinstance(title, str):
+                    continue
+                if work_key == exclude_work_key:
+                    continue
+                if work_key in language_matched:
+                    continue
+                if not preferred_languages and work_key in fallback:
+                    continue
+                cover_id = item.get("cover_id")
+                if not isinstance(cover_id, int):
+                    continue
+                cover_url = f"https://covers.openlibrary.org/b/id/{cover_id}-M.jpg"
+                raw_authors = item.get("authors")
+                author_names: list[str] = []
+                if isinstance(raw_authors, list):
+                    for raw_author in raw_authors:
+                        if isinstance(raw_author, str):
+                            name = raw_author.strip()
+                        elif isinstance(raw_author, dict):
+                            possible_name = raw_author.get("name")
+                            name = (
+                                possible_name.strip()
+                                if isinstance(possible_name, str)
+                                else ""
+                            )
+                        else:
+                            name = ""
+                        if name and name not in author_names:
+                            author_names.append(name)
+                related_work = OpenLibraryRelatedWork(
+                    work_key=work_key,
+                    title=title,
+                    cover_url=cover_url,
+                    first_publish_year=_parse_publish_year(
+                        item.get("first_publish_year")
+                    ),
+                    author_names=author_names,
+                )
+                raw_item_languages = item.get("languages")
+                if raw_item_languages is None:
+                    raw_item_languages = item.get("language")
+                item_languages = set(_extract_language_codes(raw_item_languages))
+
+                if preferred_languages and item_languages & preferred_languages:
+                    language_matched[work_key] = related_work
+                    fallback.pop(work_key, None)
+                elif work_key not in language_matched:
+                    fallback[work_key] = related_work
+
+                if preferred_languages:
+                    if len(language_matched) >= max_items:
+                        return list(language_matched.values())[:max_items]
+                elif len(fallback) >= max_items:
+                    return list(fallback.values())[:max_items]
+
+        if preferred_languages and language_matched:
+            return list(language_matched.values())[:max_items]
+        return list(fallback.values())[:max_items]
+
+    async def fetch_author_profile(
+        self,
+        *,
+        author_key: str,
+        works_limit: int = 8,
+    ) -> OpenLibraryAuthorProfile:  # pragma: no cover
+        normalized_key = (
+            author_key
+            if author_key.startswith("/authors/")
+            else f"/authors/{author_key}"
+        )
+        cache_key = f"author::{normalized_key}::{works_limit}"
+        cached = self._metadata_cache.get(cache_key)
+        if isinstance(cached, OpenLibraryAuthorProfile):
+            return cached
+
+        author_payload = await self._request_json(f"{normalized_key}.json")
+        works_payload = await self._request_json(
+            f"{normalized_key}/works.json",
+            params={"limit": works_limit},
+        )
+        entries = works_payload.get("entries", [])
+        top_works: list[OpenLibraryAuthorWork] = []
+        if isinstance(entries, list):
+            for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
+                key = entry.get("key")
+                title = entry.get("title")
+                if not isinstance(key, str) or not isinstance(title, str):
+                    continue
+                covers = entry.get("covers")
+                cover_url = None
+                if isinstance(covers, list) and covers and isinstance(covers[0], int):
+                    cover_url = f"https://covers.openlibrary.org/b/id/{covers[0]}-M.jpg"
+                top_works.append(
+                    OpenLibraryAuthorWork(
+                        work_key=key,
+                        title=title,
+                        cover_url=cover_url,
+                        first_publish_year=_parse_publish_year(
+                            entry.get("first_publish_date")
+                        ),
+                    )
+                )
+
+        photos = author_payload.get("photos")
+        photo_url = None
+        if isinstance(photos, list) and photos and isinstance(photos[0], int):
+            photo_url = f"https://covers.openlibrary.org/a/id/{photos[0]}-M.jpg"
+
+        raw_name = author_payload.get("name")
+        profile = OpenLibraryAuthorProfile(
+            author_key=normalized_key,
+            name=raw_name if isinstance(raw_name, str) else "Unknown author",
+            bio=_extract_description(author_payload),
+            photo_url=photo_url,
+            top_works=top_works,
+        )
+        self._metadata_cache.set(cache_key, profile)
+        return profile

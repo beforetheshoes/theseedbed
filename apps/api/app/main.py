@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.core.errors import register_exception_handlers
 from app.core.schema_guard import run_schema_guard
 from app.routers import (
+    authors,
     books,
     editions,
     health,
@@ -74,6 +75,7 @@ def create_app() -> FastAPI:
     app.include_router(version.router)
     app.include_router(protected.router)
     app.include_router(books.router)
+    app.include_router(authors.router)
     app.include_router(editions.router)
     app.include_router(me.router)
     app.include_router(library.router)

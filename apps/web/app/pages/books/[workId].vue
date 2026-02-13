@@ -616,6 +616,13 @@
         </div>
       </template>
     </Card>
+
+    <BookDiscoverySection
+      v-if="work"
+      :work-id="workId"
+      :authors="work.authors || []"
+      data-test="book-discovery"
+    />
   </div>
 </template>
 
@@ -627,6 +634,7 @@ import { navigateTo, useRoute } from '#imports';
 import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
+import BookDiscoverySection from '~/components/books/BookDiscoverySection.vue';
 import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 import type { FileUploadSelectEvent } from 'primevue/fileupload';
 

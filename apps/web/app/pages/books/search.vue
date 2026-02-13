@@ -35,6 +35,36 @@
                 data-test="status-select"
               />
             </div>
+            <div class="grid w-full gap-3 md:grid-cols-2 lg:grid-cols-3" data-test="search-filters">
+              <InputText
+                v-model="authorFilter"
+                placeholder="Author filter"
+                data-test="search-author"
+              />
+              <InputText
+                v-model="subjectFilter"
+                placeholder="Subject filter"
+                data-test="search-subject"
+              />
+              <InputText
+                v-model="languageFilter"
+                placeholder="Language code (e.g. eng)"
+                data-test="search-language"
+              />
+              <InputText
+                v-model="yearFromFilter"
+                placeholder="Year from"
+                data-test="search-year-from"
+              />
+              <InputText v-model="yearToFilter" placeholder="Year to" data-test="search-year-to" />
+              <Select
+                v-model="sort"
+                :options="sortOptions"
+                option-label="label"
+                option-value="value"
+                data-test="search-sort"
+              />
+            </div>
           </template>
         </Card>
 
@@ -96,6 +126,21 @@
                     >
                       First published: {{ book.first_publish_year }}
                     </p>
+                    <p class="text-xs text-[var(--p-text-muted-color)]">
+                      <span v-if="book.edition_count !== null"
+                        >Editions: {{ book.edition_count }}</span
+                      >
+                      <span v-if="book.languages.length">
+                        <template v-if="book.edition_count !== null"> | </template>
+                        Languages: {{ book.languages.join(', ') }}
+                      </span>
+                      <span>
+                        <template v-if="book.edition_count !== null || book.languages.length">
+                          |
+                        </template>
+                        {{ book.readable ? 'Readable online' : 'Metadata only' }}
+                      </span>
+                    </p>
                   </div>
 
                   <Button
@@ -141,10 +186,19 @@ type SearchItem = {
   author_names: string[];
   first_publish_year: number | null;
   cover_url: string | null;
+  edition_count: number | null;
+  languages: string[];
+  readable: boolean;
 };
 
 type SearchResponse = {
-  items: SearchItem[];
+  items: Array<
+    Omit<SearchItem, 'edition_count' | 'languages' | 'readable'> & {
+      edition_count?: number | null;
+      languages?: string[];
+      readable?: boolean;
+    }
+  >;
   next_page: number | null;
 };
 
@@ -154,6 +208,12 @@ const LIBRARY_UPDATED_EVENT = 'chapterverse:library-updated';
 
 const query = ref('');
 const status = ref('to_read');
+const authorFilter = ref('');
+const subjectFilter = ref('');
+const languageFilter = ref('');
+const yearFromFilter = ref('');
+const yearToFilter = ref('');
+const sort = ref<'relevance' | 'new' | 'old'>('relevance');
 const loading = ref(false);
 const loadingMore = ref(false);
 const results = ref<SearchItem[]>([]);
@@ -170,6 +230,18 @@ const statusOptions = [
   { label: 'Reading', value: 'reading' },
   { label: 'Completed', value: 'completed' },
 ];
+const sortOptions = [
+  { label: 'Relevance', value: 'relevance' },
+  { label: 'Newest first', value: 'new' },
+  { label: 'Oldest first', value: 'old' },
+];
+
+const parsedYear = (value: string): number | null => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 let searchTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let searchRequestSeq = 0;
@@ -193,14 +265,32 @@ const addButtonLabel = (workKey: string): string => {
 const isAddButtonDisabled = (workKey: string): boolean =>
   Boolean(addedStatusByWorkKey.value[workKey]) || importingWorkKey.value === workKey;
 
-const fetchSearchPage = async (page: number): Promise<SearchResponse> =>
-  apiRequest<SearchResponse>('/api/v1/books/search', {
+const normalizeSearchItem = (item: SearchResponse['items'][number]): SearchItem => ({
+  ...item,
+  edition_count: typeof item.edition_count === 'number' ? item.edition_count : null,
+  languages: Array.isArray(item.languages)
+    ? item.languages.filter((value): value is string => typeof value === 'string')
+    : [],
+  readable: Boolean(item.readable),
+});
+
+const fetchSearchPage = async (page: number): Promise<SearchResponse> => {
+  const yearFrom = parsedYear(yearFromFilter.value);
+  const yearTo = parsedYear(yearToFilter.value);
+  return apiRequest<SearchResponse>('/api/v1/books/search', {
     query: {
       query: activeQuery.value,
       limit: 10,
       page,
+      sort: sort.value,
+      ...(authorFilter.value.trim() ? { author: authorFilter.value.trim() } : {}),
+      ...(subjectFilter.value.trim() ? { subject: subjectFilter.value.trim() } : {}),
+      ...(languageFilter.value.trim() ? { language: languageFilter.value.trim() } : {}),
+      ...(yearFrom !== null ? { first_publish_year_from: yearFrom } : {}),
+      ...(yearTo !== null ? { first_publish_year_to: yearTo } : {}),
     },
   });
+};
 
 const runSearch = async () => {
   const trimmed = query.value.trim();
@@ -226,7 +316,7 @@ const runSearch = async () => {
     if (currentSeq !== searchRequestSeq) {
       return;
     }
-    results.value = payload.items;
+    results.value = payload.items.map(normalizeSearchItem);
     nextPage.value = payload.next_page;
     brokenCoverKeys.value = new Set();
     addedStatusByWorkKey.value = {};
@@ -308,7 +398,9 @@ const loadMore = async () => {
     }
 
     const seen = new Set(results.value.map((item) => item.work_key));
-    const nextItems = payload.items.filter((item) => !seen.has(item.work_key));
+    const nextItems = payload.items
+      .map(normalizeSearchItem)
+      .filter((item) => !seen.has(item.work_key));
     results.value = [...results.value, ...nextItems];
     nextPage.value = payload.next_page;
   } catch (err) {
@@ -332,6 +424,12 @@ watch(query, () => {
   searchTimer = globalThis.setTimeout(() => {
     void runSearch();
   }, 300);
+});
+
+watch([authorFilter, subjectFilter, languageFilter, yearFromFilter, yearToFilter, sort], () => {
+  if (activeQuery.value) {
+    void runSearch();
+  }
 });
 
 onBeforeUnmount(() => {

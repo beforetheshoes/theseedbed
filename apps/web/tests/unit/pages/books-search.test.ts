@@ -113,7 +113,7 @@ describe('books search page', () => {
     await vi.advanceTimersByTimeAsync(350);
 
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/search', {
-      query: { query: 'harry', limit: 10, page: 1 },
+      query: { query: 'harry', limit: 10, page: 1, sort: 'relevance' },
     });
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.find('[data-test="search-item-cover"]').exists()).toBe(true);
@@ -451,7 +451,7 @@ describe('books search page', () => {
     await Promise.resolve();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/books/search', {
-      query: { query: 'harry', limit: 10, page: 2 },
+      query: { query: 'harry', limit: 10, page: 2, sort: 'relevance' },
     });
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.text()).toContain('Book B');
@@ -681,5 +681,55 @@ describe('books search page', () => {
 
     expect(wrapper.find('[data-test="search-error"]').exists()).toBe(false);
     expect(wrapper.text()).toContain('Book Z');
+  });
+
+  it('passes advanced filters to books search', async () => {
+    apiRequest.mockResolvedValueOnce(searchResponse([]));
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await wrapper.get('[data-test="search-author"]').setValue('Rowling');
+    await wrapper.get('[data-test="search-subject"]').setValue('Fantasy');
+    await wrapper.get('[data-test="search-language"]').setValue('eng');
+    await wrapper.get('[data-test="search-year-from"]').setValue('1990');
+    await wrapper.get('[data-test="search-year-to"]').setValue('2000');
+    await vi.advanceTimersByTimeAsync(350);
+    await Promise.resolve();
+
+    expect(apiRequest).toHaveBeenLastCalledWith('/api/v1/books/search', {
+      query: {
+        query: 'harry',
+        limit: 10,
+        page: 1,
+        sort: 'relevance',
+        author: 'Rowling',
+        subject: 'Fantasy',
+        language: 'eng',
+        first_publish_year_from: 1990,
+        first_publish_year_to: 2000,
+      },
+    });
+  });
+
+  it('renders metadata line with readability, languages, and edition count', async () => {
+    apiRequest.mockResolvedValueOnce(
+      searchResponse([
+        {
+          work_key: '/works/OL1W',
+          title: 'Book A',
+          author_names: ['Author A'],
+          first_publish_year: 2000,
+          cover_url: null,
+          edition_count: 5,
+          languages: ['eng', 'spa'],
+          readable: true,
+        } as any,
+      ]),
+    );
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    expect(wrapper.text()).toContain('Editions: 5');
+    expect(wrapper.text()).toContain('Languages: eng, spa');
+    expect(wrapper.text()).toContain('Readable online');
   });
 });
