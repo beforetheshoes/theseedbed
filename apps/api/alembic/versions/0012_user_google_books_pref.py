@@ -16,7 +16,17 @@ branch_labels = None
 depends_on = None
 
 
+def _column_exists(table_name: str, column_name: str) -> bool:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = inspector.get_columns(table_name)
+    return any(column["name"] == column_name for column in columns)
+
+
 def upgrade() -> None:
+    if _column_exists("users", "enable_google_books"):
+        return
+
     op.add_column(
         "users",
         sa.Column(
@@ -29,4 +39,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    if not _column_exists("users", "enable_google_books"):
+        return
+
     op.drop_column("users", "enable_google_books")
