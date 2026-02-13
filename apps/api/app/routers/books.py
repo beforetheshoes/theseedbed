@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -44,9 +44,34 @@ async def search_books(
     open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
     page: Annotated[int, Query(ge=1)] = 1,
+    author: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    subject: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
+    language: Annotated[str | None, Query(min_length=1, max_length=32)] = None,
+    first_publish_year_from: Annotated[int | None, Query(ge=0, le=9999)] = None,
+    first_publish_year_to: Annotated[int | None, Query(ge=0, le=9999)] = None,
+    sort: Annotated[Literal["relevance", "new", "old"], Query()] = "relevance",
 ) -> dict[str, object]:
+    if (
+        first_publish_year_from is not None
+        and first_publish_year_to is not None
+        and first_publish_year_from > first_publish_year_to
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="first_publish_year_from must be less than or equal to first_publish_year_to",
+        )
     try:
-        response = await open_library.search_books(query=query, limit=limit, page=page)
+        response = await open_library.search_books(
+            query=query,
+            limit=limit,
+            page=page,
+            author=author,
+            subject=subject,
+            language=language,
+            first_publish_year_from=first_publish_year_from,
+            first_publish_year_to=first_publish_year_to,
+            sort=sort,
+        )
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
@@ -64,6 +89,9 @@ async def search_books(
                     "author_names": item.author_names,
                     "first_publish_year": item.first_publish_year,
                     "cover_url": item.cover_url,
+                    "edition_count": item.edition_count,
+                    "languages": item.languages,
+                    "readable": item.readable,
                 }
                 for item in response.items
             ],

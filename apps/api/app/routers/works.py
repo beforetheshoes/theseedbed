@@ -18,7 +18,12 @@ from app.services.work_covers import (
     list_openlibrary_cover_candidates,
     select_openlibrary_cover,
 )
-from app.services.works import get_work_detail, list_work_editions
+from app.services.works import (
+    get_work_detail,
+    list_related_works,
+    list_work_editions,
+    refresh_work_if_stale,
+)
 
 router = APIRouter(tags=["works"])
 
@@ -28,14 +33,19 @@ def get_open_library_client() -> OpenLibraryClient:
 
 
 @router.get("/api/v1/works/{work_id}")
-def get_work(
+async def get_work(
     work_id: uuid.UUID,
     session: Annotated[Session, Depends(get_db_session)],
+    open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
 ) -> dict[str, object]:
     try:
+        await refresh_work_if_stale(session, work_id=work_id, open_library=open_library)
         detail = get_work_detail(session, work_id=work_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except httpx.HTTPError:
+        # Best-effort refresh; continue with existing local data.
+        detail = get_work_detail(session, work_id=work_id)
     return ok(detail)
 
 
@@ -63,6 +73,32 @@ async def list_work_covers(
     try:
         items = await list_openlibrary_cover_candidates(
             session, work_id=work_id, open_library=open_library
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "open_library_unavailable",
+                "message": "Open Library is unavailable. Please try again shortly.",
+            },
+        ) from exc
+    return ok({"items": items})
+
+
+@router.get("/api/v1/works/{work_id}/related")
+async def related_works(
+    work_id: uuid.UUID,
+    _auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
+    open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    limit: Annotated[int, Query(ge=1, le=24)] = 12,
+) -> dict[str, object]:
+    try:
+        items = await list_related_works(
+            session,
+            work_id=work_id,
+            open_library=open_library,
+            limit=limit,
         )
     except httpx.HTTPError as exc:
         raise HTTPException(

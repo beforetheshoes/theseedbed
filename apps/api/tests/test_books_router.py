@@ -21,11 +21,22 @@ from app.services.open_library import (
     OpenLibrarySearchResult,
     OpenLibraryWorkBundle,
 )
+from app.services.storage import StorageNotConfiguredError
 
 
 class FakeOpenLibrary:
     async def search_books(
-        self, *, query: str, limit: int, page: int
+        self,
+        *,
+        query: str,
+        limit: int,
+        page: int,
+        author: str | None = None,
+        subject: str | None = None,
+        language: str | None = None,
+        first_publish_year_from: int | None = None,
+        first_publish_year_to: int | None = None,
+        sort: str = "relevance",
     ) -> OpenLibrarySearchResponse:
         return OpenLibrarySearchResponse(
             items=[
@@ -35,6 +46,9 @@ class FakeOpenLibrary:
                     author_names=["A"],
                     first_publish_year=2000,
                     cover_url=None,
+                    edition_count=3,
+                    languages=["eng"],
+                    readable=True,
                 )
             ],
             query=query,
@@ -124,6 +138,39 @@ def test_search_books(app: FastAPI) -> None:
     assert payload["next_page"] == 2
     assert payload["has_more"] is True
     assert payload["num_found"] == 22
+    assert payload["items"][0]["edition_count"] == 3
+    assert payload["items"][0]["languages"] == ["eng"]
+    assert payload["items"][0]["readable"] is True
+
+
+def test_search_books_accepts_filters(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/books/search",
+        params={
+            "query": "q",
+            "author": "A",
+            "subject": "Fantasy",
+            "language": "eng",
+            "first_publish_year_from": 1990,
+            "first_publish_year_to": 2010,
+            "sort": "new",
+        },
+    )
+    assert response.status_code == 200
+
+
+def test_search_books_rejects_invalid_year_range(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.get(
+        "/api/v1/books/search",
+        params={
+            "query": "q",
+            "first_publish_year_from": 2010,
+            "first_publish_year_to": 1990,
+        },
+    )
+    assert response.status_code == 400
 
 
 def test_get_open_library_client_constructs_client() -> None:
@@ -169,7 +216,17 @@ def test_search_books_returns_502_on_open_library_error(
 ) -> None:
     class BrokenOpenLibrary(FakeOpenLibrary):
         async def search_books(
-            self, *, query: str, limit: int, page: int
+            self,
+            *,
+            query: str,
+            limit: int,
+            page: int,
+            author: str | None = None,
+            subject: str | None = None,
+            language: str | None = None,
+            first_publish_year_from: int | None = None,
+            first_publish_year_to: int | None = None,
+            sort: str = "relevance",
         ) -> OpenLibrarySearchResponse:
             raise httpx.ConnectError(
                 "down",
@@ -200,6 +257,21 @@ def test_import_book_returns_400_and_404_for_domain_errors(
     )
     response = client.post("/api/v1/books/import", json={"work_key": "/works/OL1W"})
     assert response.status_code == 404
+
+
+def test_import_book_returns_502_on_open_library_error(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom_fetch(*_args: Any, **_kwargs: Any) -> OpenLibraryWorkBundle:
+        raise httpx.ConnectError(
+            "down",
+            request=httpx.Request("GET", "https://openlibrary.org/works/OL1W.json"),
+        )
+
+    monkeypatch.setattr(FakeOpenLibrary, "fetch_work_bundle", _boom_fetch)
+    client = TestClient(app)
+    response = client.post("/api/v1/books/import", json={"work_key": "/works/OL1W"})
+    assert response.status_code == 502
 
 
 def test_import_book_does_not_fail_when_cover_cache_errors(
@@ -234,3 +306,18 @@ def test_create_manual_book_reads_cover_and_handles_value_error(
         data={"title": "T", "authors_json": '["A"]'},
     )
     assert response.status_code == 400
+
+
+def test_create_manual_book_returns_503_when_storage_not_configured(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _storage_error(*_args: Any, **_kwargs: Any) -> dict[str, object]:
+        raise StorageNotConfiguredError("missing storage config")
+
+    monkeypatch.setattr("app.routers.books.create_manual_book", _storage_error)
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/books/manual",
+        data={"title": "T", "authors_json": '["A"]'},
+    )
+    assert response.status_code == 503

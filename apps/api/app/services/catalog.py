@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 import sqlalchemy as sa
@@ -71,6 +72,10 @@ def import_openlibrary_bundle(
         work = session.get(Work, work_external.entity_id)
         if work is None:
             raise RuntimeError("work external ID points to missing work")
+        if not work.description and bundle.description:
+            work.description = bundle.description
+        if work.first_publish_year is None and bundle.first_publish_year is not None:
+            work.first_publish_year = bundle.first_publish_year
         if work.default_cover_url is None and bundle.cover_url is not None:
             work.default_cover_url = bundle.cover_url
     else:
@@ -151,6 +156,20 @@ def import_openlibrary_bundle(
             edition = session.get(Edition, edition_external.entity_id)
             if edition is None:
                 raise RuntimeError("edition external ID points to missing edition")
+            if edition.isbn10 is None and bundle.edition.get("isbn10"):
+                edition.isbn10 = bundle.edition.get("isbn10")
+            if edition.isbn13 is None and bundle.edition.get("isbn13"):
+                edition.isbn13 = bundle.edition.get("isbn13")
+            if edition.publisher is None and bundle.edition.get("publisher"):
+                edition.publisher = bundle.edition.get("publisher")
+            if edition.publish_date is None and isinstance(
+                bundle.edition.get("publish_date_iso"), dt.date
+            ):
+                edition.publish_date = bundle.edition.get("publish_date_iso")
+            if edition.language is None and bundle.edition.get("language"):
+                edition.language = bundle.edition.get("language")
+            if edition.format is None and bundle.edition.get("format"):
+                edition.format = bundle.edition.get("format")
             if edition.cover_url is None and bundle.cover_url is not None:
                 edition.cover_url = bundle.cover_url
         else:
@@ -159,9 +178,21 @@ def import_openlibrary_bundle(
                 isbn10=bundle.edition.get("isbn10"),
                 isbn13=bundle.edition.get("isbn13"),
                 publisher=bundle.edition.get("publisher"),
-                publish_date=None,
-                language=None,
-                format=None,
+                publish_date=(
+                    bundle.edition.get("publish_date_iso")
+                    if isinstance(bundle.edition.get("publish_date_iso"), dt.date)
+                    else None
+                ),
+                language=(
+                    bundle.edition.get("language")
+                    if isinstance(bundle.edition.get("language"), str)
+                    else None
+                ),
+                format=(
+                    bundle.edition.get("format")
+                    if isinstance(bundle.edition.get("format"), str)
+                    else None
+                ),
                 cover_url=bundle.cover_url,
             )
             session.add(edition)

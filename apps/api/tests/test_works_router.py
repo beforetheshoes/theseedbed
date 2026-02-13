@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings, get_settings
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
+from app.routers.works import get_open_library_client
 from app.routers.works import router as works_router
 from app.services.storage import StorageNotConfiguredError
 
@@ -31,6 +32,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         yield object()
 
     app.dependency_overrides[get_db_session] = _fake_session
+    app.dependency_overrides[get_open_library_client] = lambda: object()
     app.dependency_overrides[get_settings] = lambda: Settings(
         supabase_url="https://example.supabase.co",
         supabase_jwt_audience="authenticated",
@@ -50,6 +52,25 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         "app.routers.works.list_work_editions",
         lambda *_args, **_kwargs: [{"id": str(uuid.uuid4())}],
     )
+
+    async def _fake_refresh(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("app.routers.works.refresh_work_if_stale", _fake_refresh)
+
+    async def _fake_related(
+        *_args: object, **_kwargs: object
+    ) -> list[dict[str, object]]:
+        return [
+            {
+                "work_key": "/works/OL1W",
+                "title": "Related",
+                "cover_url": None,
+                "author_names": ["Author A"],
+            }
+        ]
+
+    monkeypatch.setattr("app.routers.works.list_related_works", _fake_related)
 
     async def _fake_list_covers(
         *_args: object, **_kwargs: object
@@ -75,6 +96,11 @@ def test_get_work(app: FastAPI) -> None:
     assert response.status_code == 200
 
 
+def test_get_open_library_client_constructs_client() -> None:
+    client = get_open_library_client()
+    assert client is not None
+
+
 def test_get_work_returns_404(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "app.routers.works.get_work_detail",
@@ -83,6 +109,18 @@ def test_get_work_returns_404(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> 
     client = TestClient(app)
     response = client.get(f"/api/v1/works/{uuid.uuid4()}")
     assert response.status_code == 404
+
+
+def test_get_work_ignores_refresh_errors(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> None:
+        raise httpx.ConnectError("nope")
+
+    monkeypatch.setattr("app.routers.works.refresh_work_if_stale", _boom)
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}")
+    assert response.status_code == 200
 
 
 def test_list_editions(app: FastAPI) -> None:
@@ -123,6 +161,26 @@ def test_list_work_covers_returns_502_on_open_library_failure(
     assert response.status_code == 502
 
 
+def test_related_works(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/related")
+    assert response.status_code == 200
+    assert response.json()["data"]["items"][0]["title"] == "Related"
+    assert response.json()["data"]["items"][0]["author_names"] == ["Author A"]
+
+
+def test_related_works_returns_502_on_open_library_failure(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("app.routers.works.list_related_works", _boom)
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/related")
+    assert response.status_code == 502
+
+
 def test_select_work_cover(app: FastAPI) -> None:
     client = TestClient(app)
     response = client.post(
@@ -144,6 +202,34 @@ def test_select_work_cover_returns_403(
         f"/api/v1/works/{uuid.uuid4()}/covers/select", json={"cover_id": 123}
     )
     assert response.status_code == 403
+
+
+def test_select_work_cover_returns_404(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _missing(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise LookupError("missing")
+
+    monkeypatch.setattr("app.routers.works.select_openlibrary_cover", _missing)
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/covers/select", json={"cover_id": 123}
+    )
+    assert response.status_code == 404
+
+
+def test_select_work_cover_returns_400(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _invalid(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise ValueError("invalid")
+
+    monkeypatch.setattr("app.routers.works.select_openlibrary_cover", _invalid)
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/covers/select", json={"cover_id": 123}
+    )
+    assert response.status_code == 400
 
 
 def test_select_work_cover_returns_502_on_cache_failure(

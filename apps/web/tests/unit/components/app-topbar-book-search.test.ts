@@ -921,4 +921,60 @@ describe('AppTopBarBookSearch', () => {
     await nextTick();
     expect(apiRequest.mock.calls.length).toBe(callsAfterFirstAdd);
   });
+
+  it('sends quick filter params with global search', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [] });
+    const wrapper = mountSearch();
+    await wrapper.get('[data-test="scope-global"]').trigger('click');
+    await wrapper.get('[data-test="topbar-search-language"]').setValue('eng');
+    await wrapper.get('[data-test="topbar-search-year-from"]').setValue('1990');
+    await wrapper.get('[data-test="topbar-search-year-to"]').setValue('2000');
+    await wrapper.get('[data-test="topbar-search-input"]').setValue('hat');
+    await vi.advanceTimersByTimeAsync(350);
+    await nextTick();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/search', {
+      query: {
+        query: 'hat',
+        limit: 10,
+        page: 1,
+        language: 'eng',
+        first_publish_year_from: 1990,
+        first_publish_year_to: 2000,
+      },
+    });
+  });
+
+  it('supports mobile quick filters and sanitizes language arrays', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          work_key: '/works/OL2W',
+          title: 'The Hat',
+          author_names: ['Someone'],
+          first_publish_year: 2000,
+          cover_url: null,
+          languages: ['eng', 1, null],
+        },
+      ],
+    });
+    const wrapper = mountSearch();
+    await wrapper.get('[data-test="topbar-search-mobile-open"]').trigger('click');
+    await wrapper.get('[data-test="scope-global"]').trigger('click');
+    await wrapper.get('[data-test="topbar-search-language-mobile"]').setValue('spa');
+    await wrapper.get('[data-test="topbar-search-year-from-mobile"]').setValue('1980');
+    await wrapper.get('[data-test="topbar-search-input-mobile"]').setValue('hat');
+    await vi.advanceTimersByTimeAsync(350);
+    await nextTick();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/search', {
+      query: {
+        query: 'hat',
+        limit: 10,
+        page: 1,
+        language: 'spa',
+        first_publish_year_from: 1980,
+      },
+    });
+  });
 });

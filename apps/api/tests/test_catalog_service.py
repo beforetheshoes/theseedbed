@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 import uuid
 from typing import Any, cast
 
@@ -59,6 +60,9 @@ def _bundle() -> OpenLibraryWorkBundle:
             "isbn13": "456",
             "publisher": "Pub",
             "publish_date": None,
+            "publish_date_iso": dt.date(2020, 1, 1),
+            "language": "eng",
+            "format": "Paperback",
         },
         raw_work={"k": "v"},
         raw_edition={"ek": "ev"},
@@ -215,6 +219,8 @@ def test_import_openlibrary_bundle_uses_existing_records() -> None:
     assert result["edition"]["created"] is False
     assert work_model.default_cover_url == _bundle().cover_url
     assert edition_model.cover_url == _bundle().cover_url
+    assert edition_model.language == "eng"
+    assert edition_model.format == "Paperback"
 
 
 def test_import_openlibrary_bundle_does_not_overwrite_existing_covers() -> None:
