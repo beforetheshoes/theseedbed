@@ -5,6 +5,7 @@ Project instructions for Codex. These rules override any defaults.
 ## Working agreements (highest priority)
 - Always create and work on a new branch for any change.
 - NEVER commit or open a PR without explicit permission from the user.
+- When writing PR titles/bodies with `gh`, pass real multiline Markdown (or `--body-file`) and never include escaped newline literals like `\n`.
 - Always use the GitHub CLI to read issue descriptions before planning work on an issue.
 - Always read current official documentation (Context7 when available) for any library, framework, or service you touch.
 - Always run `make quality` and fix all failures before reporting a task as complete.
