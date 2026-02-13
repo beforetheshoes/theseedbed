@@ -5,17 +5,21 @@ from typing import Annotated
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings, get_settings
 from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
+from app.services.google_books import GoogleBooksClient
 from app.services.open_library import OpenLibraryClient
 from app.services.storage import StorageNotConfiguredError
+from app.services.user_library import get_or_create_profile
 from app.services.work_covers import (
+    list_googlebooks_cover_candidates,
     list_openlibrary_cover_candidates,
+    select_cover_from_url,
     select_openlibrary_cover,
 )
 from app.services.works import (
@@ -30,6 +34,26 @@ router = APIRouter(tags=["works"])
 
 def get_open_library_client() -> OpenLibraryClient:
     return OpenLibraryClient()
+
+
+def get_google_books_client(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GoogleBooksClient:
+    return GoogleBooksClient(api_key=settings.google_books_api_key)
+
+
+def _google_books_enabled_for_user(
+    *,
+    auth: AuthContext,
+    session: Session,
+    settings: Settings,
+) -> bool:
+    if not settings.book_provider_google_enabled:
+        return False
+    if not settings.google_books_api_key:
+        return False
+    profile = get_or_create_profile(session, user_id=auth.user_id)
+    return bool(profile.enable_google_books)
 
 
 @router.get("/api/v1/works/{work_id}")
@@ -66,9 +90,11 @@ def list_editions(
 @router.get("/api/v1/works/{work_id}/covers")
 async def list_work_covers(
     work_id: uuid.UUID,
-    _auth: Annotated[AuthContext, Depends(require_auth_context)],
+    auth: Annotated[AuthContext, Depends(require_auth_context)],
     session: Annotated[Session, Depends(get_db_session)],
     open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
     try:
         items = await list_openlibrary_cover_candidates(
@@ -82,6 +108,19 @@ async def list_work_covers(
                 "message": "Open Library is unavailable. Please try again shortly.",
             },
         ) from exc
+
+    if _google_books_enabled_for_user(auth=auth, session=session, settings=settings):
+        try:
+            items.extend(
+                await list_googlebooks_cover_candidates(
+                    session,
+                    work_id=work_id,
+                    google_books=google_books,
+                )
+            )
+        except httpx.HTTPError:
+            # Open Library remains the baseline provider. Ignore Google failures.
+            pass
     return ok({"items": items})
 
 
@@ -112,7 +151,16 @@ async def related_works(
 
 
 class SelectCoverRequest(BaseModel):
-    cover_id: int = Field(ge=1)
+    cover_id: int | None = Field(default=None, ge=1)
+    source_url: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def _validate_one_selector(self) -> SelectCoverRequest:
+        has_cover_id = self.cover_id is not None
+        has_source_url = bool(self.source_url and self.source_url.strip())
+        if has_cover_id == has_source_url:
+            raise ValueError("Provide exactly one of cover_id or source_url.")
+        return self
 
 
 @router.post("/api/v1/works/{work_id}/covers/select")
@@ -124,13 +172,22 @@ async def select_cover(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
     try:
-        result = await select_openlibrary_cover(
-            session,
-            settings=settings,
-            user_id=auth.user_id,
-            work_id=work_id,
-            cover_id=payload.cover_id,
-        )
+        if payload.cover_id is not None:
+            result = await select_openlibrary_cover(
+                session,
+                settings=settings,
+                user_id=auth.user_id,
+                work_id=work_id,
+                cover_id=payload.cover_id,
+            )
+        else:
+            result = await select_cover_from_url(
+                session,
+                settings=settings,
+                user_id=auth.user_id,
+                work_id=work_id,
+                source_url=(payload.source_url or "").strip(),
+            )
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from exc
     except LookupError as exc:

@@ -220,6 +220,30 @@ describe('AppTopBar', () => {
     expect(navigateToMock).toHaveBeenCalledWith('/');
   });
 
+  it('navigates to settings from the account menu when authed', async () => {
+    const wrapper = mount(AppTopBar, {
+      global: {
+        plugins: [[PrimeVue, { ripple: false }]],
+        stubs: {
+          Menubar: MenubarStub,
+          Button: ButtonStub,
+          Menu: MenuStub,
+          NuxtLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
+          AppTopBarBookSearch: defineComponent({
+            name: 'AppTopBarBookSearch',
+            setup: () => () => h('div'),
+          }),
+        },
+      },
+    });
+
+    await Promise.resolve();
+    await nextTick();
+    await wrapper.get('[data-test="menu-item-Settings"]').trigger('click');
+
+    expect(navigateToMock).toHaveBeenCalledWith('/settings');
+  });
+
   it('executes sign-in navigation from the account menu when not authed', async () => {
     getUserMock.mockResolvedValueOnce({ data: { user: null } } as any);
 

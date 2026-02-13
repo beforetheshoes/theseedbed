@@ -7,7 +7,7 @@
           <div>
             <p class="font-serif text-xl font-semibold tracking-tight">Search and import books</p>
             <p class="text-sm text-[var(--p-text-muted-color)]">
-              Import from Open Library into your library.
+              Import from Open Library, with optional Google Books results when enabled.
             </p>
           </div>
         </div>
@@ -24,7 +24,7 @@
               <InputText
                 v-model="query"
                 class="w-full"
-                placeholder="Search Open Library"
+                placeholder="Search books"
                 data-test="search-input"
               />
               <Select
@@ -120,6 +120,15 @@
                     <p class="truncate text-sm text-[var(--p-text-muted-color)]">
                       {{ book.author_names.join(', ') || 'Unknown author' }}
                     </p>
+                    <p class="text-xs text-[var(--p-text-muted-color)]">
+                      Source: {{ book.source === 'googlebooks' ? 'Google Books' : 'Open Library' }}
+                    </p>
+                    <p
+                      v-if="book.source === 'googlebooks' && book.attribution?.text"
+                      class="text-xs text-[var(--p-text-muted-color)]"
+                    >
+                      {{ book.attribution.text }}
+                    </p>
                     <p
                       v-if="book.first_publish_year"
                       class="text-xs text-[var(--p-text-muted-color)]"
@@ -149,7 +158,7 @@
                     :loading="importingWorkKey === book.work_key"
                     :disabled="isAddButtonDisabled(book.work_key)"
                     :data-test="`search-add-${index}`"
-                    @click="importAndAdd(book.work_key)"
+                    @click="importAndAdd(book)"
                   />
                 </div>
               </div>
@@ -181,6 +190,8 @@ import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 const toast = useToast();
 
 type SearchItem = {
+  source: 'openlibrary' | 'googlebooks';
+  source_id: string;
   work_key: string;
   title: string;
   author_names: string[];
@@ -189,6 +200,7 @@ type SearchItem = {
   edition_count: number | null;
   languages: string[];
   readable: boolean;
+  attribution?: { text: string; url: string | null } | null;
 };
 
 type SearchResponse = {
@@ -197,6 +209,9 @@ type SearchResponse = {
       edition_count?: number | null;
       languages?: string[];
       readable?: boolean;
+      source?: string;
+      source_id?: string;
+      attribution?: { text?: unknown; url?: unknown } | null;
     }
   >;
   next_page: number | null;
@@ -267,11 +282,25 @@ const isAddButtonDisabled = (workKey: string): boolean =>
 
 const normalizeSearchItem = (item: SearchResponse['items'][number]): SearchItem => ({
   ...item,
+  source: item.source === 'googlebooks' ? 'googlebooks' : 'openlibrary',
+  source_id:
+    typeof item.source_id === 'string' && item.source_id.trim()
+      ? item.source_id
+      : item.source === 'googlebooks'
+        ? item.work_key.replace(/^googlebooks:/, '')
+        : item.work_key,
   edition_count: typeof item.edition_count === 'number' ? item.edition_count : null,
   languages: Array.isArray(item.languages)
     ? item.languages.filter((value): value is string => typeof value === 'string')
     : [],
   readable: Boolean(item.readable),
+  attribution:
+    item.attribution && typeof item.attribution.text === 'string' && item.attribution.text.trim()
+      ? {
+          text: item.attribution.text.trim(),
+          url: typeof item.attribution.url === 'string' ? item.attribution.url : null,
+        }
+      : null,
 });
 
 const fetchSearchPage = async (page: number): Promise<SearchResponse> => {
@@ -341,7 +370,8 @@ const runSearch = async () => {
   }
 };
 
-const importAndAdd = async (workKey: string) => {
+const importAndAdd = async (book: SearchItem) => {
+  const workKey = book.work_key;
   if (isAddButtonDisabled(workKey)) return;
   error.value = '';
 
@@ -350,7 +380,10 @@ const importAndAdd = async (workKey: string) => {
   try {
     const imported = await apiRequest<{ work: { id: string } }>('/api/v1/books/import', {
       method: 'POST',
-      body: { work_key: workKey },
+      body:
+        book.source === 'googlebooks'
+          ? { source: 'googlebooks', source_id: book.source_id }
+          : { source: 'openlibrary', work_key: workKey },
     });
 
     const libraryResult = await apiRequest<{ created: boolean }>('/api/v1/library/items', {

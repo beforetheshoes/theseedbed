@@ -91,6 +91,11 @@ describe('AppBreadcrumbs', () => {
     expect(wrapper.get('[data-test="item-Library"] a').attributes('href')).toBe('/library');
     expect(wrapper.get('[data-test="item-Book"]').text()).toContain('Book');
 
+    routeState.path = '/settings';
+    await wrapper.vm.$nextTick();
+    expect(wrapper.get('[data-test="item-Library"] a').attributes('href')).toBe('/library');
+    expect(wrapper.get('[data-test="item-Settings"]').text()).toContain('Settings');
+
     routeState.path = '/unknown';
     await wrapper.vm.$nextTick();
     expect(wrapper.get('[data-test="home"]').findAll('a').length).toBe(0);

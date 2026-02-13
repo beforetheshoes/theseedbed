@@ -14,20 +14,49 @@ from app.core.rate_limit import enforce_client_user_rate_limit
 from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
-from app.services.catalog import import_openlibrary_bundle
+from app.services.book_providers import (
+    BookSearchProvider,
+    GoogleBooksSearchProvider,
+    OpenLibrarySearchProvider,
+)
+from app.services.catalog import import_googlebooks_bundle, import_openlibrary_bundle
 from app.services.covers import cache_edition_cover_from_url
+from app.services.google_books import GoogleBooksClient
 from app.services.manual_books import create_manual_book
 from app.services.open_library import OpenLibraryClient
 from app.services.storage import StorageNotConfiguredError
+from app.services.user_library import get_or_create_profile
 
 
 class ImportBookRequest(BaseModel):
-    work_key: str = Field(min_length=3)
+    work_key: str | None = Field(default=None, min_length=3)
     edition_key: str | None = None
+    source: Literal["openlibrary", "googlebooks"] | None = None
+    source_id: str | None = Field(default=None, min_length=1)
 
 
 def get_open_library_client() -> OpenLibraryClient:
     return OpenLibraryClient()
+
+
+def get_google_books_client(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> GoogleBooksClient:
+    return GoogleBooksClient(api_key=settings.google_books_api_key)
+
+
+def _google_books_enabled_for_user(
+    *,
+    auth: AuthContext,
+    session: Session,
+    settings: Settings,
+) -> bool:
+    if not settings.book_provider_google_enabled:
+        return False
+    if not settings.google_books_api_key:
+        return False
+    profile = get_or_create_profile(session, user_id=auth.user_id)
+    return bool(profile.enable_google_books)
 
 
 router = APIRouter(
@@ -41,7 +70,10 @@ router = APIRouter(
 async def search_books(
     query: Annotated[str, Query(min_length=1)],
     _auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
     open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
     limit: Annotated[int, Query(ge=1, le=50)] = 10,
     page: Annotated[int, Query(ge=1)] = 1,
     author: Annotated[str | None, Query(min_length=1, max_length=200)] = None,
@@ -61,17 +93,33 @@ async def search_books(
             detail="first_publish_year_from must be less than or equal to first_publish_year_to",
         )
     try:
-        response = await open_library.search_books(
-            query=query,
-            limit=limit,
-            page=page,
-            author=author,
-            subject=subject,
-            language=language,
-            first_publish_year_from=first_publish_year_from,
-            first_publish_year_to=first_publish_year_to,
-            sort=sort,
-        )
+        providers: list[BookSearchProvider] = [
+            OpenLibrarySearchProvider(open_library),
+        ]
+        if _google_books_enabled_for_user(
+            auth=_auth, session=session, settings=settings
+        ):
+            providers.append(GoogleBooksSearchProvider(google_books))
+
+        responses = []
+        for provider in providers:
+            try:
+                response = await provider.search_books(
+                    query=query,
+                    limit=limit,
+                    page=page,
+                    author=author,
+                    subject=subject,
+                    language=language,
+                    first_publish_year_from=first_publish_year_from,
+                    first_publish_year_to=first_publish_year_to,
+                    sort=sort,
+                )
+            except httpx.HTTPError:
+                if provider.provider == "openlibrary":
+                    raise
+                continue
+            responses.append(response)
     except httpx.HTTPError as exc:
         raise HTTPException(
             status_code=502,
@@ -80,10 +128,18 @@ async def search_books(
                 "message": "Open Library is unavailable. Please try again shortly.",
             },
         ) from exc
+
+    merged_items = [item for response in responses for item in response.items]
+    next_page = responses[0].next_page if responses else None
+    has_more = any(response.has_more for response in responses)
+    num_found = responses[0].num_found if responses else 0
+    cache_hit = responses[0].cache_hit if responses else False
     return ok(
         {
             "items": [
                 {
+                    "source": item.source,
+                    "source_id": item.source_id,
                     "work_key": item.work_key,
                     "title": item.title,
                     "author_names": item.author_names,
@@ -92,13 +148,21 @@ async def search_books(
                     "edition_count": item.edition_count,
                     "languages": item.languages,
                     "readable": item.readable,
+                    "attribution": (
+                        {
+                            "text": item.attribution.text,
+                            "url": item.attribution.url,
+                        }
+                        if item.attribution is not None
+                        else None
+                    ),
                 }
-                for item in response.items
+                for item in merged_items
             ],
-            "next_page": response.next_page,
-            "has_more": response.has_more,
-            "num_found": response.num_found,
-            "cache_hit": response.cache_hit,
+            "next_page": next_page,
+            "has_more": has_more,
+            "num_found": num_found,
+            "cache_hit": cache_hit,
         }
     )
 
@@ -109,37 +173,75 @@ async def import_book(
     _auth: Annotated[AuthContext, Depends(require_auth_context)],
     session: Annotated[Session, Depends(get_db_session)],
     open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
+    source = payload.source or "openlibrary"
     try:
-        bundle = await open_library.fetch_work_bundle(
-            work_key=payload.work_key,
-            edition_key=payload.edition_key,
-        )
-        result = import_openlibrary_bundle(session, bundle=bundle)
+        if source == "googlebooks":
+            if not _google_books_enabled_for_user(
+                auth=_auth, session=session, settings=settings
+            ):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Google Books is disabled for this account.",
+                )
+            source_id = (payload.source_id or "").strip()
+            if not source_id:
+                raise HTTPException(
+                    status_code=400, detail="source_id is required for Google Books."
+                )
+            google_bundle = await google_books.fetch_work_bundle(volume_id=source_id)
+            result = import_googlebooks_bundle(session, bundle=google_bundle)
+            cover_url = google_bundle.cover_url
+        else:
+            openlibrary_work_key = (payload.work_key or payload.source_id or "").strip()
+            if not openlibrary_work_key:
+                raise HTTPException(
+                    status_code=400,
+                    detail="work_key is required for Open Library imports.",
+                )
+            openlibrary_bundle = await open_library.fetch_work_bundle(
+                work_key=openlibrary_work_key,
+                edition_key=payload.edition_key,
+            )
+            result = import_openlibrary_bundle(session, bundle=openlibrary_bundle)
+            cover_url = openlibrary_bundle.cover_url
 
         # Best-effort cover caching; do not block imports.
         edition = result.get("edition")
         if isinstance(edition, dict):
             edition_id = edition.get("id")
-            if isinstance(edition_id, str) and bundle.cover_url:
+            if isinstance(edition_id, str) and cover_url:
                 try:
                     cached = await cache_edition_cover_from_url(
                         session,
                         settings=settings,
                         edition_id=uuid.UUID(edition_id),
-                        source_url=bundle.cover_url,
+                        source_url=cover_url,
                     )
                     if cached.cover_url:
                         edition["cover_url"] = cached.cover_url
                 except Exception:
                     pass
+        result["source"] = source
+        if source == "googlebooks":
+            result["source_id"] = (payload.source_id or "").strip() or None
+        else:
+            result["source_id"] = (
+                payload.work_key or payload.source_id or ""
+            ).strip() or None
     except httpx.HTTPError as exc:
+        code = "open_library_unavailable"
+        message = "Open Library is unavailable. Please try again shortly."
+        if source == "googlebooks":
+            code = "google_books_unavailable"
+            message = "Google Books is unavailable. Please try again shortly."
         raise HTTPException(
             status_code=502,
             detail={
-                "code": "open_library_unavailable",
-                "message": "Open Library is unavailable. Please try again shortly.",
+                "code": code,
+                "message": message,
             },
         ) from exc
     except ValueError as exc:

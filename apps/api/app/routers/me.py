@@ -17,6 +17,7 @@ class UpdateProfileRequest(BaseModel):
     handle: str | None = Field(default=None, max_length=64)
     display_name: str | None = Field(default=None, max_length=255)
     avatar_url: str | None = Field(default=None, max_length=2048)
+    enable_google_books: bool | None = None
 
 
 router = APIRouter(
@@ -38,6 +39,7 @@ def get_me(
             "handle": profile.handle,
             "display_name": profile.display_name,
             "avatar_url": profile.avatar_url,
+            "enable_google_books": profile.enable_google_books,
         }
     )
 
@@ -55,6 +57,7 @@ def patch_me(
             handle=payload.handle,
             display_name=payload.display_name,
             avatar_url=payload.avatar_url,
+            enable_google_books=payload.enable_google_books,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -65,5 +68,6 @@ def patch_me(
             "handle": profile.handle,
             "display_name": profile.display_name,
             "avatar_url": profile.avatar_url,
+            "enable_google_books": profile.enable_google_books,
         }
     )

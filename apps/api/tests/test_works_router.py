@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 from app.core.config import Settings, get_settings
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
-from app.routers.works import get_open_library_client
+from app.routers.works import get_google_books_client, get_open_library_client
 from app.routers.works import router as works_router
 from app.services.storage import StorageNotConfiguredError
 
@@ -33,6 +33,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
 
     app.dependency_overrides[get_db_session] = _fake_session
     app.dependency_overrides[get_open_library_client] = lambda: object()
+    app.dependency_overrides[get_google_books_client] = lambda: object()
     app.dependency_overrides[get_settings] = lambda: Settings(
         supabase_url="https://example.supabase.co",
         supabase_jwt_audience="authenticated",
@@ -75,17 +76,35 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     async def _fake_list_covers(
         *_args: object, **_kwargs: object
     ) -> list[dict[str, object]]:
-        return [{"cover_id": 1, "thumbnail_url": "t", "image_url": "i"}]
+        return [
+            {
+                "source": "openlibrary",
+                "source_id": "1",
+                "cover_id": 1,
+                "thumbnail_url": "t",
+                "image_url": "i",
+                "source_url": "i",
+            }
+        ]
 
     monkeypatch.setattr(
         "app.routers.works.list_openlibrary_cover_candidates",
         _fake_list_covers,
+    )
+    monkeypatch.setattr(
+        "app.routers.works.list_googlebooks_cover_candidates",
+        lambda *_args, **_kwargs: [],
+    )
+    monkeypatch.setattr(
+        "app.routers.works.get_or_create_profile",
+        lambda *_args, **_kwargs: type("Profile", (), {"enable_google_books": False})(),
     )
 
     async def _fake_select(*_args: object, **_kwargs: object) -> dict[str, object]:
         return {"scope": "override", "cover_url": "https://example.com/x.jpg"}
 
     monkeypatch.setattr("app.routers.works.select_openlibrary_cover", _fake_select)
+    monkeypatch.setattr("app.routers.works.select_cover_from_url", _fake_select)
 
     yield app
 
@@ -161,6 +180,80 @@ def test_list_work_covers_returns_502_on_open_library_failure(
     assert response.status_code == 502
 
 
+def test_list_work_covers_includes_google_candidates_when_enabled(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.works.get_or_create_profile",
+        lambda *_args, **_kwargs: type("Profile", (), {"enable_google_books": True})(),
+    )
+
+    async def _google(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        return [
+            {
+                "source": "googlebooks",
+                "source_id": "gb1",
+                "thumbnail_url": "https://books.google.com/cover.jpg",
+                "image_url": "https://books.google.com/cover.jpg",
+                "source_url": "https://books.google.com/cover.jpg",
+            }
+        ]
+
+    monkeypatch.setattr("app.routers.works.list_googlebooks_cover_candidates", _google)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+        api_version="0.1.0",
+    )
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/covers")
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert any(item.get("source") == "openlibrary" for item in items)
+    assert any(item.get("source") == "googlebooks" for item in items)
+
+
+def test_list_work_covers_ignores_google_failures(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.works.get_or_create_profile",
+        lambda *_args, **_kwargs: type("Profile", (), {"enable_google_books": True})(),
+    )
+
+    async def _boom(*_args: object, **_kwargs: object) -> list[dict[str, object]]:
+        raise httpx.ConnectError("down")
+
+    monkeypatch.setattr("app.routers.works.list_googlebooks_cover_candidates", _boom)
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+        api_version="0.1.0",
+    )
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/covers")
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["source"] == "openlibrary"
+
+
 def test_related_works(app: FastAPI) -> None:
     client = TestClient(app)
     response = client.get(f"/api/v1/works/{uuid.uuid4()}/related")
@@ -188,6 +281,25 @@ def test_select_work_cover(app: FastAPI) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["scope"] in {"global", "override"}
+
+
+def test_select_work_cover_from_source_url(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/covers/select",
+        json={"source_url": "https://books.google.com/cover.jpg"},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["scope"] in {"global", "override"}
+
+
+def test_select_work_cover_rejects_invalid_selector(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/covers/select",
+        json={},
+    )
+    assert response.status_code == 422
 
 
 def test_select_work_cover_returns_403(

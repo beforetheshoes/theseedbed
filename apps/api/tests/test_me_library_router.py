@@ -41,18 +41,34 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     monkeypatch.setattr(
         "app.routers.me.get_or_create_profile",
         lambda session, *, user_id: SimpleNamespace(
-            id=user_id, handle="seed", display_name="Seed", avatar_url=None
+            id=user_id,
+            handle="seed",
+            display_name="Seed",
+            avatar_url=None,
+            enable_google_books=False,
         ),
     )
-    monkeypatch.setattr(
-        "app.routers.me.update_profile",
-        lambda session, *, user_id, handle, display_name, avatar_url: SimpleNamespace(
+
+    def _fake_update_profile(
+        session: object,
+        *,
+        user_id: uuid.UUID,
+        handle: str | None,
+        display_name: str | None,
+        avatar_url: str | None,
+        enable_google_books: bool | None,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
             id=user_id,
             handle=handle or "seed",
             display_name=display_name,
             avatar_url=avatar_url,
-        ),
-    )
+            enable_google_books=(
+                enable_google_books if isinstance(enable_google_books, bool) else False
+            ),
+        )
+
+    monkeypatch.setattr("app.routers.me.update_profile", _fake_update_profile)
 
     monkeypatch.setattr(
         "app.routers.library.list_library_items",
@@ -116,6 +132,7 @@ def test_get_me(app: FastAPI) -> None:
     response = client.get("/api/v1/me")
     assert response.status_code == 200
     assert response.json()["data"]["handle"] == "seed"
+    assert response.json()["data"]["enable_google_books"] is False
 
 
 def test_patch_me(app: FastAPI) -> None:
@@ -123,6 +140,13 @@ def test_patch_me(app: FastAPI) -> None:
     response = client.patch("/api/v1/me", json={"display_name": "Updated"})
     assert response.status_code == 200
     assert response.json()["data"]["display_name"] == "Updated"
+
+
+def test_patch_me_updates_google_books_preference(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch("/api/v1/me", json={"enable_google_books": True})
+    assert response.status_code == 200
+    assert response.json()["data"]["enable_google_books"] is True
 
 
 def test_patch_me_returns_400_on_validation_error(

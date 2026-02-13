@@ -1005,7 +1005,38 @@ describe('library page', () => {
 
     expect(wrapper.find('[data-test="library-item-description"] script').exists()).toBe(false);
     expect(wrapper.find('[data-test="library-item-description"] strong').exists()).toBe(true);
-    expect(wrapper.text()).toContain('<script>alert(1)</script> bold');
+    expect(wrapper.text()).toContain('bold');
+    expect(wrapper.text()).not.toContain('alert(1)');
+  });
+
+  it('renders common html description tags from providers safely', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'HTML Description Book',
+          work_description: '<b>Bold</b><br><i>Italic</i>',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'reading',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-09T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const description = wrapper.get('[data-test="library-item-description"]');
+    expect(description.text()).toContain('Bold');
+    expect(description.text()).toContain('Italic');
+    expect(description.find('b, strong').exists()).toBe(true);
+    expect(description.find('i, em').exists()).toBe(true);
+    expect(description.find('script').exists()).toBe(false);
   });
 
   it('uses title-only link styling and keeps author/description as plain text', async () => {

@@ -41,10 +41,16 @@ import SearchPage from '../../../app/pages/books/search.vue';
 const searchResponse = (
   items: Array<{
     work_key: string;
+    source?: string;
+    source_id?: string;
     title: string;
     author_names: string[];
     first_publish_year: number | null;
     cover_url: string | null;
+    edition_count?: number | null;
+    languages?: unknown[];
+    readable?: boolean;
+    attribution?: { text?: unknown; url?: unknown } | null;
   }>,
   nextPage: number | null = null,
 ) => ({
@@ -67,7 +73,7 @@ const mountPage = () =>
           props: ['modelValue', 'options'],
           emits: ['update:modelValue'],
           template:
-            '<button data-test="select-stub" @click="$emit(`update:modelValue`, `reading`)"></button>',
+            '<button v-bind="$attrs" data-test="select-stub" @click="$emit(`update:modelValue`, `reading`)"></button>',
         },
       },
     },
@@ -207,7 +213,7 @@ describe('books search page', () => {
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/books/import', {
       method: 'POST',
-      body: { work_key: '/works/OL1W' },
+      body: { source: 'openlibrary', work_key: '/works/OL1W' },
     });
     expect(apiRequest).toHaveBeenNthCalledWith(3, '/api/v1/library/items', {
       method: 'POST',
@@ -354,6 +360,138 @@ describe('books search page', () => {
     await wrapper.get('[data-test="search-add-0"]').trigger('click');
 
     expect(wrapper.get('[data-test="search-error"]').text()).toContain('Unable to import');
+  });
+
+  it('imports google books results using source_id', async () => {
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: 'googlebooks:gb1',
+            source: 'googlebooks',
+            source_id: 'gb1',
+            title: 'Book A',
+            author_names: ['Author A'],
+            first_publish_year: 2000,
+            cover_url: null,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce({ work: { id: 'work-1' } })
+      .mockResolvedValueOnce({ created: true });
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-add-0"]').trigger('click');
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/books/import', {
+      method: 'POST',
+      body: { source: 'googlebooks', source_id: 'gb1' },
+    });
+  });
+
+  it('normalizes google attribution with non-string url values', async () => {
+    apiRequest.mockResolvedValueOnce(
+      searchResponse([
+        {
+          work_key: 'googlebooks:gb1',
+          source: 'googlebooks',
+          title: 'Book A',
+          author_names: ['Author A'],
+          first_publish_year: 2000,
+          cover_url: null,
+          attribution: { text: 'From Google', url: 42 },
+        },
+      ]),
+    );
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+
+    expect(wrapper.text()).toContain('From Google');
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/search', {
+      query: { query: 'harry', limit: 10, page: 1, sort: 'relevance' },
+    });
+  });
+
+  it('returns early when import is disabled for a work key', async () => {
+    apiRequest
+      .mockResolvedValueOnce(
+        searchResponse([
+          {
+            work_key: '/works/OL1W',
+            title: 'Book A',
+            author_names: ['Author A'],
+            first_publish_year: 2000,
+            cover_url: null,
+          },
+        ]),
+      )
+      .mockResolvedValueOnce({ work: { id: 'work-1' } })
+      .mockResolvedValueOnce({ created: true });
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-add-0"]').trigger('click');
+
+    const callsAfterFirstImport = apiRequest.mock.calls.length;
+    await (wrapper.vm as any).importAndAdd({
+      work_key: '/works/OL1W',
+      source: 'openlibrary',
+      source_id: '/works/OL1W',
+      title: 'Book A',
+      author_names: ['Author A'],
+      first_publish_year: 2000,
+      cover_url: null,
+      edition_count: null,
+      languages: [],
+      readable: false,
+      attribution: null,
+    });
+    expect(apiRequest.mock.calls.length).toBe(callsAfterFirstImport);
+  });
+
+  it('loadMore returns early when there is no next page', async () => {
+    const wrapper = mountPage();
+    await (wrapper.vm as any).loadMore();
+    expect(apiRequest).not.toHaveBeenCalled();
+  });
+
+  it('re-runs search when filters change after query is active', async () => {
+    apiRequest.mockResolvedValueOnce(searchResponse([])).mockResolvedValueOnce(searchResponse([]));
+
+    const wrapper = mountPage();
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-language"]').setValue('eng');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/books/search', {
+      query: {
+        query: 'harry',
+        limit: 10,
+        page: 1,
+        sort: 'relevance',
+        language: 'eng',
+      },
+    });
+  });
+
+  it('updates sort and re-runs search', async () => {
+    apiRequest.mockResolvedValueOnce(searchResponse([])).mockResolvedValueOnce(searchResponse([]));
+    const wrapper = mountPage();
+
+    await wrapper.get('[data-test="search-input"]').setValue('harry');
+    await vi.advanceTimersByTimeAsync(350);
+    await wrapper.get('[data-test="search-sort"]').trigger('click');
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/books/search', {
+      query: { query: 'harry', limit: 10, page: 1, sort: 'reading' },
+    });
   });
 
   it('clears pending timer on unmount', async () => {

@@ -15,6 +15,8 @@ def test_get_settings_blank_audience_and_reset_cache() -> None:
         os.environ["SUPABASE_JWKS_CACHE_TTL_SECONDS"] = "120"
         os.environ["SUPABASE_SERVICE_ROLE_KEY"] = ""
         os.environ["API_VERSION"] = "9.9.9"
+        os.environ["BOOK_PROVIDER_GOOGLE_ENABLED"] = "false"
+        os.environ["GOOGLE_BOOKS_API_KEY"] = ""
         config_module.reset_settings_cache()
 
         settings = config_module.get_settings()
@@ -25,6 +27,8 @@ def test_get_settings_blank_audience_and_reset_cache() -> None:
         assert settings.supabase_service_role_key is None
         assert settings.supabase_storage_covers_bucket == "covers"
         assert settings.public_highlight_max_chars == 280
+        assert settings.book_provider_google_enabled is False
+        assert settings.google_books_api_key is None
         assert settings.cors_allowed_origins == (
             "http://localhost:3000",
             "http://127.0.0.1:3000",
@@ -54,6 +58,33 @@ def test_get_settings_invalid_ttl_defaults() -> None:
         os.environ.clear()
         os.environ.update(original_env)
         config_module.reset_settings_cache()
+
+
+def test_get_settings_parses_google_books_flags() -> None:
+    original_env = os.environ.copy()
+    try:
+        os.environ["SUPABASE_URL"] = "https://example.supabase.co/"
+        os.environ["BOOK_PROVIDER_GOOGLE_ENABLED"] = "true"
+        os.environ["GOOGLE_BOOKS_API_KEY"] = "abc123"
+        config_module.reset_settings_cache()
+
+        settings = config_module.get_settings()
+        assert settings.book_provider_google_enabled is True
+        assert settings.google_books_api_key == "abc123"
+    finally:
+        os.environ.clear()
+        os.environ.update(original_env)
+        config_module.reset_settings_cache()
+
+
+def test_parse_bool_env_false_and_invalid_values(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("FLAG_BOOL", "off")
+    assert config_module._parse_bool_env("FLAG_BOOL", default=True) is False
+
+    monkeypatch.setenv("FLAG_BOOL", "maybe")
+    assert config_module._parse_bool_env("FLAG_BOOL", default=True) is True
 
 
 def test_get_settings_custom_cors_origins() -> None:
