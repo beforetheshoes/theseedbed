@@ -32,6 +32,9 @@ const items = computed<BreadcrumbItem[]>(() => {
   if (path.startsWith('/books/')) {
     return [{ label: 'Library', to: '/library' }, { label: 'Book' }];
   }
+  if (path === '/settings') {
+    return [{ label: 'Library', to: '/library' }, { label: 'Settings' }];
+  }
   return [];
 });
 </script>

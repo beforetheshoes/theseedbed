@@ -24,6 +24,7 @@ def test_users_table_schema() -> None:
         "handle",
         "display_name",
         "avatar_url",
+        "enable_google_books",
         "actor_uri",
         "created_at",
         "updated_at",
@@ -35,6 +36,7 @@ def test_users_table_schema() -> None:
     assert isinstance(table.columns["display_name"].type, sa.String)
     assert table.columns["display_name"].type.length == 255
     assert isinstance(table.columns["avatar_url"].type, sa.Text)
+    assert isinstance(table.columns["enable_google_books"].type, sa.Boolean)
 
     created_at_type = cast(sa.DateTime, table.columns["created_at"].type)
     updated_at_type = cast(sa.DateTime, table.columns["updated_at"].type)

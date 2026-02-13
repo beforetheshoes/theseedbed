@@ -143,10 +143,16 @@
                       {{ (item.author_names ?? []).join(', ') || 'Unknown author' }}
                     </p>
                     <p
-                      v-if="item.kind === 'openlibrary' && isAdding(item.work_key)"
+                      v-if="item.kind !== 'library' && isAdding(item.work_key)"
                       class="m-0 mt-1 text-xs text-[var(--p-text-muted-color)]"
                     >
                       Adding...
+                    </p>
+                    <p
+                      v-if="item.kind === 'googlebooks' && item.attribution?.text"
+                      class="m-0 mt-1 text-[10px] text-[var(--p-text-muted-color)]"
+                    >
+                      {{ item.attribution.text }}
                     </p>
                   </div>
                 </button>
@@ -310,10 +316,16 @@
                     {{ (item.author_names ?? []).join(', ') || 'Unknown author' }}
                   </p>
                   <p
-                    v-if="item.kind === 'openlibrary' && isAdding(item.work_key)"
+                    v-if="item.kind !== 'library' && isAdding(item.work_key)"
                     class="m-0 mt-1 text-xs text-[var(--p-text-muted-color)]"
                   >
                     Adding...
+                  </p>
+                  <p
+                    v-if="item.kind === 'googlebooks' && item.attribution?.text"
+                    class="m-0 mt-1 text-[10px] text-[var(--p-text-muted-color)]"
+                  >
+                    {{ item.attribution.text }}
                   </p>
                 </div>
               </button>
@@ -373,6 +385,8 @@ type LibrarySearchItem = {
 
 type OpenLibrarySearchItem = {
   kind: 'openlibrary';
+  source: 'openlibrary';
+  source_id: string;
   work_key: string;
   title: string;
   author_names: string[];
@@ -381,9 +395,26 @@ type OpenLibrarySearchItem = {
   edition_count?: number | null;
   languages?: string[];
   readable?: boolean;
+  attribution?: null;
 };
 
-type SearchOption = LibrarySearchItem | OpenLibrarySearchItem;
+type GoogleBooksSearchItem = {
+  kind: 'googlebooks';
+  source: 'googlebooks';
+  source_id: string;
+  work_key: string;
+  title: string;
+  author_names: string[];
+  cover_url: string | null;
+  first_publish_year: number | null;
+  edition_count?: number | null;
+  languages?: string[];
+  readable?: boolean;
+  attribution?: { text: string; url: string | null } | null;
+};
+
+type ExternalSearchItem = OpenLibrarySearchItem | GoogleBooksSearchItem;
+type SearchOption = LibrarySearchItem | ExternalSearchItem;
 type SearchScope = 'my' | 'global' | 'both';
 const LIBRARY_UPDATED_EVENT = 'chapterverse:library-updated';
 
@@ -407,7 +438,7 @@ const anchorEl = ref<HTMLElement | null>(null);
 const loading = ref(false);
 const errorMessage = ref('');
 const libraryItems = ref<LibrarySearchItem[]>([]);
-const openLibraryItems = ref<OpenLibrarySearchItem[]>([]);
+const openLibraryItems = ref<ExternalSearchItem[]>([]);
 
 const addedKeys = ref(new Set<string>());
 const addingKeys = ref(new Set<string>());
@@ -478,7 +509,7 @@ const runSearch = async (trimmed: string) => {
 
   try {
     let nextLibrary: LibrarySearchItem[] = [];
-    let nextOpenLibrary: OpenLibrarySearchItem[] = [];
+    let nextOpenLibrary: ExternalSearchItem[] = [];
 
     if (scope.value === 'my' || scope.value === 'both') {
       const payload = await apiRequest<{ items: Omit<LibrarySearchItem, 'kind'>[] }>(
@@ -513,23 +544,64 @@ const runSearch = async (trimmed: string) => {
       if (!Number.isNaN(parsedYearTo)) {
         queryParams.first_publish_year_to = parsedYearTo;
       }
-      const payload = await apiRequest<{ items: Omit<OpenLibrarySearchItem, 'kind'>[] }>(
-        '/api/v1/books/search',
-        { query: queryParams },
-      );
+      const payload = await apiRequest<{
+        items: Array<
+          Omit<OpenLibrarySearchItem, 'kind' | 'source' | 'source_id'> & {
+            source?: string;
+            source_id?: string;
+            attribution?: { text?: unknown; url?: unknown } | null;
+          }
+        >;
+      }>('/api/v1/books/search', { query: queryParams });
       if (currentSeq !== requestSeq) {
         return;
       }
       nextOpenLibrary = payload.items
-        .map((item) => ({
-          kind: 'openlibrary' as const,
-          ...item,
-          edition_count: typeof item.edition_count === 'number' ? item.edition_count : null,
-          languages: Array.isArray(item.languages)
-            ? item.languages.filter((value): value is string => typeof value === 'string')
-            : [],
-          readable: Boolean(item.readable),
-        }))
+        .map((item) => {
+          const source = item.source === 'googlebooks' ? 'googlebooks' : 'openlibrary';
+          const sourceId =
+            typeof item.source_id === 'string' && item.source_id.trim().length > 0
+              ? item.source_id
+              : source === 'openlibrary'
+                ? item.work_key
+                : item.work_key.replace(/^googlebooks:/, '');
+          const base = {
+            source,
+            source_id: sourceId,
+            work_key:
+              source === 'openlibrary' ? item.work_key : item.work_key || `googlebooks:${sourceId}`,
+            title: item.title,
+            author_names: item.author_names ?? [],
+            cover_url: item.cover_url ?? null,
+            first_publish_year:
+              typeof item.first_publish_year === 'number' ? item.first_publish_year : null,
+            edition_count: typeof item.edition_count === 'number' ? item.edition_count : null,
+            languages: Array.isArray(item.languages)
+              ? item.languages.filter((value): value is string => typeof value === 'string')
+              : [],
+            readable: Boolean(item.readable),
+          };
+          if (source === 'googlebooks') {
+            return {
+              kind: 'googlebooks' as const,
+              ...base,
+              attribution:
+                item.attribution &&
+                typeof item.attribution.text === 'string' &&
+                item.attribution.text.trim()
+                  ? {
+                      text: item.attribution.text.trim(),
+                      url: typeof item.attribution.url === 'string' ? item.attribution.url : null,
+                    }
+                  : null,
+            };
+          }
+          return {
+            kind: 'openlibrary' as const,
+            ...base,
+            attribution: null,
+          };
+        })
         .filter((item) => (scope.value === 'both' ? !libraryKeys.has(item.work_key) : true));
     }
 
@@ -585,7 +657,7 @@ const onFocus = () => {
 const isAdding = (workKey: string) => addingKeys.value.has(workKey);
 const isAdded = (workKey: string) => addedKeys.value.has(workKey);
 const isTileDisabled = (item: SearchOption) =>
-  item.kind === 'openlibrary' && (isAdding(item.work_key) || isAdded(item.work_key));
+  item.kind !== 'library' && (isAdding(item.work_key) || isAdded(item.work_key));
 
 const desktopLegend = (item: SearchOption) => {
   if (item.kind === 'library') {
@@ -594,7 +666,7 @@ const desktopLegend = (item: SearchOption) => {
   if (isAdded(item.work_key)) {
     return 'Added';
   }
-  return 'Global';
+  return item.kind === 'googlebooks' ? 'Google Books' : 'Open Library';
 };
 
 const onDesktopTileClick = async (item: SearchOption) => {
@@ -615,7 +687,7 @@ const openLibraryItem = async (item: LibrarySearchItem) => {
   await navigateTo(`/books/${item.work_id}`);
 };
 
-const addOpenLibraryItem = async (item: OpenLibrarySearchItem) => {
+const addOpenLibraryItem = async (item: ExternalSearchItem) => {
   if (isAdding(item.work_key) || isAdded(item.work_key)) {
     return;
   }
@@ -625,7 +697,10 @@ const addOpenLibraryItem = async (item: OpenLibrarySearchItem) => {
   try {
     const imported = await apiRequest<{ work: { id: string } }>('/api/v1/books/import', {
       method: 'POST',
-      body: { work_key: item.work_key },
+      body:
+        item.kind === 'googlebooks'
+          ? { source: 'googlebooks', source_id: item.source_id }
+          : { source: 'openlibrary', work_key: item.work_key },
     });
     const libraryResult = await apiRequest<{ created: boolean }>('/api/v1/library/items', {
       method: 'POST',

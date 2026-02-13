@@ -185,7 +185,15 @@ const accountItems = computed(() => [
     : { label: 'Not signed in', icon: 'pi pi-user', disabled: true },
   { separator: true },
   ...(userEmail.value
-    ? [{ label: 'Sign out', icon: 'pi pi-sign-out', command: () => void signOut() }]
+    ? [
+        {
+          label: 'Settings',
+          icon: 'pi pi-cog',
+          command: () => void navigateTo('/settings'),
+        },
+        { separator: true },
+        { label: 'Sign out', icon: 'pi pi-sign-out', command: () => void signOut() },
+      ]
     : [
         {
           label: 'Sign in',

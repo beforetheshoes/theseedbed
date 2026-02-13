@@ -754,20 +754,14 @@
 definePageMeta({ layout: 'app', middleware: 'auth' });
 
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import MarkdownIt from 'markdown-it';
 import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
+import { renderDescriptionHtml } from '~/utils/description';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
 import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 import EmptyState from '~/components/EmptyState.vue';
 
 const toast = useToast();
-const markdownRenderer = new MarkdownIt({
-  html: false,
-  linkify: true,
-  typographer: true,
-  breaks: true,
-});
 const EMPTY_DESCRIPTION_LABEL = 'No description available.';
 
 type LibraryViewMode = 'current' | 'grid' | 'table';
@@ -1023,7 +1017,7 @@ const descriptionSnippet = (value?: string | null) => {
 const renderDescriptionSnippet = (value?: string | null) => {
   const snippet = descriptionSnippet(value);
   if (snippet === EMPTY_DESCRIPTION_LABEL) return snippet;
-  return markdownRenderer.renderInline(snippet);
+  return renderDescriptionHtml(snippet, { inline: true });
 };
 
 const ratingValue = (value?: number | null) => {

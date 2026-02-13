@@ -56,6 +56,7 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         handle=_default_handle(user_id),
         display_name=None,
         avatar_url=None,
+        enable_google_books=False,
     )
     session.add(profile)
     session.commit()
@@ -69,6 +70,7 @@ def update_profile(
     handle: str | None,
     display_name: str | None,
     avatar_url: str | None,
+    enable_google_books: bool | None,
 ) -> User:
     profile = get_or_create_profile(session, user_id=user_id)
 
@@ -88,6 +90,9 @@ def update_profile(
 
     if avatar_url is not None:
         profile.avatar_url = avatar_url.strip() or None
+
+    if enable_google_books is not None:
+        profile.enable_google_books = enable_google_books
 
     session.commit()
     return profile

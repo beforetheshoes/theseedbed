@@ -912,6 +912,8 @@ describe('AppTopBarBookSearch', () => {
     // Call the action directly to cover the early-return branch regardless of button disabled state.
     await (wrapper.vm as any).addOpenLibraryItem({
       kind: 'openlibrary',
+      source: 'openlibrary',
+      source_id: '/works/OL2W',
       work_key: '/works/OL2W',
       title: 'The Hat',
       author_names: ['Someone'],
@@ -963,6 +965,7 @@ describe('AppTopBarBookSearch', () => {
     await wrapper.get('[data-test="scope-global"]').trigger('click');
     await wrapper.get('[data-test="topbar-search-language-mobile"]').setValue('spa');
     await wrapper.get('[data-test="topbar-search-year-from-mobile"]').setValue('1980');
+    await wrapper.get('[data-test="topbar-search-year-to-mobile"]').setValue('1990');
     await wrapper.get('[data-test="topbar-search-input-mobile"]').setValue('hat');
     await vi.advanceTimersByTimeAsync(350);
     await nextTick();
@@ -974,7 +977,130 @@ describe('AppTopBarBookSearch', () => {
         page: 1,
         language: 'spa',
         first_publish_year_from: 1980,
+        first_publish_year_to: 1990,
       },
     });
+  });
+
+  it('renders google books results and imports with source_id', async () => {
+    apiRequest.mockImplementation(async (path: string) => {
+      if (path === '/api/v1/books/search') {
+        return {
+          items: [
+            {
+              source: 'googlebooks',
+              source_id: 'gb1',
+              work_key: 'googlebooks:gb1',
+              title: 'Google Book',
+              author_names: ['G Author'],
+              first_publish_year: 2001,
+              cover_url: null,
+              attribution: {
+                text: 'Data provided by Google Books',
+                url: 'https://books.google.com',
+              },
+            },
+          ],
+        };
+      }
+      if (path === '/api/v1/books/import') return { work: { id: 'work-1' } };
+      if (path === '/api/v1/library/items') return { created: true };
+      throw new Error(`unexpected call: ${path}`);
+    });
+
+    const wrapper = mountSearch();
+    await wrapper.get('[data-test="scope-global"]').trigger('click');
+    await wrapper.get('[data-test="topbar-search-input"]').setValue('google');
+    await vi.advanceTimersByTimeAsync(350);
+    await nextTick();
+
+    expect(wrapper.text()).toContain('Google Books');
+    expect(wrapper.text()).toContain('Data provided by Google Books');
+
+    await wrapper.get('[data-test="topbar-search-add-googlebooks:gb1"]').trigger('click');
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/import', {
+      method: 'POST',
+      body: { source: 'googlebooks', source_id: 'gb1' },
+    });
+  });
+
+  it('handles google items with malformed attribution payload', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          source: 'googlebooks',
+          source_id: 'gb2',
+          work_key: 'googlebooks:gb2',
+          title: 'Google Book',
+          author_names: ['G Author'],
+          first_publish_year: 2001,
+          cover_url: null,
+          edition_count: 'x',
+          attribution: { text: 123, url: 1 },
+        },
+      ],
+    });
+
+    const wrapper = mountSearch();
+    await wrapper.get('[data-test="scope-global"]').trigger('click');
+    await wrapper.get('[data-test="topbar-search-input"]').setValue('google');
+    await vi.advanceTimersByTimeAsync(350);
+    await nextTick();
+
+    expect(wrapper.text()).toContain('Google Books');
+    expect(wrapper.text()).not.toContain('Data provided by Google Books');
+  });
+
+  it('normalizes google fallback fields when optional metadata is malformed', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          source: 'googlebooks',
+          work_key: 'googlebooks:gb3',
+          title: 'Google Book',
+          author_names: null,
+          first_publish_year: '2001',
+          cover_url: null,
+          attribution: { text: 'From Google Books', url: 123 },
+        },
+      ],
+    });
+
+    const wrapper = mountSearch();
+    await wrapper.get('[data-test="scope-global"]').trigger('click');
+    await wrapper.get('[data-test="topbar-search-input"]').setValue('google');
+    await vi.advanceTimersByTimeAsync(350);
+    await nextTick();
+
+    expect(wrapper.text()).toContain('Unknown author');
+    expect(wrapper.text()).toContain('From Google Books');
+    expect(wrapper.text()).not.toContain('First published:');
+  });
+
+  it('adds a book without dispatching when window is unavailable', async () => {
+    const wrapper = mountSearch();
+    const originalWindow = (globalThis as any).window;
+    Object.defineProperty(globalThis, 'window', { value: undefined, configurable: true });
+    try {
+      apiRequest
+        .mockResolvedValueOnce({ work: { id: 'work-imported' } })
+        .mockResolvedValueOnce({ created: true });
+      await (wrapper.vm as any).addOpenLibraryItem({
+        kind: 'openlibrary',
+        source: 'openlibrary',
+        source_id: '/works/OL2W',
+        work_key: '/works/OL2W',
+        title: 'The Hat',
+        author_names: ['Someone'],
+        first_publish_year: 2000,
+        cover_url: null,
+      });
+      expect(apiRequest).toHaveBeenCalledWith('/api/v1/books/import', {
+        method: 'POST',
+        body: { source: 'openlibrary', work_key: '/works/OL2W' },
+      });
+    } finally {
+      Object.defineProperty(globalThis, 'window', { value: originalWindow, configurable: true });
+    }
   });
 });

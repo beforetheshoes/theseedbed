@@ -1,4 +1,4 @@
-.PHONY: dev dev-api dev-web dev-up install install-api install-web \
+.PHONY: dev dev-api dev-api-bitwarden dev-web dev-up install install-api install-web \
 	supabase-start supabase-env supabase-health ensure-web-env \
 	lint lint-api lint-web format format-api format-web \
 	format-check format-check-api format-check-web \
@@ -23,6 +23,10 @@ dev-up:
 # Run API server
 dev-api:
 	cd apps/api && $(API_RUN) uvicorn main:app --reload --port 8000
+
+# Run API server with GOOGLE_BOOKS_API_KEY loaded from Bitwarden Secrets Manager
+dev-api-bitwarden:
+	cd apps/api && $(if $(wildcard $(API_VENV_PY)),$(API_VENV_PY),uv run python) scripts/dev_api_with_bitwarden.py
 
 # Run web server
 dev-web:

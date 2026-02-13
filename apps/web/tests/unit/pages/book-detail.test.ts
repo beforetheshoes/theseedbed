@@ -194,6 +194,34 @@ describe('book detail page', () => {
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/by-work/work-1');
   });
 
+  it('renders description safely when provider text contains html tags', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: '<b>Bold quote</b><br><i>Line 2</i><script>alert(1)</script>',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const description = wrapper.get('[data-test="book-detail-description"]');
+    expect(description.text()).toContain('Bold quote');
+    expect(description.text()).toContain('Line 2');
+    expect(description.find('b, strong').exists()).toBe(true);
+    expect(description.find('i, em').exists()).toBe(true);
+    expect(description.find('script').exists()).toBe(false);
+  });
+
   it('removes a library item after confirmation and redirects back to the library', async () => {
     apiRequest.mockImplementation(async (url: string, opts?: any) => {
       const method = (opts?.method || 'GET').toUpperCase();
@@ -1418,7 +1446,7 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Upload image');
     await flushPromises();
     expect((wrapper.vm as any).coverMode).toBe('upload');
-    await clickButton(wrapper, 'Choose from Open Library');
+    await clickButton(wrapper, 'Choose from Search');
     await flushPromises();
     expect((wrapper.vm as any).coverMode).toBe('choose');
 
@@ -1476,7 +1504,18 @@ describe('book detail page', () => {
         };
       }
       if (url === '/api/v1/works/work-1/covers' && method === 'GET') {
-        return { items: [{ cover_id: 10, thumbnail_url: 'thumb', image_url: 'img' }] };
+        return {
+          items: [
+            {
+              source: 'openlibrary',
+              source_id: '10',
+              cover_id: 10,
+              thumbnail_url: 'thumb',
+              image_url: 'img',
+              source_url: 'img',
+            },
+          ],
+        };
       }
       if (url === '/api/v1/works/work-1/covers/select' && method === 'POST') {
         expect(opts?.body).toEqual({ cover_id: 10 });
@@ -1507,6 +1546,72 @@ describe('book detail page', () => {
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/works/work-1/covers/select', {
       method: 'POST',
       body: { cover_id: 10 },
+    });
+    expect((wrapper.vm as any).coverDialogVisible).toBe(false);
+  });
+
+  it('selects a Google Books cover candidate via source_url', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: 'https://example.com/work.jpg',
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          cover_url: 'https://example.com/override.jpg',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/works/work-1/covers' && method === 'GET') {
+        return {
+          items: [
+            {
+              source: 'googlebooks',
+              source_id: 'gb1',
+              thumbnail_url: 'https://books.google.com/t.jpg',
+              image_url: 'https://books.google.com/i.jpg',
+              source_url: 'https://books.google.com/i.jpg',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/works/work-1/covers/select' && method === 'POST') {
+        expect(opts?.body).toEqual({ source_url: 'https://books.google.com/i.jpg' });
+        return { scope: 'override', cover_url: 'https://example.com/override.jpg' };
+      }
+
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await clickButton(wrapper, 'Set cover');
+    await flushPromises();
+
+    await wrapper.find('[data-test="cover-candidate-gb1"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/works/work-1/covers/select', {
+      method: 'POST',
+      body: { source_url: 'https://books.google.com/i.jpg' },
     });
     expect((wrapper.vm as any).coverDialogVisible).toBe(false);
   });
@@ -1569,7 +1674,18 @@ describe('book detail page', () => {
         };
       }
       if (url === '/api/v1/works/work-1/covers' && method === 'GET') {
-        return { items: [{ cover_id: 10, thumbnail_url: 'thumb', image_url: 'img' }] };
+        return {
+          items: [
+            {
+              source: 'openlibrary',
+              source_id: '10',
+              cover_id: 10,
+              thumbnail_url: 'thumb',
+              image_url: 'img',
+              source_url: 'img',
+            },
+          ],
+        };
       }
       if (url === '/api/v1/works/work-1/covers/select' && method === 'POST') {
         throw new ApiClientErrorMock('Nope', 'bad_request', 400);
@@ -2542,7 +2658,14 @@ describe('book detail page', () => {
     expect((wrapper.vm as any).error).toBe('Unable to remove this item right now.');
     await (wrapper.vm as any).loadCoverCandidates();
     expect((wrapper.vm as any).coverCandidates).toEqual([]);
-    await (wrapper.vm as any).selectCoverCandidate(1);
+    await (wrapper.vm as any).selectCoverCandidate({
+      source: 'openlibrary',
+      source_id: '1',
+      cover_id: 1,
+      thumbnail_url: 'thumb',
+      image_url: 'img',
+      source_url: 'img',
+    });
     expect((wrapper.vm as any).coverError).toBe('Unable to set cover.');
   });
 });

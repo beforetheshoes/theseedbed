@@ -75,9 +75,12 @@
                 <span class="font-medium">Authors:</span>
                 {{ work.authors.map((a) => a.name).join(', ') }}
               </p>
-              <p v-if="work?.description" class="prose prose-sm max-w-none dark:prose-invert">
-                {{ work.description }}
-              </p>
+              <div
+                v-if="renderedDescriptionHtml"
+                class="prose prose-sm max-w-none dark:prose-invert"
+                data-test="book-detail-description"
+                v-html="renderedDescriptionHtml"
+              />
 
               <div v-if="!libraryItem" class="flex flex-col gap-2">
                 <p class="text-sm text-[var(--p-text-muted-color)]">
@@ -419,7 +422,7 @@
 
         <div class="flex flex-wrap gap-2">
           <Button
-            label="Choose from Open Library"
+            label="Choose from Search"
             size="small"
             :severity="coverMode === 'choose' ? 'primary' : 'secondary'"
             @click="coverMode = 'choose'"
@@ -441,7 +444,7 @@
         <div v-if="coverMode === 'choose'" class="flex flex-col gap-3">
           <div class="flex items-center justify-between gap-3">
             <p class="text-xs text-[var(--p-text-muted-color)]">
-              Select a cover from Open Library.
+              Select a cover from available sources.
             </p>
             <Button
               label="Refresh"
@@ -464,13 +467,13 @@
           >
             <button
               v-for="c in coverCandidates"
-              :key="c.cover_id"
+              :key="coverCandidateKey(c)"
               type="button"
               class="group overflow-hidden rounded-xl border border-[var(--p-content-border-color)] bg-black/5 shadow-sm transition hover:shadow-md dark:bg-white/5"
-              :class="coverSelectingId === c.cover_id ? 'opacity-60' : ''"
+              :class="coverSelectingKey === coverCandidateKey(c) ? 'opacity-60' : ''"
               :disabled="coverBusy"
-              :data-test="`cover-candidate-${c.cover_id}`"
-              @click="selectCoverCandidate(c.cover_id)"
+              :data-test="`cover-candidate-${coverCandidateKey(c)}`"
+              @click="selectCoverCandidate(c)"
             >
               <Image
                 :src="c.thumbnail_url"
@@ -479,6 +482,9 @@
                 class="h-[120px] w-full"
                 image-class="h-full w-full object-cover"
               />
+              <div class="px-2 py-1 text-left text-[11px] text-[var(--p-text-muted-color)]">
+                {{ c.source === 'googlebooks' ? 'Google Books' : 'Open Library' }}
+              </div>
             </button>
           </div>
           <p v-else class="text-sm text-[var(--p-text-muted-color)]">
@@ -633,6 +639,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { navigateTo, useRoute } from '#imports';
 import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
+import { renderDescriptionHtml } from '~/utils/description';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
 import BookDiscoverySection from '~/components/books/BookDiscoverySection.vue';
 import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
@@ -749,8 +756,16 @@ const editions = ref<any[]>([]);
 const selectedEditionId = ref<string>('');
 const setPreferredEdition = ref(true);
 const coverCandidatesLoading = ref(false);
-const coverCandidates = ref<{ cover_id: number; thumbnail_url: string; image_url: string }[]>([]);
-const coverSelectingId = ref<number | null>(null);
+type CoverCandidate = {
+  source: 'openlibrary' | 'googlebooks';
+  source_id: string;
+  cover_id?: number | null;
+  source_url?: string | null;
+  thumbnail_url: string;
+  image_url: string;
+};
+const coverCandidates = ref<CoverCandidate[]>([]);
+const coverSelectingKey = ref<string | null>(null);
 
 const removeConfirmOpen = ref(false);
 const removeConfirmLoading = ref(false);
@@ -764,6 +779,9 @@ const needsEditionSelection = computed(
 const effectiveCoverUrl = computed(
   () => libraryItem.value?.cover_url ?? work.value?.cover_url ?? null,
 );
+const renderedDescriptionHtml = computed(() => {
+  return renderDescriptionHtml(work.value?.description);
+});
 
 const effectiveEditionId = computed(() => {
   const preferred = libraryItem.value?.preferred_edition_id;
@@ -1015,7 +1033,7 @@ const openCoverDialog = async () => {
   coverSourceUrl.value = '';
   coverCandidates.value = [];
   coverCandidatesLoading.value = false;
-  coverSelectingId.value = null;
+  coverSelectingKey.value = null;
 
   if (needsEditionSelection.value) {
     editionsLoading.value = true;
@@ -1039,7 +1057,9 @@ const openCoverDialog = async () => {
 const loadCoverCandidates = async () => {
   coverCandidatesLoading.value = true;
   try {
-    const payload = await apiRequest<{ items: any[] }>(`/api/v1/works/${workId.value}/covers`);
+    const payload = await apiRequest<{ items: CoverCandidate[] }>(
+      `/api/v1/works/${workId.value}/covers`,
+    );
     coverCandidates.value = payload.items || [];
   } catch (err) {
     coverCandidates.value = [];
@@ -1053,14 +1073,26 @@ const loadCoverCandidates = async () => {
   }
 };
 
-const selectCoverCandidate = async (coverId: number) => {
+const coverCandidateKey = (candidate: CoverCandidate): string => {
+  if (candidate.source === 'openlibrary' && typeof candidate.cover_id === 'number') {
+    return String(candidate.cover_id);
+  }
+  if (candidate.source_id) return candidate.source_id;
+  return candidate.image_url;
+};
+
+const selectCoverCandidate = async (candidate: CoverCandidate) => {
   coverBusy.value = true;
   coverError.value = '';
-  coverSelectingId.value = coverId;
+  coverSelectingKey.value = coverCandidateKey(candidate);
   try {
+    const body =
+      candidate.source === 'openlibrary' && typeof candidate.cover_id === 'number'
+        ? { cover_id: candidate.cover_id }
+        : { source_url: candidate.source_url || candidate.image_url };
     await apiRequest(`/api/v1/works/${workId.value}/covers/select`, {
       method: 'POST',
-      body: { cover_id: coverId },
+      body,
     });
     coverDialogVisible.value = false;
     await refresh();
@@ -1068,7 +1100,7 @@ const selectCoverCandidate = async (coverId: number) => {
     coverError.value = err instanceof ApiClientError ? err.message : 'Unable to set cover.';
   } finally {
     coverBusy.value = false;
-    coverSelectingId.value = null;
+    coverSelectingKey.value = null;
   }
 };
 

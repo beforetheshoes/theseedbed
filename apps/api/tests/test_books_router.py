@@ -14,8 +14,17 @@ from app.core.config import Settings, get_settings
 from app.core.rate_limit import enforce_client_user_rate_limit
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
-from app.routers.books import get_open_library_client
+from app.routers.books import (
+    _google_books_enabled_for_user,
+    get_google_books_client,
+    get_open_library_client,
+)
 from app.routers.books import router as books_router
+from app.services.google_books import (
+    GoogleBooksSearchResponse,
+    GoogleBooksSearchResult,
+    GoogleBooksWorkBundle,
+)
 from app.services.open_library import (
     OpenLibrarySearchResponse,
     OpenLibrarySearchResult,
@@ -76,6 +85,60 @@ class FakeOpenLibrary:
         )
 
 
+class FakeGoogleBooks:
+    def __init__(self) -> None:
+        self.search_called = 0
+
+    async def search_books(
+        self,
+        *,
+        query: str,
+        limit: int,
+        page: int,
+        author: str | None = None,
+        subject: str | None = None,
+        language: str | None = None,
+        first_publish_year_from: int | None = None,
+        first_publish_year_to: int | None = None,
+        sort: str = "relevance",
+    ) -> GoogleBooksSearchResponse:
+        self.search_called += 1
+        return GoogleBooksSearchResponse(
+            items=[
+                GoogleBooksSearchResult(
+                    volume_id="gb1",
+                    title=f"{query} (Google)",
+                    author_names=["G"],
+                    first_publish_year=2001,
+                    cover_url=None,
+                    language="en",
+                    readable=True,
+                    attribution_url="https://books.google.com/gb1",
+                )
+            ],
+            query=query,
+            limit=limit,
+            page=page,
+            num_found=1,
+            has_more=False,
+            next_page=None,
+            cache_hit=False,
+        )
+
+    async def fetch_work_bundle(self, *, volume_id: str) -> GoogleBooksWorkBundle:
+        return GoogleBooksWorkBundle(
+            volume_id=volume_id,
+            title="Google Book",
+            description="Description",
+            first_publish_year=2001,
+            cover_url="https://books.google.com/cover.jpg",
+            authors=["Google Author"],
+            edition=None,
+            raw_volume={},
+            attribution_url="https://books.google.com/gb1",
+        )
+
+
 @pytest.fixture
 def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     app = FastAPI()
@@ -94,6 +157,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
 
     app.dependency_overrides[get_db_session] = _fake_session
     app.dependency_overrides[get_open_library_client] = lambda: FakeOpenLibrary()
+    app.dependency_overrides[get_google_books_client] = lambda: FakeGoogleBooks()
     app.dependency_overrides[get_settings] = lambda: Settings(
         supabase_url="https://example.supabase.co",
         supabase_jwt_audience="authenticated",
@@ -108,6 +172,14 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     monkeypatch.setattr(
         "app.routers.books.import_openlibrary_bundle",
         lambda *_args, **_kwargs: {"edition": {"id": str(uuid.uuid4())}},
+    )
+    monkeypatch.setattr(
+        "app.routers.books.import_googlebooks_bundle",
+        lambda *_args, **_kwargs: {"edition": {"id": str(uuid.uuid4())}},
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=False),
     )
 
     async def _fake_cache(*_args, **_kwargs):  # type: ignore[no-untyped-def]
@@ -141,6 +213,109 @@ def test_search_books(app: FastAPI) -> None:
     assert payload["items"][0]["edition_count"] == 3
     assert payload["items"][0]["languages"] == ["eng"]
     assert payload["items"][0]["readable"] is True
+    assert payload["items"][0]["source"] == "openlibrary"
+    assert payload["items"][0]["source_id"] == "/works/OL1W"
+
+
+def test_search_books_skips_google_when_user_disabled(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_google = FakeGoogleBooks()
+    app.dependency_overrides[get_google_books_client] = lambda: fake_google
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=False),
+    )
+    client = TestClient(app)
+    response = client.get("/api/v1/books/search", params={"query": "q"})
+    assert response.status_code == 200
+    assert fake_google.search_called == 0
+
+
+def test_search_books_includes_google_when_enabled(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_google = FakeGoogleBooks()
+    app.dependency_overrides[get_google_books_client] = lambda: fake_google
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        api_version="0.1.0",
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=True),
+    )
+    client = TestClient(app)
+    response = client.get("/api/v1/books/search", params={"query": "q"})
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    sources = [item["source"] for item in payload["items"]]
+    assert "openlibrary" in sources
+    assert "googlebooks" in sources
+    assert fake_google.search_called == 1
+
+
+def test_import_google_book_requires_opt_in(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        api_version="0.1.0",
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=False),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/books/import",
+        json={"source": "googlebooks", "source_id": "gb1"},
+    )
+    assert response.status_code == 403
+
+
+def test_import_google_book(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        api_version="0.1.0",
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=True),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/books/import",
+        json={"source": "googlebooks", "source_id": "gb1"},
+    )
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert payload["source"] == "googlebooks"
+    assert payload["source_id"] == "gb1"
 
 
 def test_search_books_accepts_filters(app: FastAPI) -> None:
@@ -176,6 +351,57 @@ def test_search_books_rejects_invalid_year_range(app: FastAPI) -> None:
 def test_get_open_library_client_constructs_client() -> None:
     client = get_open_library_client()
     assert client is not None
+
+
+def test_get_google_books_client_constructs_client() -> None:
+    client = get_google_books_client(
+        Settings(
+            supabase_url="https://example.supabase.co",
+            supabase_jwt_audience="authenticated",
+            supabase_jwt_secret=None,
+            supabase_jwks_cache_ttl_seconds=60,
+            supabase_service_role_key="service-role",
+            supabase_storage_covers_bucket="covers",
+            public_highlight_max_chars=280,
+            api_version="0.1.0",
+            book_provider_google_enabled=True,
+            google_books_api_key="test-key",
+        )
+    )
+    assert client is not None
+
+
+def test_google_books_enabled_helper_requires_key(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    auth = AuthContext(
+        claims={},
+        client_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=True),
+    )
+    assert (
+        _google_books_enabled_for_user(
+            auth=auth,
+            session=object(),  # type: ignore[arg-type]
+            settings=Settings(
+                supabase_url="https://example.supabase.co",
+                supabase_jwt_audience="authenticated",
+                supabase_jwt_secret=None,
+                supabase_jwks_cache_ttl_seconds=60,
+                supabase_service_role_key="service-role",
+                supabase_storage_covers_bucket="covers",
+                public_highlight_max_chars=280,
+                api_version="0.1.0",
+                book_provider_google_enabled=True,
+                google_books_api_key=None,
+            ),
+        )
+        is False
+    )
 
 
 def test_import_book(app: FastAPI) -> None:
@@ -239,6 +465,54 @@ def test_search_books_returns_502_on_open_library_error(
     assert response.status_code == 502
 
 
+def test_search_books_ignores_google_error_when_enabled(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenGoogle(FakeGoogleBooks):
+        async def search_books(
+            self,
+            *,
+            query: str,
+            limit: int,
+            page: int,
+            author: str | None = None,
+            subject: str | None = None,
+            language: str | None = None,
+            first_publish_year_from: int | None = None,
+            first_publish_year_to: int | None = None,
+            sort: str = "relevance",
+        ) -> GoogleBooksSearchResponse:
+            raise httpx.ConnectError(
+                "down",
+                request=httpx.Request(
+                    "GET", "https://www.googleapis.com/books/v1/volumes"
+                ),
+            )
+
+    app.dependency_overrides[get_google_books_client] = lambda: BrokenGoogle()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        api_version="0.1.0",
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=True),
+    )
+    client = TestClient(app)
+    response = client.get("/api/v1/books/search", params={"query": "q"})
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert all(item["source"] != "googlebooks" for item in payload["items"])
+
+
 def test_import_book_returns_400_and_404_for_domain_errors(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -274,6 +548,73 @@ def test_import_book_returns_502_on_open_library_error(
     assert response.status_code == 502
 
 
+def test_import_google_book_requires_source_id(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        api_version="0.1.0",
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=True),
+    )
+    client = TestClient(app)
+    response = client.post("/api/v1/books/import", json={"source": "googlebooks"})
+    assert response.status_code == 400
+
+
+def test_import_openlibrary_requires_work_key(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.post("/api/v1/books/import", json={"source": "openlibrary"})
+    assert response.status_code == 400
+
+
+def test_import_google_book_returns_502_on_google_error(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BrokenGoogle(FakeGoogleBooks):
+        async def fetch_work_bundle(self, *, volume_id: str) -> GoogleBooksWorkBundle:
+            raise httpx.ConnectError(
+                "down",
+                request=httpx.Request(
+                    "GET", f"https://www.googleapis.com/books/v1/volumes/{volume_id}"
+                ),
+            )
+
+    app.dependency_overrides[get_google_books_client] = lambda: BrokenGoogle()
+    app.dependency_overrides[get_settings] = lambda: Settings(
+        supabase_url="https://example.supabase.co",
+        supabase_jwt_audience="authenticated",
+        supabase_jwt_secret=None,
+        supabase_jwks_cache_ttl_seconds=60,
+        supabase_service_role_key="service-role",
+        supabase_storage_covers_bucket="covers",
+        public_highlight_max_chars=280,
+        api_version="0.1.0",
+        book_provider_google_enabled=True,
+        google_books_api_key="test-key",
+    )
+    monkeypatch.setattr(
+        "app.routers.books.get_or_create_profile",
+        lambda *_args, **_kwargs: SimpleNamespace(enable_google_books=True),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/books/import",
+        json={"source": "googlebooks", "source_id": "gb1"},
+    )
+    assert response.status_code == 502
+
+
 def test_import_book_does_not_fail_when_cover_cache_errors(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -284,6 +625,27 @@ def test_import_book_does_not_fail_when_cover_cache_errors(
     client = TestClient(app)
     response = client.post("/api/v1/books/import", json={"work_key": "/works/OL1W"})
     assert response.status_code == 200
+
+
+def test_import_book_without_edition_skips_cover_cache(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.books.import_openlibrary_bundle",
+        lambda *_args, **_kwargs: {"edition": None, "work": {"id": str(uuid.uuid4())}},
+    )
+    called = False
+
+    async def _cache(*_args: Any, **_kwargs: Any) -> Any:
+        nonlocal called
+        called = True
+        return SimpleNamespace(cover_url="cached")
+
+    monkeypatch.setattr("app.routers.books.cache_edition_cover_from_url", _cache)
+    client = TestClient(app)
+    response = client.post("/api/v1/books/import", json={"work_key": "/works/OL1W"})
+    assert response.status_code == 200
+    assert called is False
 
 
 def test_create_manual_book_reads_cover_and_handles_value_error(

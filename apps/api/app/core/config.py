@@ -19,6 +19,8 @@ class Settings:
     supabase_storage_covers_bucket: str
     public_highlight_max_chars: int
     api_version: str
+    book_provider_google_enabled: bool = False
+    google_books_api_key: str | None = None
     cors_allowed_origins: tuple[str, ...] = (
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -150,6 +152,18 @@ def _parse_public_highlight_max_chars() -> int:
     return max(value, 1)
 
 
+def _parse_bool_env(name: str, *, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    normalized = raw.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
 @lru_cache
 def get_settings() -> Settings:
     """Settings are cached; call reset_settings_cache when env values change."""
@@ -179,6 +193,10 @@ def get_settings() -> Settings:
     if not covers_bucket:
         covers_bucket = "covers"
     public_highlight_max_chars = _parse_public_highlight_max_chars()
+    book_provider_google_enabled = _parse_bool_env(
+        "BOOK_PROVIDER_GOOGLE_ENABLED", default=False
+    )
+    google_books_api_key = os.getenv("GOOGLE_BOOKS_API_KEY", "").strip() or None
     cors_allowed_origins = _parse_cors_origins()
     api_version = os.getenv("API_VERSION", "0.1.0").strip()
     return Settings(
@@ -189,6 +207,8 @@ def get_settings() -> Settings:
         supabase_service_role_key=service_role_key,
         supabase_storage_covers_bucket=covers_bucket,
         public_highlight_max_chars=public_highlight_max_chars,
+        book_provider_google_enabled=book_provider_google_enabled,
+        google_books_api_key=google_books_api_key,
         cors_allowed_origins=cors_allowed_origins,
         api_version=api_version,
     )
