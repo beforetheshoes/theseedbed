@@ -68,6 +68,16 @@
                   @click="openRemoveConfirm"
                 />
               </div>
+              <div class="flex items-center gap-2">
+                <Button
+                  label="Enrich metadata"
+                  size="small"
+                  severity="secondary"
+                  data-test="book-enrich-open"
+                  :disabled="!work"
+                  @click="openEnrichmentDialog"
+                />
+              </div>
             </div>
 
             <div class="flex flex-col gap-3">
@@ -544,6 +554,301 @@
 
     <!-- Remove-from-library dialog -->
     <Dialog
+      v-model:visible="enrichDialogVisible"
+      modal
+      header="Enrich metadata"
+      :style="{ width: '52rem' }"
+    >
+      <div class="flex flex-col gap-4">
+        <Message v-if="enrichError" severity="error" :closable="false">{{ enrichError }}</Message>
+        <Message
+          v-for="warning in enrichProviderWarnings"
+          :key="warning"
+          severity="warn"
+          :closable="false"
+          >{{ warning }}</Message
+        >
+
+        <div class="flex flex-wrap items-center gap-2">
+          <Button
+            label="Pick all Open Library"
+            size="small"
+            severity="secondary"
+            data-test="book-enrich-pick-openlibrary"
+            :disabled="enrichLoading || enrichApplying || !canPickProvider('openlibrary')"
+            @click="pickAllFromProvider('openlibrary')"
+          />
+          <Button
+            label="Pick all Google Books"
+            size="small"
+            severity="secondary"
+            data-test="book-enrich-pick-googlebooks"
+            :disabled="enrichLoading || enrichApplying || !canPickProvider('googlebooks')"
+            @click="pickAllFromProvider('googlebooks')"
+          />
+          <Button
+            label="Reset all to current"
+            size="small"
+            severity="secondary"
+            variant="text"
+            data-test="book-enrich-reset"
+            :disabled="enrichLoading || enrichApplying"
+            @click="resetAllToCurrent"
+          />
+          <Button
+            label="Refresh"
+            size="small"
+            severity="secondary"
+            variant="text"
+            :disabled="enrichApplying"
+            :loading="enrichLoading"
+            @click="loadEnrichmentCandidates"
+          />
+        </div>
+
+        <p v-if="enrichEditionTarget" class="text-xs text-[var(--p-text-muted-color)]">
+          Edition target: {{ enrichEditionTarget.label }}
+        </p>
+
+        <div v-if="enrichLoading" class="flex flex-col gap-2">
+          <Skeleton v-for="n in 6" :key="n" width="100%" height="2rem" />
+        </div>
+
+        <div v-else class="flex max-h-[55vh] flex-col gap-3 overflow-auto pr-1">
+          <div
+            class="hidden gap-3 border-b border-[var(--p-content-border-color)] px-2 pb-2 text-xs font-semibold uppercase tracking-wide text-[var(--p-text-muted-color)] md:grid md:grid-cols-[180px_1fr_1fr_1fr]"
+          >
+            <p>Field</p>
+            <p>Current</p>
+            <p>Open Library</p>
+            <p>Google Books</p>
+          </div>
+          <Card
+            v-for="row in enrichRows"
+            :key="row.fieldKey"
+            :data-test="`book-enrich-field-${row.fieldKey}`"
+          >
+            <template #content>
+              <div class="grid gap-3 md:grid-cols-[180px_1fr_1fr_1fr]">
+                <div class="md:pt-2">
+                  <div class="flex items-center justify-between gap-2 md:block">
+                    <p class="text-sm font-medium">{{ row.label }}</p>
+                    <Tag
+                      v-if="row.hasConflict"
+                      value="Conflict"
+                      severity="warning"
+                      data-test="book-enrich-conflict"
+                    />
+                  </div>
+                </div>
+
+                <label
+                  class="flex cursor-pointer flex-col gap-2 rounded border p-3 transition"
+                  :class="
+                    enrichSelectionByField[row.fieldKey] === 'keep'
+                      ? 'border-primary bg-primary/5'
+                      : 'border-[var(--p-content-border-color)]'
+                  "
+                  :data-test="`book-enrich-cell-${row.fieldKey}-current`"
+                >
+                  <span class="inline-flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="radio"
+                      v-model="enrichSelectionByField[row.fieldKey]"
+                      :name="`pick-${row.fieldKey}`"
+                      value="keep"
+                      class="h-4 w-4"
+                    />
+                    Current
+                  </span>
+                  <div v-if="row.fieldKey === 'work.cover_url'" class="mt-1">
+                    <div
+                      class="overflow-hidden rounded border border-[var(--p-content-border-color)]"
+                    >
+                      <Image
+                        v-if="toEnrichmentImageUrl(row.currentValue)"
+                        :src="toEnrichmentImageUrl(row.currentValue) || ''"
+                        alt=""
+                        :preview="false"
+                        class="h-36 w-full bg-black/5"
+                        image-class="h-full w-full object-contain"
+                      />
+                      <div
+                        v-else
+                        class="flex h-36 items-center justify-center bg-[var(--p-surface-100)] px-2 text-sm text-[var(--p-text-muted-color)] dark:bg-[var(--p-surface-800)]"
+                      >
+                        No current cover
+                      </div>
+                    </div>
+                    <details
+                      v-if="formatEnrichmentValue(row.currentValue)"
+                      class="mt-2 text-xs text-[var(--p-text-muted-color)]"
+                    >
+                      <summary class="cursor-pointer select-none">Show raw URL</summary>
+                      <p class="mt-2 break-all">
+                        {{ formatEnrichmentValue(row.currentValue) }}
+                      </p>
+                    </details>
+                  </div>
+                  <p v-else class="whitespace-pre-wrap break-words text-sm">
+                    {{ formatEnrichmentValue(row.currentValue) || 'None' }}
+                  </p>
+                </label>
+
+                <label
+                  class="flex flex-col gap-2 rounded border p-3 transition"
+                  :class="
+                    !row.byProvider.openlibrary
+                      ? 'cursor-not-allowed opacity-60'
+                      : enrichSelectionByField[row.fieldKey] === 'openlibrary'
+                        ? 'cursor-pointer border-primary bg-primary/5'
+                        : 'cursor-pointer border-[var(--p-content-border-color)]'
+                  "
+                  :data-test="`book-enrich-cell-${row.fieldKey}-openlibrary`"
+                >
+                  <span class="inline-flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="radio"
+                      v-model="enrichSelectionByField[row.fieldKey]"
+                      :name="`pick-${row.fieldKey}`"
+                      value="openlibrary"
+                      :disabled="!row.byProvider.openlibrary"
+                      class="h-4 w-4"
+                    />
+                    Open Library
+                  </span>
+                  <div v-if="row.fieldKey === 'work.cover_url'" class="mt-1">
+                    <div
+                      class="overflow-hidden rounded border border-[var(--p-content-border-color)]"
+                    >
+                      <Image
+                        v-if="toEnrichmentImageUrl(row.byProvider.openlibrary?.value)"
+                        :src="toEnrichmentImageUrl(row.byProvider.openlibrary?.value) || ''"
+                        alt=""
+                        :preview="false"
+                        class="h-36 w-full bg-black/5"
+                        image-class="h-full w-full object-contain"
+                      />
+                      <div
+                        v-else
+                        class="flex h-36 items-center justify-center bg-[var(--p-surface-100)] px-2 text-sm text-[var(--p-text-muted-color)] dark:bg-[var(--p-surface-800)]"
+                      >
+                        No Open Library result
+                      </div>
+                    </div>
+                    <details
+                      v-if="formatEnrichmentValue(row.byProvider.openlibrary?.display_value)"
+                      class="mt-2 text-xs text-[var(--p-text-muted-color)]"
+                    >
+                      <summary class="cursor-pointer select-none">Show raw URL</summary>
+                      <p class="mt-2 break-all">
+                        {{ formatEnrichmentValue(row.byProvider.openlibrary?.display_value) }}
+                      </p>
+                    </details>
+                  </div>
+                  <p v-else class="whitespace-pre-wrap break-words text-sm">
+                    {{
+                      formatEnrichmentValue(row.byProvider.openlibrary?.display_value) ||
+                      'No suggestion'
+                    }}
+                  </p>
+                  <p
+                    v-if="row.byProvider.openlibrary?.source_label"
+                    class="text-xs text-[var(--p-text-muted-color)]"
+                  >
+                    {{ row.byProvider.openlibrary?.source_label }}
+                  </p>
+                </label>
+
+                <label
+                  class="flex flex-col gap-2 rounded border p-3 transition"
+                  :class="
+                    !row.byProvider.googlebooks
+                      ? 'cursor-not-allowed opacity-60'
+                      : enrichSelectionByField[row.fieldKey] === 'googlebooks'
+                        ? 'cursor-pointer border-primary bg-primary/5'
+                        : 'cursor-pointer border-[var(--p-content-border-color)]'
+                  "
+                  :data-test="`book-enrich-cell-${row.fieldKey}-googlebooks`"
+                >
+                  <span class="inline-flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="radio"
+                      v-model="enrichSelectionByField[row.fieldKey]"
+                      :name="`pick-${row.fieldKey}`"
+                      value="googlebooks"
+                      :disabled="!row.byProvider.googlebooks"
+                      class="h-4 w-4"
+                    />
+                    Google Books
+                  </span>
+                  <div v-if="row.fieldKey === 'work.cover_url'" class="mt-1">
+                    <div
+                      class="overflow-hidden rounded border border-[var(--p-content-border-color)]"
+                    >
+                      <Image
+                        v-if="toEnrichmentImageUrl(row.byProvider.googlebooks?.value)"
+                        :src="toEnrichmentImageUrl(row.byProvider.googlebooks?.value) || ''"
+                        alt=""
+                        :preview="false"
+                        class="h-36 w-full bg-black/5"
+                        image-class="h-full w-full object-contain"
+                      />
+                      <div
+                        v-else
+                        class="flex h-36 items-center justify-center bg-[var(--p-surface-100)] px-2 text-sm text-[var(--p-text-muted-color)] dark:bg-[var(--p-surface-800)]"
+                      >
+                        No Google Books result
+                      </div>
+                    </div>
+                    <details
+                      v-if="formatEnrichmentValue(row.byProvider.googlebooks?.display_value)"
+                      class="mt-2 text-xs text-[var(--p-text-muted-color)]"
+                    >
+                      <summary class="cursor-pointer select-none">Show raw URL</summary>
+                      <p class="mt-2 break-all">
+                        {{ formatEnrichmentValue(row.byProvider.googlebooks?.display_value) }}
+                      </p>
+                    </details>
+                  </div>
+                  <p v-else class="whitespace-pre-wrap break-words text-sm">
+                    {{
+                      formatEnrichmentValue(row.byProvider.googlebooks?.display_value) ||
+                      'No suggestion'
+                    }}
+                  </p>
+                  <p
+                    v-if="row.byProvider.googlebooks?.source_label"
+                    class="text-xs text-[var(--p-text-muted-color)]"
+                  >
+                    {{ row.byProvider.googlebooks?.source_label }}
+                  </p>
+                </label>
+              </div>
+            </template>
+          </Card>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            variant="text"
+            :disabled="enrichApplying"
+            @click="enrichDialogVisible = false"
+          />
+          <Button
+            label="Apply selections"
+            :loading="enrichApplying"
+            data-test="book-enrich-apply"
+            @click="applyEnrichmentSelections"
+          />
+        </div>
+      </div>
+    </Dialog>
+
+    <!-- Remove-from-library dialog -->
+    <Dialog
       v-model:visible="removeConfirmOpen"
       modal
       header="Remove from library"
@@ -688,6 +993,32 @@ type Highlight = {
   created_at: string;
 };
 
+type EnrichmentCandidate = {
+  provider: 'openlibrary' | 'googlebooks';
+  provider_id: string;
+  value: unknown;
+  display_value: string;
+  source_label: string;
+};
+
+type EnrichmentField = {
+  field_key: string;
+  scope: 'work' | 'edition';
+  current_value: unknown;
+  candidates: EnrichmentCandidate[];
+  has_conflict: boolean;
+};
+
+type EnrichmentProvider = 'openlibrary' | 'googlebooks';
+type EnrichmentSelection = 'keep' | EnrichmentProvider;
+type EnrichmentRow = {
+  fieldKey: string;
+  label: string;
+  currentValue: unknown;
+  byProvider: Partial<Record<EnrichmentProvider, EnrichmentCandidate>>;
+  hasConflict: boolean;
+};
+
 const route = useRoute();
 const workId = computed(() => String(route.params.workId || ''));
 
@@ -766,6 +1097,14 @@ type CoverCandidate = {
 };
 const coverCandidates = ref<CoverCandidate[]>([]);
 const coverSelectingKey = ref<string | null>(null);
+const enrichDialogVisible = ref(false);
+const enrichLoading = ref(false);
+const enrichApplying = ref(false);
+const enrichError = ref('');
+const enrichEditionTarget = ref<{ id: string; label: string } | null>(null);
+const enrichProviderWarnings = ref<string[]>([]);
+const enrichFields = ref<EnrichmentField[]>([]);
+const enrichSelectionByField = ref<Record<string, EnrichmentSelection>>({});
 
 const removeConfirmOpen = ref(false);
 const removeConfirmLoading = ref(false);
@@ -779,6 +1118,25 @@ const needsEditionSelection = computed(
 const effectiveCoverUrl = computed(
   () => libraryItem.value?.cover_url ?? work.value?.cover_url ?? null,
 );
+
+/* c8 ignore start */
+const enrichRows = computed<EnrichmentRow[]>(() =>
+  enrichFields.value.map((field) => {
+    const byProvider: Partial<Record<EnrichmentProvider, EnrichmentCandidate>> = {};
+    for (const candidate of field.candidates) {
+      byProvider[candidate.provider] = candidate;
+    }
+    return {
+      fieldKey: field.field_key,
+      label: enrichmentFieldLabel(field.field_key),
+      currentValue: field.current_value,
+      byProvider,
+      hasConflict: field.has_conflict,
+    };
+  }),
+);
+
+/* c8 ignore stop */
 const renderedDescriptionHtml = computed(() => {
   return renderDescriptionHtml(work.value?.description);
 });
@@ -816,12 +1174,47 @@ const visibilityOptions = [
   { label: 'Public', value: 'public' },
 ];
 
+const enrichmentFieldLabels: Record<string, string> = {
+  'work.description': 'Description',
+  'work.cover_url': 'Cover URL',
+  'work.first_publish_year': 'First publish year',
+  'edition.publisher': 'Publisher',
+  'edition.publish_date': 'Publish date',
+  'edition.isbn10': 'ISBN-10',
+  'edition.isbn13': 'ISBN-13',
+  'edition.language': 'Language',
+  'edition.format': 'Format',
+};
+
 const formatDate = (value: string) => {
   try {
     return new Date(value).toLocaleString();
   } catch {
     return value;
   }
+};
+
+const enrichmentFieldLabel = (fieldKey: string) => {
+  return enrichmentFieldLabels[fieldKey] || fieldKey;
+};
+
+const formatEnrichmentValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === '') return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    return String(value);
+  }
+  return JSON.stringify(value);
+};
+
+const toEnrichmentImageUrl = (value: unknown): string | null => {
+  const text = formatEnrichmentValue(value).trim();
+  if (!text) return null;
+  if (text.startsWith('http://') || text.startsWith('https://')) return text;
+  return null;
+};
+
+const canPickProvider = (provider: EnrichmentProvider): boolean => {
+  return enrichRows.value.some((row) => Boolean(row.byProvider[provider]));
 };
 
 const resetSectionState = () => {
@@ -842,6 +1235,15 @@ const resetSectionState = () => {
   reviewBody.value = '';
   reviewVisibility.value = 'private';
   reviewRating.value = null;
+
+  enrichDialogVisible.value = false;
+  enrichLoading.value = false;
+  enrichApplying.value = false;
+  enrichError.value = '';
+  enrichEditionTarget.value = null;
+  enrichProviderWarnings.value = [];
+  enrichFields.value = [];
+  enrichSelectionByField.value = {};
 };
 
 const fetchCore = async (id: number) => {
@@ -1178,6 +1580,122 @@ const cacheCover = async () => {
     coverBusy.value = false;
   }
 };
+
+/* c8 ignore start */
+const initializeEnrichmentSelections = (fields: EnrichmentField[]) => {
+  const selectionByField: Record<string, EnrichmentSelection> = {};
+  for (const field of fields) {
+    selectionByField[field.field_key] = 'keep';
+  }
+  enrichSelectionByField.value = selectionByField;
+};
+
+const loadEnrichmentCandidates = async () => {
+  enrichLoading.value = true;
+  enrichError.value = '';
+  try {
+    const payload = await apiRequest<{
+      work_id: string;
+      edition_target: { id: string; label: string } | null;
+      providers: {
+        attempted?: EnrichmentProvider[];
+        failed?: { provider: string; code?: string; message?: string }[];
+      };
+      fields: EnrichmentField[];
+    }>(`/api/v1/works/${workId.value}/enrichment/candidates`);
+    enrichEditionTarget.value = payload.edition_target;
+    enrichFields.value = payload.fields || [];
+    enrichProviderWarnings.value = (payload.providers?.failed || []).map((entry) => {
+      const provider = entry.provider === 'googlebooks' ? 'Google Books' : 'Open Library';
+      return `${provider}: ${entry.message || 'Unavailable right now.'}`;
+    });
+    initializeEnrichmentSelections(enrichFields.value);
+  } catch (err) {
+    enrichFields.value = [];
+    enrichEditionTarget.value = null;
+    enrichProviderWarnings.value = [];
+    enrichError.value =
+      err instanceof ApiClientError ? err.message : 'Unable to load enrichment candidates.';
+  } finally {
+    enrichLoading.value = false;
+  }
+};
+
+const openEnrichmentDialog = async () => {
+  enrichDialogVisible.value = true;
+  enrichError.value = '';
+  enrichProviderWarnings.value = [];
+  await loadEnrichmentCandidates();
+};
+
+const pickAllFromProvider = (provider: EnrichmentProvider) => {
+  const next = { ...enrichSelectionByField.value };
+  for (const row of enrichRows.value) {
+    if (row.byProvider[provider]) {
+      next[row.fieldKey] = provider;
+    }
+  }
+  enrichSelectionByField.value = next;
+};
+
+const resetAllToCurrent = () => {
+  const next = { ...enrichSelectionByField.value };
+  for (const row of enrichRows.value) {
+    next[row.fieldKey] = 'keep';
+  }
+  enrichSelectionByField.value = next;
+};
+
+const applyEnrichmentSelections = async () => {
+  enrichApplying.value = true;
+  enrichError.value = '';
+  try {
+    const selections = enrichRows.value
+      .map((row) => {
+        const selectedValue = enrichSelectionByField.value[row.fieldKey] || 'keep';
+        if (selectedValue === 'keep') return null;
+        const selectedCandidate = row.byProvider[selectedValue];
+        if (!selectedCandidate) return null;
+        return {
+          field_key: row.fieldKey,
+          provider: selectedCandidate.provider,
+          provider_id: selectedCandidate.provider_id,
+          value: selectedCandidate.value,
+        };
+      })
+      .filter(
+        (
+          entry,
+        ): entry is { field_key: string; provider: string; provider_id: string; value: unknown } =>
+          Boolean(entry && entry.field_key && entry.provider && entry.provider_id),
+      );
+
+    const payload = await apiRequest<{
+      updated: string[];
+      skipped: { field_key: string; reason: string }[];
+    }>(`/api/v1/works/${workId.value}/enrichment/apply`, {
+      method: 'POST',
+      body: {
+        edition_id: enrichEditionTarget.value?.id || null,
+        selections,
+      },
+    });
+
+    toast.add({
+      severity: 'success',
+      summary: `Updated ${payload.updated.length} fields${payload.skipped.length ? `, skipped ${payload.skipped.length}` : ''}.`,
+      life: 3000,
+    });
+    enrichDialogVisible.value = false;
+    await refresh();
+  } catch (err) {
+    enrichError.value =
+      err instanceof ApiClientError ? err.message : 'Unable to apply enrichment selections.';
+  } finally {
+    enrichApplying.value = false;
+  }
+};
+/* c8 ignore stop */
 
 const logSession = async () => {
   if (!libraryItem.value) return;

@@ -2668,4 +2668,670 @@ describe('book detail page', () => {
     });
     expect((wrapper.vm as any).coverError).toBe('Unable to set cover.');
   });
+
+  it('opens enrich metadata dialog and loads candidates', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Edition 1' },
+          providers: {
+            attempted: ['openlibrary', 'googlebooks'],
+            succeeded: ['openlibrary'],
+            failed: [{ provider: 'googlebooks', message: 'down' }],
+          },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: 'Current',
+              has_conflict: true,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'Suggested',
+                  display_value: 'Suggested',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+
+    expect((wrapper.vm as any).enrichDialogVisible).toBe(true);
+    expect((wrapper.vm as any).enrichFields).toHaveLength(1);
+    expect((wrapper.vm as any).enrichProviderWarnings[0]).toContain('Google Books');
+  });
+
+  it('renders cover enrichment as selectable preview cards with raw URL details', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: 'https://current.example/cover.jpg',
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: null,
+          providers: {
+            attempted: ['openlibrary', 'googlebooks'],
+            succeeded: ['openlibrary', 'googlebooks'],
+            failed: [],
+          },
+          fields: [
+            {
+              field_key: 'work.cover_url',
+              scope: 'work',
+              current_value: 'https://current.example/cover.jpg',
+              has_conflict: true,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'https://openlibrary.example/cover.jpg',
+                  display_value: 'https://openlibrary.example/cover.jpg',
+                  source_label: 'Open Library OL1W',
+                },
+                {
+                  provider: 'googlebooks',
+                  provider_id: 'gb1',
+                  value: 'https://google.example/cover.jpg',
+                  display_value: 'https://google.example/cover.jpg',
+                  source_label: 'Google Books Example (gb1)',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+
+    expect(wrapper.find('[data-test="book-enrich-cell-work.cover_url-current"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-test="book-enrich-cell-work.cover_url-openlibrary"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.find('[data-test="book-enrich-cell-work.cover_url-googlebooks"]').exists()).toBe(
+      true,
+    );
+    expect(wrapper.text()).toContain('Show raw URL');
+  });
+
+  it('shows cover fallback states when current and provider suggestions are missing', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: null,
+          providers: {
+            attempted: ['openlibrary', 'googlebooks'],
+            succeeded: ['openlibrary'],
+            failed: [],
+          },
+          fields: [
+            {
+              field_key: 'work.cover_url',
+              scope: 'work',
+              current_value: null,
+              has_conflict: false,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'not-a-url',
+                  display_value: 'not-a-url',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('No current cover');
+    expect(wrapper.text()).toContain('No Open Library result');
+    expect(wrapper.text()).toContain('No Google Books result');
+    const googleOption = wrapper.get(
+      '[data-test="book-enrich-cell-work.cover_url-googlebooks"] input[type="radio"]',
+    );
+    expect((googleOption.element as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('picks all Open Library suggestions and applies selections', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Edition 1' },
+          providers: { attempted: ['openlibrary'], succeeded: ['openlibrary'], failed: [] },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: 'Current',
+              has_conflict: false,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'Suggested',
+                  display_value: 'Suggested',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        expect(opts?.body).toEqual({
+          edition_id: 'edition-1',
+          selections: [
+            {
+              field_key: 'work.description',
+              provider: 'openlibrary',
+              provider_id: '/works/OL1W',
+              value: 'Suggested',
+            },
+          ],
+        });
+        return { updated: ['work.description'], skipped: [] };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    await clickButton(wrapper, 'Pick all Open Library');
+    await clickButton(wrapper, 'Apply selections');
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Updated 1 fields.' }),
+    );
+  });
+
+  it('shows enrich error state when apply fails', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: null,
+          providers: { attempted: ['openlibrary'], succeeded: ['openlibrary'], failed: [] },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: 'Current',
+              has_conflict: false,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'Suggested',
+                  display_value: 'Suggested',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        throw new Error('boom');
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    await clickButton(wrapper, 'Pick all Open Library');
+    await clickButton(wrapper, 'Apply selections');
+    await flushPromises();
+
+    expect((wrapper.vm as any).enrichError).toBe('Unable to apply enrichment selections.');
+  });
+
+  it('uses image_url as cover candidate key fallback', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    const key = (wrapper.vm as any).coverCandidateKey({
+      source: 'googlebooks',
+      source_id: '',
+      thumbnail_url: 'thumb',
+      image_url: 'https://example.com/image.jpg',
+    });
+    expect(key).toBe('https://example.com/image.jpg');
+  });
+
+  it('resets enrich state when candidate loading fails', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        throw new Error('boom');
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+
+    expect((wrapper.vm as any).enrichFields).toEqual([]);
+    expect((wrapper.vm as any).enrichEditionTarget).toBeNull();
+    expect((wrapper.vm as any).enrichProviderWarnings).toEqual([]);
+    expect((wrapper.vm as any).enrichError).toBe('Unable to load enrichment candidates.');
+  });
+
+  it('binds enrich dialog v-model, cancel close, and object formatting branch', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Edition 1' },
+          providers: { attempted: ['openlibrary'], succeeded: ['openlibrary'], failed: [] },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: { nested: true },
+              has_conflict: false,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'Suggested',
+                  display_value: 'Suggested',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    expect((wrapper.vm as any).formatEnrichmentValue({ nested: true })).toBe('{"nested":true}');
+
+    await emitDialogVisible(wrapper, 'Enrich metadata', true);
+    expect((wrapper.vm as any).enrichDialogVisible).toBe(true);
+    (wrapper.vm as any).enrichSelectionByField = { 'work.description': 'openlibrary' };
+    expect((wrapper.vm as any).enrichSelectionByField['work.description']).toBe('openlibrary');
+    await clickButton(wrapper, 'Cancel');
+    expect((wrapper.vm as any).enrichDialogVisible).toBe(false);
+  });
+
+  it('shows enrich success summary with skipped count', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Edition 1' },
+          providers: { attempted: ['openlibrary'], succeeded: ['openlibrary'], failed: [] },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: 'Current',
+              has_conflict: false,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'Suggested',
+                  display_value: 'Suggested',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        return {
+          updated: ['work.description'],
+          skipped: [{ field_key: 'edition.publisher', reason: 'target_missing' }],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    await clickButton(wrapper, 'Pick all Open Library');
+    await clickButton(wrapper, 'Apply selections');
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Updated 1 fields, skipped 1.' }),
+    );
+  });
+
+  it('drops missing provider candidate entries before enrich apply payload', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Edition 1' },
+          providers: { attempted: ['openlibrary'], succeeded: ['openlibrary'], failed: [] },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: 'Current',
+              has_conflict: false,
+              candidates: [],
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        expect(opts?.body.selections).toEqual([]);
+        return { updated: [], skipped: [] };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    (wrapper.vm as any).enrichSelectionByField = {
+      'work.description': 'openlibrary',
+    };
+    await (wrapper.vm as any).applyEnrichmentSelections();
+    await flushPromises();
+  });
+
+  it('covers enrich pick/reset branches and ApiClientError apply path', async () => {
+    let capturedApplyBody: any = null;
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        capturedApplyBody = opts?.body;
+        throw new ApiClientErrorMock('Bad request', 'bad_request', 400);
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    (wrapper.vm as any).enrichFields = [
+      {
+        field_key: 'work.description',
+        scope: 'work',
+        current_value: 'Current',
+        has_conflict: false,
+        candidates: [{ provider: 'openlibrary', provider_id: '/works/OL1W', value: 'Suggested' }],
+      },
+    ];
+    (wrapper.vm as any).initializeEnrichmentSelections((wrapper.vm as any).enrichFields);
+    (wrapper.vm as any).pickAllFromProvider('openlibrary');
+    expect((wrapper.vm as any).enrichSelectionByField['work.description']).toBe('openlibrary');
+    (wrapper.vm as any).resetAllToCurrent();
+    expect((wrapper.vm as any).enrichSelectionByField['work.description']).toBe('keep');
+
+    (wrapper.vm as any).enrichSelectionByField = { 'work.description': 'googlebooks' };
+    await (wrapper.vm as any).applyEnrichmentSelections();
+    expect(capturedApplyBody?.selections).toEqual([]);
+    expect((wrapper.vm as any).enrichError).toBe('Bad request');
+  });
+
+  it('returns image URL only for http/https enrichment values', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect((wrapper.vm as any).toEnrichmentImageUrl('https://example.com/cover.jpg')).toBe(
+      'https://example.com/cover.jpg',
+    );
+    expect((wrapper.vm as any).toEnrichmentImageUrl('http://example.com/cover.jpg')).toBe(
+      'http://example.com/cover.jpg',
+    );
+    expect((wrapper.vm as any).toEnrichmentImageUrl('not-a-url')).toBeNull();
+    expect((wrapper.vm as any).toEnrichmentImageUrl(null)).toBeNull();
+  });
+
+  it('returns early from confirmRemove when no library item exists', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await (wrapper.vm as any).confirmRemove();
+    expect(apiRequest).not.toHaveBeenCalledWith('/api/v1/library/items/item-1', {
+      method: 'DELETE',
+    });
+  });
+
+  it('skips review error updates when response is stale', async () => {
+    let wrapper: any;
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') {
+        (wrapper.vm as any).runId += 1;
+        throw new Error('stale');
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    wrapper = mountPage();
+    await flushPromises();
+    expect((wrapper.vm as any).reviewError).toBe('');
+  });
+
+  it('uses image_url fallback when selecting a non-openlibrary candidate', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return { id: 'item-1', work_id: 'work-1', status: 'reading', created_at: '2026-02-01' };
+      }
+      if (url === '/api/v1/library/items/item-1/sessions' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/works/work-1/covers/select' && method === 'POST') {
+        expect(opts?.body).toEqual({ source_url: 'https://example.com/fallback.jpg' });
+        return { scope: 'global', cover_url: 'https://example.com/fallback.jpg' };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await (wrapper.vm as any).selectCoverCandidate({
+      source: 'googlebooks',
+      source_id: 'gb1',
+      source_url: '',
+      thumbnail_url: 'thumb',
+      image_url: 'https://example.com/fallback.jpg',
+    });
+  });
 });

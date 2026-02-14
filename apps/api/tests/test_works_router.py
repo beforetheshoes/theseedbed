@@ -372,3 +372,116 @@ def test_select_work_cover_returns_503_when_storage_not_configured(
     assert response.status_code == 503
     payload = response.json()
     assert payload["detail"]["code"] == "cover_upload_unavailable"
+
+
+def test_list_enrichment_candidates(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _fake_candidates(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "work_id": str(uuid.uuid4()),
+            "edition_target": {"id": str(uuid.uuid4()), "label": "Edition"},
+            "providers": {
+                "attempted": ["openlibrary", "googlebooks"],
+                "succeeded": ["openlibrary"],
+                "failed": [
+                    {
+                        "provider": "googlebooks",
+                        "code": "google_books_unavailable",
+                        "message": "down",
+                    }
+                ],
+            },
+            "fields": [
+                {
+                    "field_key": "work.description",
+                    "scope": "work",
+                    "current_value": "Current",
+                    "candidates": [],
+                    "has_conflict": False,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("app.routers.works.get_enrichment_candidates", _fake_candidates)
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/enrichment/candidates")
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["providers"]["attempted"] == ["openlibrary", "googlebooks"]
+    assert data["fields"][0]["field_key"] == "work.description"
+
+
+def test_list_enrichment_candidates_returns_404(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _missing(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise LookupError("missing")
+
+    monkeypatch.setattr("app.routers.works.get_enrichment_candidates", _missing)
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/enrichment/candidates")
+    assert response.status_code == 404
+
+
+def test_list_enrichment_candidates_returns_502(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _boom(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise httpx.ConnectError("nope")
+
+    monkeypatch.setattr("app.routers.works.get_enrichment_candidates", _boom)
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{uuid.uuid4()}/enrichment/candidates")
+    assert response.status_code == 502
+
+
+def test_apply_enrichment(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_apply(*_args: object, **_kwargs: object) -> dict[str, object]:
+        return {
+            "updated": ["work.description"],
+            "skipped": [],
+            "edition_target": {"id": str(uuid.uuid4()), "label": "Edition"},
+        }
+
+    monkeypatch.setattr("app.routers.works.apply_enrichment_selections", _fake_apply)
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/enrichment/apply",
+        json={
+            "selections": [
+                {
+                    "field_key": "work.description",
+                    "provider": "openlibrary",
+                    "provider_id": "/works/OL1W",
+                    "value": "Desc",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["updated"] == ["work.description"]
+
+
+def test_apply_enrichment_returns_400(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _invalid(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise ValueError("invalid")
+
+    monkeypatch.setattr("app.routers.works.apply_enrichment_selections", _invalid)
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/works/{uuid.uuid4()}/enrichment/apply",
+        json={
+            "selections": [
+                {
+                    "field_key": "work.description",
+                    "provider": "openlibrary",
+                    "provider_id": "/works/OL1W",
+                    "value": "Desc",
+                }
+            ]
+        },
+    )
+    assert response.status_code == 400
