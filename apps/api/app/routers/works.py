@@ -22,6 +22,10 @@ from app.services.work_covers import (
     select_cover_from_url,
     select_openlibrary_cover,
 )
+from app.services.work_metadata_enrichment import (
+    apply_enrichment_selections,
+    get_enrichment_candidates,
+)
 from app.services.works import (
     get_work_detail,
     list_related_works,
@@ -163,6 +167,11 @@ class SelectCoverRequest(BaseModel):
         return self
 
 
+class ApplyEnrichmentRequest(BaseModel):
+    edition_id: uuid.UUID | None = None
+    selections: list[dict[str, object]] = Field(default_factory=list)
+
+
 @router.post("/api/v1/works/{work_id}/covers/select")
 async def select_cover(
     work_id: uuid.UUID,
@@ -210,5 +219,84 @@ async def select_cover(
                 "message": "Cover uploads are temporarily unavailable. Please try again later.",
             },
         ) from exc
+
+    return ok(result)
+
+
+@router.get("/api/v1/works/{work_id}/enrichment/candidates")
+async def list_enrichment_candidates(
+    work_id: uuid.UUID,
+    auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
+    open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    try:
+        result = await get_enrichment_candidates(
+            session,
+            user_id=auth.user_id,
+            work_id=work_id,
+            open_library=open_library,
+            google_books=google_books,
+            google_enabled=_google_books_enabled_for_user(
+                auth=auth,
+                session=session,
+                settings=settings,
+            ),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "open_library_unavailable",
+                "message": "Open Library is unavailable. Please try again shortly.",
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return ok(result)
+
+
+@router.post("/api/v1/works/{work_id}/enrichment/apply")
+async def apply_enrichment(
+    work_id: uuid.UUID,
+    payload: ApplyEnrichmentRequest,
+    auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
+    open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> dict[str, object]:
+    try:
+        result = await apply_enrichment_selections(
+            session,
+            user_id=auth.user_id,
+            work_id=work_id,
+            selections=payload.selections,
+            edition_id=payload.edition_id,
+            open_library=open_library,
+            google_books=google_books,
+            google_enabled=_google_books_enabled_for_user(
+                auth=auth,
+                session=session,
+                settings=settings,
+            ),
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail={
+                "code": "open_library_unavailable",
+                "message": "Open Library is unavailable. Please try again shortly.",
+            },
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return ok(result)
