@@ -772,6 +772,12 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
             """
         ).fetchall()
     tables = {row[0] for row in rows}
+    optional_goodreads_tables = {
+        "goodreads_import_jobs",
+        "goodreads_import_job_rows",
+    }
+    if optional_goodreads_tables & tables:
+        expected.update(optional_goodreads_tables)
 
     unknown = tables - expected - ignored
     missing = expected - tables
