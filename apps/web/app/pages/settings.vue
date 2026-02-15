@@ -373,6 +373,319 @@
           </template>
         </Card>
 
+        <Card class="goodreads-import-card" data-test="goodreads-import-card">
+          <template #content>
+            <div class="flex flex-col gap-4">
+              <div>
+                <p class="m-0 text-xl font-semibold tracking-tight">Import Goodreads export</p>
+                <p class="m-0 text-sm text-[var(--p-text-muted-color)]">
+                  Upload your Goodreads CSV export to import library status, ratings, reviews, and
+                  reading sessions.
+                </p>
+              </div>
+
+              <Panel data-test="goodreads-import-steps">
+                <template #header>
+                  <span class="text-sm font-medium">Import workflow</span>
+                </template>
+                <div class="grid gap-2 md:grid-cols-3">
+                  <div class="flex items-center gap-2">
+                    <Tag :severity="goodreadsFile ? 'success' : 'secondary'" rounded> Step 1 </Tag>
+                    <span class="text-xs">Select CSV</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Tag :severity="goodreadsIssuesStepSeverity" rounded>Step 2</Tag>
+                    <span class="text-xs">Resolve or skip issues</span>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Tag :severity="canStartGoodreadsImport ? 'success' : 'secondary'" rounded
+                      >Step 3</Tag
+                    >
+                    <span class="text-xs">Start import</span>
+                  </div>
+                </div>
+              </Panel>
+
+              <div class="flex flex-col gap-2">
+                <input
+                  ref="goodreadsFileInput"
+                  class="hidden"
+                  style="display: none"
+                  data-test="goodreads-file-input"
+                  type="file"
+                  accept=".csv,text/csv"
+                  @change="onGoodreadsFileChange"
+                />
+                <div class="flex flex-wrap gap-2">
+                  <Button
+                    label="Choose Goodreads CSV"
+                    icon="pi pi-plus"
+                    class="w-full md:w-auto"
+                    data-test="goodreads-file-choose"
+                    @click="openGoodreadsPicker"
+                  />
+                  <Button
+                    v-if="goodreadsFile"
+                    label="Clear"
+                    text
+                    severity="secondary"
+                    data-test="goodreads-file-clear"
+                    @click="clearGoodreadsSelection"
+                  />
+                </div>
+                <p
+                  v-if="goodreadsFile"
+                  class="m-0 max-w-full truncate text-sm text-[var(--p-text-muted-color)]"
+                  :title="goodreadsFile.name"
+                  data-test="goodreads-selected-file"
+                >
+                  {{ goodreadsFile.name }}
+                </p>
+                <Button
+                  data-test="goodreads-import-start"
+                  :label="goodreadsImporting ? 'Importing...' : 'Start import'"
+                  :disabled="!canStartGoodreadsImport"
+                  :loading="goodreadsImporting"
+                  class="w-full"
+                  @click="startGoodreadsImport"
+                />
+              </div>
+
+              <Message
+                v-if="goodreadsStartDisabledReason"
+                severity="secondary"
+                :closable="false"
+                data-test="goodreads-start-disabled-reason"
+              >
+                {{ goodreadsStartDisabledReason }}
+              </Message>
+
+              <Message
+                v-if="goodreadsIssuesLoadError"
+                severity="error"
+                :closable="false"
+                data-test="goodreads-import-issues-error"
+              >
+                <div class="flex items-center gap-3">
+                  <span>{{ goodreadsIssuesLoadError }}</span>
+                  <Button
+                    v-if="goodreadsFile"
+                    label="Retry"
+                    size="small"
+                    text
+                    data-test="goodreads-import-issues-retry"
+                    @click="retryLoadGoodreadsImportIssues"
+                  />
+                </div>
+              </Message>
+
+              <div v-if="goodreadsIssuesLoading" class="rounded border border-dashed p-3">
+                <p
+                  class="m-0 text-sm text-[var(--p-text-muted-color)]"
+                  data-test="goodreads-issues-loading"
+                >
+                  Checking CSV for required missing fields...
+                </p>
+              </div>
+
+              <Panel
+                v-if="goodreadsIssuesLoaded && goodreadsImportIssues.length"
+                toggleable
+                class="goodreads-issues-panel"
+                data-test="goodreads-import-issues"
+              >
+                <template #header>
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm font-medium">Import issues</span>
+                    <Badge
+                      :value="String(goodreadsImportIssues.length)"
+                      severity="contrast"
+                      data-test="goodreads-issue-total-badge"
+                    />
+                  </div>
+                </template>
+                <div class="mb-3 flex flex-wrap gap-2" data-test="goodreads-issue-summary">
+                  <span class="text-sm text-[var(--p-text-muted-color)]">
+                    Resolved:
+                    <strong class="text-[var(--p-text-color)]">{{
+                      goodreadsResolvedIssueCount
+                    }}</strong>
+                    · Skipped:
+                    <strong class="text-[var(--p-text-color)]">{{
+                      goodreadsSkippedIssueCount
+                    }}</strong>
+                    · Pending:
+                    <strong class="text-[var(--p-text-color)]">{{
+                      goodreadsPendingIssueCount
+                    }}</strong>
+                  </span>
+                </div>
+                <Card
+                  v-for="issue in goodreadsImportIssues"
+                  :key="issue.issueKey"
+                  class="mt-2"
+                  :dt="{
+                    shadow: 'none',
+                    body: { padding: '1rem', gap: '0.75rem' },
+                    title: { fontSize: '0.875rem' },
+                  }"
+                >
+                  <template #title>
+                    <div class="flex items-start justify-between gap-2">
+                      <span>{{ goodreadsIssueDescription(issue) }}</span>
+                      <Tag
+                        v-if="issue.resolution !== 'pending'"
+                        :severity="goodreadsIssueResolutionSeverity(issue.resolution)"
+                        rounded
+                        class="shrink-0"
+                      >
+                        {{ goodreadsIssueResolutionLabel(issue.resolution) }}
+                      </Tag>
+                    </div>
+                  </template>
+                  <template #subtitle>Row {{ issue.row_number }} in your CSV</template>
+                  <template #content>
+                    <div v-if="issue.isEditing">
+                      <InputText
+                        :model-value="issue.value"
+                        :placeholder="issue.placeholder"
+                        class="w-full"
+                        data-test="goodreads-import-issue-input"
+                        @update:model-value="onGoodreadsIssueValueInput(issue, $event)"
+                      />
+                    </div>
+                    <Message
+                      v-else-if="issue.suggested_value"
+                      severity="info"
+                      size="small"
+                      variant="simple"
+                      :closable="false"
+                    >
+                      <p class="m-0 text-sm font-medium break-words">
+                        {{ issue.suggested_value }}
+                      </p>
+                      <p
+                        v-if="goodreadsSuggestionConfidenceText(issue)"
+                        class="m-0 mt-1 text-xs text-[var(--p-text-muted-color)]"
+                      >
+                        {{ goodreadsSuggestionConfidenceText(issue) }}
+                      </p>
+                    </Message>
+                    <Message
+                      v-else
+                      severity="secondary"
+                      size="small"
+                      variant="simple"
+                      :closable="false"
+                    >
+                      No suggestion available
+                    </Message>
+                  </template>
+                  <template #footer>
+                    <div class="flex flex-wrap gap-1">
+                      <Button
+                        v-if="issue.suggested_value && issue.resolution !== 'resolved'"
+                        label="Use suggestion"
+                        size="small"
+                        outlined
+                        data-test="goodreads-import-issue-use-suggestion"
+                        @click="applyGoodreadsSuggestion(issue)"
+                      />
+                      <Button
+                        v-if="!issue.isEditing && issue.resolution !== 'resolved'"
+                        label="Edit"
+                        size="small"
+                        text
+                        severity="secondary"
+                        data-test="goodreads-import-issue-modify"
+                        @click="startGoodreadsIssueEdit(issue)"
+                      />
+                      <Button
+                        v-if="issue.resolution !== 'skipped'"
+                        label="Skip"
+                        size="small"
+                        text
+                        severity="secondary"
+                        data-test="goodreads-import-issue-mark-skip"
+                        @click="markGoodreadsIssueSkipped(issue)"
+                      />
+                      <Button
+                        v-else
+                        label="Undo skip"
+                        size="small"
+                        severity="secondary"
+                        text
+                        data-test="goodreads-import-issue-undo-skip"
+                        @click="undoGoodreadsIssueSkip(issue)"
+                      />
+                      <Button
+                        v-if="issue.isEditing"
+                        label="Done"
+                        size="small"
+                        severity="secondary"
+                        text
+                        data-test="goodreads-import-issue-done"
+                        @click="finishGoodreadsIssueEdit(issue)"
+                      />
+                    </div>
+                  </template>
+                </Card>
+              </Panel>
+
+              <Message
+                v-if="goodreadsImportError"
+                severity="error"
+                :closable="false"
+                data-test="goodreads-import-error"
+              >
+                {{ goodreadsImportError }}
+              </Message>
+
+              <div
+                v-if="goodreadsImportJob"
+                class="rounded border border-[var(--p-content-border-color)] p-3"
+              >
+                <p class="m-0 text-sm font-medium" data-test="goodreads-import-status">
+                  Status: {{ goodreadsImportJob.status }}
+                </p>
+                <p
+                  class="m-0 text-xs text-[var(--p-text-muted-color)]"
+                  data-test="goodreads-import-counts"
+                >
+                  Processed {{ goodreadsImportJob.processed_rows }} /
+                  {{ goodreadsImportJob.total_rows }} (imported
+                  {{ goodreadsImportJob.imported_rows }}, failed
+                  {{ goodreadsImportJob.failed_rows }}, skipped
+                  {{ goodreadsImportJob.skipped_rows }})
+                </p>
+                <p
+                  v-if="goodreadsImportJob.error_summary"
+                  class="m-0 text-xs text-[var(--p-text-muted-color)]"
+                  data-test="goodreads-import-error-summary"
+                >
+                  {{ goodreadsImportJob.error_summary }}
+                </p>
+
+                <div
+                  v-if="goodreadsImportJob.rows_preview?.length"
+                  class="mt-2 space-y-1"
+                  data-test="goodreads-import-preview"
+                >
+                  <p class="m-0 text-xs font-semibold">Failed / skipped rows</p>
+                  <div
+                    v-for="row in goodreadsImportJob.rows_preview"
+                    :key="`row-${row.row_number}`"
+                    class="text-xs"
+                    data-test="goodreads-import-preview-row"
+                  >
+                    Row {{ row.row_number }}: {{ row.message }}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </template>
+        </Card>
+
         <div class="flex justify-end">
           <Button
             :disabled="saving || loading"
@@ -407,7 +720,7 @@ type MeProfile = {
   enable_google_books: boolean;
 };
 
-type StorygraphImportPreviewRow = {
+type ImportPreviewRow = {
   row_number: number;
   title: string | null;
   uid: string | null;
@@ -415,7 +728,7 @@ type StorygraphImportPreviewRow = {
   message: string;
 };
 
-type StorygraphImportJob = {
+type ImportJob = {
   job_id: string;
   status: 'queued' | 'running' | 'completed' | 'failed';
   total_rows: number;
@@ -424,15 +737,15 @@ type StorygraphImportJob = {
   failed_rows: number;
   skipped_rows: number;
   error_summary: string | null;
-  rows_preview: StorygraphImportPreviewRow[];
+  rows_preview: ImportPreviewRow[];
 };
 
-type StorygraphIssueCode = 'missing_authors' | 'missing_title' | 'missing_read_status';
+type ImportIssueCode = 'missing_authors' | 'missing_title' | 'missing_read_status';
 
-type StorygraphMissingAuthorRow = {
+type MissingRequiredRow = {
   row_number: number;
   field: 'title' | 'authors' | 'read_status';
-  issue_code: StorygraphIssueCode;
+  issue_code: ImportIssueCode;
   required: boolean;
   title: string | null;
   uid: string | null;
@@ -441,13 +754,13 @@ type StorygraphMissingAuthorRow = {
   suggestion_confidence: 'high' | 'medium' | null;
 };
 
-type StorygraphImportIssue = StorygraphMissingAuthorRow & {
+type ImportIssue = MissingRequiredRow & {
   issueKey: string;
   value: string;
   fieldLabel: string;
   placeholder: string;
   resolution: 'pending' | 'resolved' | 'skipped';
-  skipReasonCode: StorygraphIssueCode;
+  skipReasonCode: ImportIssueCode;
   isEditing: boolean;
 };
 
@@ -465,8 +778,8 @@ const importing = ref(false);
 const importError = ref('');
 const storygraphFile = ref<File | null>(null);
 const storygraphFileInput = ref<HTMLInputElement | null>(null);
-const importIssues = ref<StorygraphImportIssue[]>([]);
-const importJob = ref<StorygraphImportJob | null>(null);
+const importIssues = ref<ImportIssue[]>([]);
+const importJob = ref<ImportJob | null>(null);
 const issuesLoading = ref(false);
 const issuesLoaded = ref(false);
 const issuesLoadError = ref('');
@@ -510,10 +823,67 @@ const startDisabledReason = computed(() => {
 });
 let pollTimer: ReturnType<typeof setTimeout> | null = null;
 
+const goodreadsImporting = ref(false);
+const goodreadsImportError = ref('');
+const goodreadsFile = ref<File | null>(null);
+const goodreadsFileInput = ref<HTMLInputElement | null>(null);
+const goodreadsImportIssues = ref<ImportIssue[]>([]);
+const goodreadsImportJob = ref<ImportJob | null>(null);
+const goodreadsIssuesLoading = ref(false);
+const goodreadsIssuesLoaded = ref(false);
+const goodreadsIssuesLoadError = ref('');
+const goodreadsPendingIssueCount = computed(
+  () => goodreadsImportIssues.value.filter((issue) => issue.resolution === 'pending').length,
+);
+const goodreadsResolvedIssueCount = computed(
+  () => goodreadsImportIssues.value.filter((issue) => issue.resolution === 'resolved').length,
+);
+const goodreadsSkippedIssueCount = computed(
+  () => goodreadsImportIssues.value.filter((issue) => issue.resolution === 'skipped').length,
+);
+const goodreadsIssuesStepSeverity = computed(() => {
+  if (!goodreadsFile.value) return 'secondary';
+  if (goodreadsIssuesLoading.value) return 'info';
+  if (goodreadsIssuesLoadError.value) return 'danger';
+  if (!goodreadsIssuesLoaded.value) return 'secondary';
+  return goodreadsPendingIssueCount.value > 0 ? 'warn' : 'success';
+});
+const canStartGoodreadsImport = computed(
+  () =>
+    Boolean(goodreadsFile.value) &&
+    !goodreadsIssuesLoading.value &&
+    goodreadsIssuesLoaded.value &&
+    !goodreadsIssuesLoadError.value &&
+    goodreadsPendingIssueCount.value === 0 &&
+    !goodreadsImporting.value,
+);
+const goodreadsStartDisabledReason = computed(() => {
+  if (!goodreadsFile.value) return 'Select a CSV file to begin.';
+  if (goodreadsIssuesLoading.value) return 'Checking required fields in your CSV...';
+  if (goodreadsIssuesLoadError.value) {
+    return 'Fix the issue check error and retry before importing.';
+  }
+  if (!goodreadsIssuesLoaded.value) return 'Issue check has not completed yet.';
+  if (goodreadsPendingIssueCount.value > 0) {
+    return `Resolve or skip ${goodreadsPendingIssueCount.value} pending issue${
+      goodreadsPendingIssueCount.value === 1 ? '' : 's'
+    } to continue.`;
+  }
+  return '';
+});
+let goodreadsPollTimer: ReturnType<typeof setTimeout> | null = null;
+
 const clearPollTimer = () => {
   if (pollTimer) {
     clearTimeout(pollTimer);
     pollTimer = null;
+  }
+};
+
+const clearGoodreadsPollTimer = () => {
+  if (goodreadsPollTimer) {
+    clearTimeout(goodreadsPollTimer);
+    goodreadsPollTimer = null;
   }
 };
 
@@ -585,31 +955,31 @@ const onStorygraphFileChange = (event: Event) => {
   }
 };
 
-const fieldLabel = (field: StorygraphMissingAuthorRow['field']) => {
+const fieldLabel = (field: MissingRequiredRow['field']) => {
   if (field === 'authors') return 'Authors';
   if (field === 'title') return 'Title';
   return 'Read status';
 };
 
-const fieldPlaceholder = (field: StorygraphMissingAuthorRow['field']) => {
+const fieldPlaceholder = (field: MissingRequiredRow['field']) => {
   if (field === 'authors') return 'Author name(s), comma-separated';
   if (field === 'title') return 'Book title';
   return 'read | to-read | currently-reading | paused | did-not-finish';
 };
 
-const issueResolutionLabel = (resolution: StorygraphImportIssue['resolution']) => {
+const issueResolutionLabel = (resolution: ImportIssue['resolution']) => {
   if (resolution === 'resolved') return 'Resolved';
   if (resolution === 'skipped') return 'Skipped';
   return 'Pending';
 };
 
-const issueResolutionSeverity = (resolution: StorygraphImportIssue['resolution']) => {
+const issueResolutionSeverity = (resolution: ImportIssue['resolution']) => {
   if (resolution === 'resolved') return 'success';
   if (resolution === 'skipped') return 'warn';
   return 'secondary';
 };
 
-const issueDescription = (issue: StorygraphImportIssue): string => {
+const issueDescription = (issue: ImportIssue): string => {
   const fieldName = issue.fieldLabel.toLowerCase();
   const book = issue.title
     ? `\u201c${issue.title}\u201d`
@@ -619,7 +989,7 @@ const issueDescription = (issue: StorygraphImportIssue): string => {
   return `Missing ${fieldName} for ${book}`;
 };
 
-const suggestionConfidenceText = (issue: StorygraphImportIssue): string => {
+const suggestionConfidenceText = (issue: ImportIssue): string => {
   const sourceMap: Record<string, string> = {
     'openlibrary:isbn': 'matched by ISBN on Open Library',
     'googlebooks:isbn': 'matched by ISBN on Google Books',
@@ -646,7 +1016,7 @@ const loadImportIssues = async (file: File) => {
   const formData = new FormData();
   formData.append('file', file);
   try {
-    const response = await apiRequest<{ items: StorygraphMissingAuthorRow[] }>(
+    const response = await apiRequest<{ items: MissingRequiredRow[] }>(
       '/api/v1/imports/storygraph/missing-authors',
       {
         method: 'POST',
@@ -683,14 +1053,14 @@ const retryLoadImportIssues = async () => {
   await loadImportIssues(storygraphFile.value);
 };
 
-const onIssueValueInput = (issue: StorygraphImportIssue, nextValue: string) => {
+const onIssueValueInput = (issue: ImportIssue, nextValue: string) => {
   issue.value = nextValue;
   const trimmed = nextValue.trim();
   issue.resolution = trimmed ? 'resolved' : 'pending';
   issue.isEditing = true;
 };
 
-const applySuggestion = (issue: StorygraphImportIssue) => {
+const applySuggestion = (issue: ImportIssue) => {
   if (!issue.suggested_value) return;
   issue.value = issue.suggested_value;
   issue.resolution = 'resolved';
@@ -703,7 +1073,7 @@ const applySuggestion = (issue: StorygraphImportIssue) => {
   });
 };
 
-const markIssueSkipped = (issue: StorygraphImportIssue) => {
+const markIssueSkipped = (issue: ImportIssue) => {
   issue.resolution = 'skipped';
   issue.isEditing = false;
   toast.add({
@@ -714,7 +1084,7 @@ const markIssueSkipped = (issue: StorygraphImportIssue) => {
   });
 };
 
-const undoIssueSkip = (issue: StorygraphImportIssue) => {
+const undoIssueSkip = (issue: ImportIssue) => {
   issue.resolution = issue.value.trim() ? 'resolved' : 'pending';
   if (!issue.value.trim() && !issue.suggested_value) issue.isEditing = true;
   toast.add({
@@ -725,7 +1095,7 @@ const undoIssueSkip = (issue: StorygraphImportIssue) => {
   });
 };
 
-const startIssueEdit = (issue: StorygraphImportIssue) => {
+const startIssueEdit = (issue: ImportIssue) => {
   issue.isEditing = true;
   if (!issue.value.trim() && issue.suggested_value) {
     issue.value = issue.suggested_value;
@@ -733,7 +1103,7 @@ const startIssueEdit = (issue: StorygraphImportIssue) => {
   issue.resolution = issue.value.trim() ? 'resolved' : 'pending';
 };
 
-const finishIssueEdit = (issue: StorygraphImportIssue) => {
+const finishIssueEdit = (issue: ImportIssue) => {
   issue.isEditing = false;
   issue.resolution = issue.value.trim() ? 'resolved' : 'pending';
 };
@@ -741,7 +1111,7 @@ const finishIssueEdit = (issue: StorygraphImportIssue) => {
 /* c8 ignore start */
 const pollImportStatus = async (jobId: string) => {
   try {
-    const data = await apiRequest<StorygraphImportJob>(`/api/v1/imports/storygraph/${jobId}`);
+    const data = await apiRequest<ImportJob>(`/api/v1/imports/storygraph/${jobId}`);
     importJob.value = data;
     if (data.status === 'queued' || data.status === 'running') {
       pollTimer = setTimeout(() => {
@@ -823,7 +1193,7 @@ const startStorygraphImport = async () => {
 
     importJob.value = {
       job_id: created.job_id,
-      status: created.status as StorygraphImportJob['status'],
+      status: created.status as ImportJob['status'],
       total_rows: created.total_rows,
       processed_rows: created.processed_rows,
       imported_rows: created.imported_rows,
@@ -841,12 +1211,303 @@ const startStorygraphImport = async () => {
 };
 /* c8 ignore stop */
 
+const resetGoodreadsIssueState = () => {
+  goodreadsImportIssues.value = [];
+  goodreadsIssuesLoaded.value = false;
+  goodreadsIssuesLoading.value = false;
+  goodreadsIssuesLoadError.value = '';
+};
+
+const clearGoodreadsSelection = () => {
+  if (goodreadsFileInput.value) goodreadsFileInput.value.value = '';
+  goodreadsFile.value = null;
+  goodreadsImportError.value = '';
+  goodreadsImportJob.value = null;
+  resetGoodreadsIssueState();
+};
+
+const openGoodreadsPicker = () => {
+  goodreadsFileInput.value?.click();
+};
+
+const onGoodreadsFileChange = (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  goodreadsFile.value = input.files?.[0] ?? null;
+  goodreadsImportError.value = '';
+  goodreadsImportJob.value = null;
+  resetGoodreadsIssueState();
+  if (goodreadsFile.value) {
+    void loadGoodreadsImportIssues(goodreadsFile.value);
+  }
+};
+
+const goodreadsFieldLabel = (field: MissingRequiredRow['field']) => {
+  if (field === 'authors') return 'Authors';
+  if (field === 'title') return 'Title';
+  return 'Read status';
+};
+
+const goodreadsFieldPlaceholder = (field: MissingRequiredRow['field']) => {
+  if (field === 'authors') return 'Author name(s), comma-separated';
+  if (field === 'title') return 'Book title';
+  return 'read | to-read | currently-reading | paused | did-not-finish';
+};
+
+const goodreadsIssueResolutionLabel = (resolution: ImportIssue['resolution']) => {
+  if (resolution === 'resolved') return 'Resolved';
+  if (resolution === 'skipped') return 'Skipped';
+  return 'Pending';
+};
+
+const goodreadsIssueResolutionSeverity = (resolution: ImportIssue['resolution']) => {
+  if (resolution === 'resolved') return 'success';
+  if (resolution === 'skipped') return 'warn';
+  return 'secondary';
+};
+
+const goodreadsIssueDescription = (issue: ImportIssue): string => {
+  const fieldName = issue.fieldLabel.toLowerCase();
+  const book = issue.title
+    ? `\u201c${issue.title}\u201d`
+    : issue.uid
+      ? `ISBN ${issue.uid}`
+      : 'an unknown book';
+  return `Missing ${fieldName} for ${book}`;
+};
+
+const goodreadsSuggestionConfidenceText = (issue: ImportIssue): string => {
+  const sourceMap: Record<string, string> = {
+    'openlibrary:isbn': 'matched by ISBN on Open Library',
+    'googlebooks:isbn': 'matched by ISBN on Google Books',
+    'openlibrary:search': 'matched by title on Open Library',
+    'googlebooks:search': 'matched by title on Google Books',
+  };
+  const confMap: Record<string, string> = {
+    high: 'High confidence',
+    medium: 'Moderate confidence',
+  };
+  const conf = issue.suggestion_confidence
+    ? (confMap[issue.suggestion_confidence] ?? issue.suggestion_confidence)
+    : '';
+  const src = issue.suggestion_source
+    ? (sourceMap[issue.suggestion_source] ?? issue.suggestion_source)
+    : '';
+  if (conf && src) return `${conf} \u2014 ${src}`;
+  return conf || src || '';
+};
+
+const loadGoodreadsImportIssues = async (file: File) => {
+  goodreadsIssuesLoading.value = true;
+  goodreadsIssuesLoadError.value = '';
+  const formData = new FormData();
+  formData.append('file', file);
+  try {
+    const response = await apiRequest<{ items: MissingRequiredRow[] }>(
+      '/api/v1/imports/goodreads/missing-required',
+      {
+        method: 'POST',
+        body: formData,
+      },
+    );
+    goodreadsImportIssues.value = response.items.map((row) => {
+      const value = '';
+      return {
+        ...row,
+        issueKey: `${row.row_number}:${row.field}`,
+        value,
+        fieldLabel: goodreadsFieldLabel(row.field),
+        placeholder: goodreadsFieldPlaceholder(row.field),
+        resolution: 'pending',
+        skipReasonCode: row.issue_code,
+        isEditing: !row.suggested_value,
+      };
+    });
+    goodreadsIssuesLoaded.value = true;
+  } catch (err) {
+    goodreadsIssuesLoaded.value = false;
+    goodreadsIssuesLoadError.value =
+      err instanceof ApiClientError
+        ? err.message
+        : 'Unable to load import issues from Goodreads export.';
+  } finally {
+    goodreadsIssuesLoading.value = false;
+  }
+};
+
+const retryLoadGoodreadsImportIssues = async () => {
+  if (!goodreadsFile.value) return;
+  await loadGoodreadsImportIssues(goodreadsFile.value);
+};
+
+const onGoodreadsIssueValueInput = (issue: ImportIssue, nextValue: string) => {
+  issue.value = nextValue;
+  const trimmed = nextValue.trim();
+  issue.resolution = trimmed ? 'resolved' : 'pending';
+  issue.isEditing = true;
+};
+
+const applyGoodreadsSuggestion = (issue: ImportIssue) => {
+  if (!issue.suggested_value) return;
+  issue.value = issue.suggested_value;
+  issue.resolution = 'resolved';
+  issue.isEditing = false;
+  toast.add({
+    severity: 'success',
+    summary: 'Suggestion applied',
+    detail: `Applied suggestion to row ${issue.row_number}.`,
+    life: 2200,
+  });
+};
+
+const markGoodreadsIssueSkipped = (issue: ImportIssue) => {
+  issue.resolution = 'skipped';
+  issue.isEditing = false;
+  toast.add({
+    severity: 'warn',
+    summary: 'Row skipped',
+    detail: `Row ${issue.row_number} will be skipped.`,
+    life: 2200,
+  });
+};
+
+const undoGoodreadsIssueSkip = (issue: ImportIssue) => {
+  issue.resolution = issue.value.trim() ? 'resolved' : 'pending';
+  if (!issue.value.trim() && !issue.suggested_value) issue.isEditing = true;
+  toast.add({
+    severity: 'info',
+    summary: 'Skip removed',
+    detail: `Row ${issue.row_number} is no longer skipped.`,
+    life: 2200,
+  });
+};
+
+const startGoodreadsIssueEdit = (issue: ImportIssue) => {
+  issue.isEditing = true;
+  if (!issue.value.trim() && issue.suggested_value) {
+    issue.value = issue.suggested_value;
+  }
+  issue.resolution = issue.value.trim() ? 'resolved' : 'pending';
+};
+
+const finishGoodreadsIssueEdit = (issue: ImportIssue) => {
+  issue.isEditing = false;
+  issue.resolution = issue.value.trim() ? 'resolved' : 'pending';
+};
+
+/* c8 ignore start */
+const pollGoodreadsImportStatus = async (jobId: string) => {
+  try {
+    const data = await apiRequest<ImportJob>(`/api/v1/imports/goodreads/${jobId}`);
+    goodreadsImportJob.value = data;
+    if (data.status === 'queued' || data.status === 'running') {
+      goodreadsPollTimer = setTimeout(() => {
+        void pollGoodreadsImportStatus(jobId);
+      }, 1000);
+      return;
+    }
+    goodreadsImporting.value = false;
+  } catch (err) {
+    goodreadsImporting.value = false;
+    goodreadsImportError.value =
+      err instanceof ApiClientError ? err.message : 'Unable to fetch import status.';
+  }
+};
+
+const startGoodreadsImport = async () => {
+  if (!canStartGoodreadsImport.value || !goodreadsFile.value) return;
+  goodreadsImporting.value = true;
+  goodreadsImportError.value = '';
+  goodreadsImportJob.value = null;
+  clearGoodreadsPollTimer();
+
+  try {
+    if (!goodreadsIssuesLoaded.value && !goodreadsIssuesLoading.value) {
+      await loadGoodreadsImportIssues(goodreadsFile.value);
+    }
+    if (
+      !goodreadsIssuesLoaded.value ||
+      goodreadsIssuesLoadError.value ||
+      goodreadsPendingIssueCount.value > 0
+    ) {
+      throw new Error('Import prerequisites are not complete.');
+    }
+
+    const authorOverrides: Record<string, string> = {};
+    const titleOverrides: Record<string, string> = {};
+    const shelfOverrides: Record<string, string> = {};
+    const skippedRows: number[] = [];
+    const skipReasons: Record<string, string> = {};
+    for (const issue of goodreadsImportIssues.value) {
+      if (issue.resolution === 'skipped') {
+        skippedRows.push(issue.row_number);
+        skipReasons[String(issue.row_number)] = issue.skipReasonCode;
+        continue;
+      }
+      const value = issue.value.trim();
+      if (!value) continue;
+      const key = String(issue.row_number);
+      if (issue.field === 'authors') authorOverrides[key] = value;
+      if (issue.field === 'title') titleOverrides[key] = value;
+      if (issue.field === 'read_status') shelfOverrides[key] = value;
+    }
+
+    const formData = new FormData();
+    formData.append('file', goodreadsFile.value);
+    if (Object.keys(authorOverrides).length > 0) {
+      formData.append('author_overrides', JSON.stringify(authorOverrides));
+    }
+    if (Object.keys(titleOverrides).length > 0) {
+      formData.append('title_overrides', JSON.stringify(titleOverrides));
+    }
+    if (Object.keys(shelfOverrides).length > 0) {
+      formData.append('shelf_overrides', JSON.stringify(shelfOverrides));
+    }
+    if (skippedRows.length > 0) {
+      formData.append('skipped_rows', JSON.stringify(skippedRows));
+      formData.append('skip_reasons', JSON.stringify(skipReasons));
+    }
+
+    const created = await apiRequest<{
+      job_id: string;
+      status: string;
+      total_rows: number;
+      processed_rows: number;
+      imported_rows: number;
+      failed_rows: number;
+      skipped_rows: number;
+      created_at: string;
+    }>('/api/v1/imports/goodreads', {
+      method: 'POST',
+      body: formData,
+    });
+
+    goodreadsImportJob.value = {
+      job_id: created.job_id,
+      status: created.status as ImportJob['status'],
+      total_rows: created.total_rows,
+      processed_rows: created.processed_rows,
+      imported_rows: created.imported_rows,
+      failed_rows: created.failed_rows,
+      skipped_rows: created.skipped_rows,
+      error_summary: null,
+      rows_preview: [],
+    };
+
+    await pollGoodreadsImportStatus(created.job_id);
+  } catch (err) {
+    goodreadsImporting.value = false;
+    goodreadsImportError.value =
+      err instanceof ApiClientError ? err.message : 'Unable to start import.';
+  }
+};
+/* c8 ignore stop */
 onMounted(() => {
   void loadProfile();
 });
 
 onBeforeUnmount(() => {
   clearPollTimer();
+  clearGoodreadsPollTimer();
 });
 </script>
 
@@ -856,7 +1517,9 @@ onBeforeUnmount(() => {
 }
 
 .storygraph-import-card :deep(.p-card-content),
-.storygraph-issues-panel :deep(.p-panel-content) {
+.storygraph-issues-panel :deep(.p-panel-content),
+.goodreads-import-card :deep(.p-card-content),
+.goodreads-issues-panel :deep(.p-panel-content) {
   min-width: 0;
   overflow-x: hidden;
 }

@@ -47,6 +47,7 @@ This is a suggested order of execution based on dependencies and risk.
 - #22 Implement notes CRUD endpoints
 - #23 Implement highlights CRUD with visibility controls
 - #24 Implement review endpoints with public listing
+- #131 Import from Goodreads exports
 - #132 Import from The StoryGraph exports
 
 ## 5) Web UI

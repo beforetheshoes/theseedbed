@@ -15,6 +15,7 @@ from app.routers import (
     authors,
     books,
     editions,
+    goodreads_imports,
     health,
     highlights,
     library,
@@ -78,6 +79,7 @@ def create_app() -> FastAPI:
     app.include_router(books.router)
     app.include_router(authors.router)
     app.include_router(editions.router)
+    app.include_router(goodreads_imports.router)
     app.include_router(me.router)
     app.include_router(library.router)
     app.include_router(library_search.router)
