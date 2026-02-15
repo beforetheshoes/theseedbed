@@ -222,6 +222,37 @@ describe('book detail page', () => {
     expect(description.find('script').exists()).toBe(false);
   });
 
+  it('renders identifier metadata when present', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [{ id: 'a-1', name: 'Author A' }],
+          identifiers: {
+            isbn10: '0123456789',
+            isbn13: '9780123456789',
+            asin: 'B00TESTASIN',
+          },
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Identifiers:');
+    expect(wrapper.text()).toContain('ISBN-10 0123456789');
+    expect(wrapper.text()).toContain('ISBN-13 9780123456789');
+    expect(wrapper.text()).toContain('ASIN B00TESTASIN');
+  });
+
   it('removes a library item after confirmation and redirects back to the library', async () => {
     apiRequest.mockImplementation(async (url: string, opts?: any) => {
       const method = (opts?.method || 'GET').toUpperCase();
@@ -2916,7 +2947,6 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Enrich metadata');
     await flushPromises();
     await clickButton(wrapper, 'Pick all Open Library');
-    await clickButton(wrapper, 'Apply selections');
     await flushPromises();
 
     expect(toastAdd).toHaveBeenCalledWith(
@@ -2974,7 +3004,6 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Enrich metadata');
     await flushPromises();
     await clickButton(wrapper, 'Pick all Open Library');
-    await clickButton(wrapper, 'Apply selections');
     await flushPromises();
 
     expect((wrapper.vm as any).enrichError).toBe('Unable to apply enrichment selections.');
@@ -3131,7 +3160,6 @@ describe('book detail page', () => {
     await clickButton(wrapper, 'Enrich metadata');
     await flushPromises();
     await clickButton(wrapper, 'Pick all Open Library');
-    await clickButton(wrapper, 'Apply selections');
     await flushPromises();
 
     expect(toastAdd).toHaveBeenCalledWith(
@@ -3190,6 +3218,7 @@ describe('book detail page', () => {
 
   it('covers enrich pick/reset branches and ApiClientError apply path', async () => {
     let capturedApplyBody: any = null;
+    let applyCalls = 0;
     apiRequest.mockImplementation(async (url: string, opts?: any) => {
       const method = (opts?.method || 'GET').toUpperCase();
       if (url === '/api/v1/works/work-1' && method === 'GET') {
@@ -3199,6 +3228,7 @@ describe('book detail page', () => {
         throw new ApiClientErrorMock('Not found', 'not_found', 404);
       }
       if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        applyCalls += 1;
         capturedApplyBody = opts?.body;
         throw new ApiClientErrorMock('Bad request', 'bad_request', 400);
       }
@@ -3217,15 +3247,61 @@ describe('book detail page', () => {
       },
     ];
     (wrapper.vm as any).initializeEnrichmentSelections((wrapper.vm as any).enrichFields);
-    (wrapper.vm as any).pickAllFromProvider('openlibrary');
+    await (wrapper.vm as any).pickAllFromProvider('openlibrary');
     expect((wrapper.vm as any).enrichSelectionByField['work.description']).toBe('openlibrary');
+    expect(applyCalls).toBe(1);
+    expect(capturedApplyBody?.selections).toEqual([
+      {
+        field_key: 'work.description',
+        provider: 'openlibrary',
+        provider_id: '/works/OL1W',
+        value: 'Suggested',
+      },
+    ]);
     (wrapper.vm as any).resetAllToCurrent();
     expect((wrapper.vm as any).enrichSelectionByField['work.description']).toBe('keep');
 
     (wrapper.vm as any).enrichSelectionByField = { 'work.description': 'googlebooks' };
     await (wrapper.vm as any).applyEnrichmentSelections();
     expect(capturedApplyBody?.selections).toEqual([]);
+    expect(applyCalls).toBe(2);
     expect((wrapper.vm as any).enrichError).toBe('Bad request');
+  });
+
+  it('orders cover enrichment row first', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).enrichFields = [
+      {
+        field_key: 'work.description',
+        scope: 'work',
+        current_value: null,
+        has_conflict: false,
+        candidates: [],
+      },
+      {
+        field_key: 'work.cover_url',
+        scope: 'work',
+        current_value: null,
+        has_conflict: false,
+        candidates: [],
+      },
+    ];
+
+    const rows = (wrapper.vm as any).enrichRows;
+    expect(rows[0].fieldKey).toBe('work.cover_url');
+    expect(rows[1].fieldKey).toBe('work.description');
   });
 
   it('returns image URL only for http/https enrichment values', async () => {

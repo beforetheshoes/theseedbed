@@ -587,6 +587,27 @@ class OpenLibraryClient:
             raw_edition=raw_edition,
         )
 
+    async def find_work_key_by_isbn(self, *, isbn: str) -> str | None:
+        normalized = isbn.strip().replace("-", "")
+        if not normalized:
+            return None
+        payload = await self._request_json(
+            "/search.json",
+            params={
+                "q": f"isbn:{normalized}",
+                "limit": 1,
+                "fields": "key",
+            },
+        )
+        docs = payload.get("docs")
+        if not isinstance(docs, list) or not docs:
+            return None
+        first = docs[0]
+        if not isinstance(first, dict):
+            return None
+        key = first.get("key")
+        return key if isinstance(key, str) and key.startswith("/works/") else None
+
     async def fetch_cover_ids_for_work(
         self,
         *,

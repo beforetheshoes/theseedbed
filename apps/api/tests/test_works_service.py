@@ -79,11 +79,23 @@ def test_get_work_detail_uses_edition_cover_when_present() -> None:
     session = FakeSession()
     session.get_values = [work]
     session.execute_values = [FakeExecuteResult(scalar_values=[author])]
-    session.scalar_values = ["https://example.com/edition.jpg"]
+    selected_edition = Edition(
+        id=uuid.uuid4(),
+        work_id=work_id,
+        isbn10="1234567890",
+        isbn13="9781234567890",
+    )
+    session.scalar_values = [
+        "https://example.com/edition.jpg",
+        selected_edition,
+        "B00TESTASIN",
+    ]
 
     detail = get_work_detail(session, work_id=work_id)  # type: ignore[arg-type]
     assert detail["cover_url"] == "https://example.com/edition.jpg"
     assert detail["authors"][0]["name"] == "Author"
+    assert detail["identifiers"]["isbn13"] == "9781234567890"
+    assert detail["identifiers"]["asin"] == "B00TESTASIN"
 
 
 def test_get_work_detail_falls_back_to_work_default_cover() -> None:
@@ -98,10 +110,12 @@ def test_get_work_detail_falls_back_to_work_default_cover() -> None:
     session = FakeSession()
     session.get_values = [work]
     session.execute_values = [FakeExecuteResult(scalar_values=[])]
-    session.scalar_values = [None]
+    session.scalar_values = [None, None, None]
 
     detail = get_work_detail(session, work_id=work_id)  # type: ignore[arg-type]
     assert detail["cover_url"] == "https://example.com/default.jpg"
+    assert detail["identifiers"]["isbn10"] is None
+    assert detail["identifiers"]["isbn13"] is None
 
 
 def test_get_work_detail_raises_when_work_missing() -> None:

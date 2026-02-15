@@ -239,11 +239,9 @@ async def list_enrichment_candidates(
             work_id=work_id,
             open_library=open_library,
             google_books=google_books,
-            google_enabled=_google_books_enabled_for_user(
-                auth=auth,
-                session=session,
-                settings=settings,
-            ),
+            # Enrichment should always attempt Google as a best-effort fallback
+            # when Open Library data is sparse.
+            google_enabled=True,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -280,11 +278,7 @@ async def apply_enrichment(
             edition_id=payload.edition_id,
             open_library=open_library,
             google_books=google_books,
-            google_enabled=_google_books_enabled_for_user(
-                auth=auth,
-                session=session,
-                settings=settings,
-            ),
+            google_enabled=True,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

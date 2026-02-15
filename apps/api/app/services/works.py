@@ -35,7 +35,34 @@ def get_work_detail(session: Session, *, work_id: uuid.UUID) -> dict[str, Any]:
         .order_by(Edition.created_at.desc(), Edition.id.desc())
         .limit(1)
     )
+    selected_edition = session.scalar(
+        sa.select(Edition)
+        .where(Edition.work_id == work_id)
+        .order_by(Edition.created_at.desc(), Edition.id.desc())
+        .limit(1)
+    )
     cover_url = edition_cover or work.default_cover_url
+    asin: str | None = None
+    if selected_edition is not None:
+        asin = session.scalar(
+            sa.select(ExternalId.provider_id)
+            .where(
+                ExternalId.entity_type == "edition",
+                ExternalId.entity_id == selected_edition.id,
+                ExternalId.provider.in_(["asin", "amazon"]),
+            )
+            .limit(1)
+        )
+    if asin is None:
+        asin = session.scalar(
+            sa.select(ExternalId.provider_id)
+            .where(
+                ExternalId.entity_type == "work",
+                ExternalId.entity_id == work_id,
+                ExternalId.provider.in_(["asin", "amazon"]),
+            )
+            .limit(1)
+        )
 
     return {
         "id": str(work.id),
@@ -44,6 +71,11 @@ def get_work_detail(session: Session, *, work_id: uuid.UUID) -> dict[str, Any]:
         "first_publish_year": work.first_publish_year,
         "cover_url": cover_url,
         "authors": [{"id": str(a.id), "name": a.name} for a in authors],
+        "identifiers": {
+            "isbn10": selected_edition.isbn10 if selected_edition else None,
+            "isbn13": selected_edition.isbn13 if selected_edition else None,
+            "asin": asin,
+        },
     }
 
 

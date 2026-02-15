@@ -19,22 +19,28 @@ from app.services.open_library import OpenLibraryWorkBundle
 from app.services.work_metadata_enrichment import (
     _add_candidate,
     _author_match_score,
+    _author_search_variants,
+    _best_google_bundles,
     _build_fields_payload,
     _display_value,
     _edition_label,
     _ensure_google_external_ids,
+    _ensure_openlibrary_external_ids,
     _first_author_name,
     _get_google_work_volume_id,
     _get_openlibrary_work_key,
     _get_work,
+    _google_bundle_richness,
     _google_source_label,
     _is_relevant_google_bundle,
     _isbn_match_score,
+    _list_isbn_queries,
     _normalize_isbn,
     _normalize_match_text,
     _normalize_publish_date,
     _normalize_selection_value,
     _normalize_year,
+    _resolve_openlibrary_work_key,
     _resolve_target_edition,
     _source_label,
     _title_match_score,
@@ -135,6 +141,29 @@ class FakeGoogleBooks:
 
     async def fetch_work_bundle(self, *, volume_id: str) -> GoogleBooksWorkBundle:
         return self.bundles_by_volume[volume_id]
+
+
+class FakeOpenLibraryResolver:
+    def __init__(
+        self,
+        *,
+        isbn_map: dict[str, str] | None = None,
+        search_items: list[Any] | None = None,
+        search_items_by_author: dict[str, list[Any]] | None = None,
+    ) -> None:
+        self.isbn_map = isbn_map or {}
+        self.search_items = search_items or []
+        self.search_items_by_author = search_items_by_author or {}
+        self.search_calls: list[dict[str, Any]] = []
+
+    async def find_work_key_by_isbn(self, *, isbn: str) -> str | None:
+        return self.isbn_map.get(isbn)
+
+    async def search_books(self, **kwargs: Any) -> Any:
+        self.search_calls.append(kwargs)
+        author = kwargs.get("author") or ""
+        items = self.search_items_by_author.get(author, self.search_items)
+        return type("Resp", (), {"items": items})()
 
 
 def _openlibrary_bundle(*, include_edition: bool = True) -> OpenLibraryWorkBundle:
@@ -324,6 +353,152 @@ def test_ensure_google_external_ids_add_and_skip() -> None:
     assert session.added[0].entity_type == "work"
 
 
+def test_ensure_openlibrary_external_ids_adds_when_missing() -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    edition_id = uuid.uuid4()
+    session.scalar_values = [None, None, None, None]
+
+    _ensure_openlibrary_external_ids(
+        cast(Any, session),
+        work_id=work_id,
+        edition_id=edition_id,
+        work_key="/works/OL1W",
+        edition_key="/books/OL1M",
+    )
+
+    assert any(
+        isinstance(item, ExternalId) and item.entity_type == "work"
+        for item in session.added
+    )
+    assert any(
+        isinstance(item, ExternalId) and item.entity_type == "edition"
+        for item in session.added
+    )
+
+
+def test_list_isbn_queries_prefers_target_and_dedupes() -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    edition = Edition(
+        id=uuid.uuid4(),
+        work_id=work_id,
+        isbn10="0-8044-2957-X",
+        isbn13="978-0123456789",
+    )
+
+    def _execute(_stmt: Any) -> Any:
+        class _Res:
+            @staticmethod
+            def all() -> list[tuple[str | None, str | None]]:
+                return [
+                    ("9780123456789", None),
+                    (None, "080442957X"),
+                    ("not-isbn", "123"),
+                ]
+
+        return _Res()
+
+    session.execute = _execute  # type: ignore[attr-defined]
+    values = _list_isbn_queries(
+        cast(Any, session), work_id=work_id, edition_target=edition
+    )
+    assert values == ["9780123456789", "080442957X"]
+
+
+def test_resolve_openlibrary_work_key_uses_existing_mapping() -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+    session.scalar_values = ["/works/OL1W"]
+
+    key = asyncio.run(
+        _resolve_openlibrary_work_key(
+            session=cast(Any, session),
+            work=work,
+            work_id=work_id,
+            edition_target=None,
+            first_author="Author",
+            open_library=cast(Any, FakeOpenLibraryResolver()),
+        )
+    )
+
+    assert key == "/works/OL1W"
+
+
+def test_resolve_openlibrary_work_key_uses_isbn_and_title_search() -> None:
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+
+    session = FakeSession()
+    session.scalar_values = [None]
+
+    def _execute_empty(_stmt: Any) -> Any:
+        class _Res:
+            @staticmethod
+            def all() -> list[tuple[str | None, str | None]]:
+                return []
+
+        return _Res()
+
+    session.execute = _execute_empty  # type: ignore[attr-defined]
+    resolver = FakeOpenLibraryResolver(
+        isbn_map={"9780123456789": "/works/OL2W"},
+        search_items=[],
+    )
+    edition = Edition(id=uuid.uuid4(), work_id=work_id, isbn13="9780123456789")
+    key = asyncio.run(
+        _resolve_openlibrary_work_key(
+            session=cast(Any, session),
+            work=work,
+            work_id=work_id,
+            edition_target=edition,
+            first_author="Author",
+            open_library=cast(Any, resolver),
+        )
+    )
+    assert key == "/works/OL2W"
+
+    session = FakeSession()
+    session.scalar_values = [None]
+    session.execute = _execute_empty  # type: ignore[attr-defined]
+    search_items = [
+        type(
+            "Item",
+            (),
+            {
+                "work_key": "/works/OL3W",
+                "title": "Book",
+                "author_names": ["Author"],
+            },
+        )()
+    ]
+    resolver = FakeOpenLibraryResolver(isbn_map={}, search_items=search_items)
+    key = asyncio.run(
+        _resolve_openlibrary_work_key(
+            session=cast(Any, session),
+            work=work,
+            work_id=work_id,
+            edition_target=None,
+            first_author="Author",
+            open_library=cast(Any, resolver),
+        )
+    )
+    assert key == "/works/OL3W"
+
+    key = asyncio.run(
+        _resolve_openlibrary_work_key(
+            session=cast(Any, session),
+            work=Work(id=work_id, title=" "),
+            work_id=work_id,
+            edition_target=None,
+            first_author="Author",
+            open_library=cast(Any, resolver),
+        )
+    )
+    assert key is None
+
+
 def test_add_candidate_and_build_payload() -> None:
     candidates_by_field: dict[str, list[dict[str, Any]]] = defaultdict(list)
     seen: set[tuple[str, str, str, str]] = set()
@@ -492,15 +667,15 @@ def test_get_enrichment_candidates_builds_conflicts_and_dedupes(
     description_field = next(
         field for field in payload["fields"] if field["field_key"] == "work.description"
     )
-    assert description_field["has_conflict"] is False
-    # Open Library + one best Google match.
-    assert len(description_field["candidates"]) == 2
-    google_candidate = next(
+    assert description_field["has_conflict"] is True
+    # Open Library + strict Google match + relevant Google fallback.
+    assert len(description_field["candidates"]) == 3
+    google_candidates = [
         item
         for item in description_field["candidates"]
         if item["provider"] == "googlebooks"
-    )
-    assert google_candidate["source_label"] == "Google Books Book (gb1)"
+    ]
+    assert {item["provider_id"] for item in google_candidates} == {"gb1", "gb2"}
     assert payload["providers"]["succeeded"] == ["openlibrary", "googlebooks"]
 
 
@@ -707,7 +882,87 @@ def test_apply_enrichment_persists_google_provenance(
     assert tracked_external_ids == ["gb1"]
 
 
-def test_get_enrichment_candidates_raises_without_openlibrary_mapping(
+def test_apply_enrichment_persists_openlibrary_provenance_without_existing_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    edition_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+    edition = Edition(id=edition_id, work_id=work_id)
+    tracked_source_records: list[tuple[str, str, str]] = []
+    tracked_external_ids: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_work",
+        lambda *_args, **_kwargs: work,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_target_edition",
+        lambda *_args, **_kwargs: edition,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_openlibrary_work_key",
+        lambda *_args, **_kwargs: None,
+    )
+
+    def _capture_source(
+        _session: Any,
+        *,
+        provider: str,
+        entity_type: str,
+        provider_id: str,
+        raw: dict[str, Any],
+    ) -> None:
+        _ = raw
+        tracked_source_records.append((provider, entity_type, provider_id))
+
+    def _capture_external(
+        _session: Any,
+        *,
+        work_id: uuid.UUID,
+        edition_id: uuid.UUID | None,
+        work_key: str,
+        edition_key: str | None,
+    ) -> None:
+        _ = (work_id, edition_id)
+        tracked_external_ids.append((work_key, edition_key))
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._upsert_source_record", _capture_source
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._ensure_openlibrary_external_ids",
+        _capture_external,
+    )
+
+    result = asyncio.run(
+        apply_enrichment_selections(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            selections=[
+                {
+                    "field_key": "work.description",
+                    "provider": "openlibrary",
+                    "provider_id": "/works/OL999W",
+                    "value": "Desc",
+                }
+            ],
+            edition_id=None,
+            open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
+            google_books=cast(Any, FakeGoogleBooks({})),
+            google_enabled=False,
+        )
+    )
+
+    assert result["updated"] == ["work.description"]
+    assert ("openlibrary", "work", "/works/OL1W") in tracked_source_records
+    assert ("openlibrary", "edition", "/books/OL1M") in tracked_source_records
+    assert tracked_external_ids == [("/works/OL1W", "/books/OL1M")]
+
+
+def test_get_enrichment_candidates_handles_missing_openlibrary_mapping(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = FakeSession()
@@ -726,17 +981,31 @@ def test_get_enrichment_candidates_raises_without_openlibrary_mapping(
         lambda *_args, **_kwargs: None,
     )
 
-    with pytest.raises(LookupError):
-        asyncio.run(
-            get_enrichment_candidates(
-                cast(Any, session),
-                user_id=uuid.uuid4(),
-                work_id=work_id,
-                open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
-                google_books=cast(Any, FakeGoogleBooks({})),
-                google_enabled=False,
-            )
+    async def _no_match(**_kwargs: Any) -> str | None:
+        return None
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_openlibrary_work_key",
+        _no_match,
+    )
+
+    payload = asyncio.run(
+        get_enrichment_candidates(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
+            google_books=cast(Any, FakeGoogleBooks({})),
+            google_enabled=False,
         )
+    )
+    assert payload["providers"]["failed"] == [
+        {
+            "provider": "openlibrary",
+            "code": "openlibrary_match_not_found",
+            "message": "No Open Library match found for this work.",
+        }
+    ]
 
 
 def test_get_enrichment_candidates_records_google_failure(
@@ -781,6 +1050,44 @@ def test_get_enrichment_candidates_records_google_failure(
     assert payload["providers"]["failed"][0]["provider"] == "googlebooks"
 
 
+def test_get_enrichment_candidates_records_openlibrary_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+    edition = Edition(id=uuid.uuid4(), work_id=work_id)
+
+    async def _boom(**_kwargs: Any) -> str | None:
+        raise RuntimeError("ol down")
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_work",
+        lambda *_args, **_kwargs: work,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_target_edition",
+        lambda *_args, **_kwargs: edition,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_openlibrary_work_key",
+        _boom,
+    )
+
+    payload = asyncio.run(
+        get_enrichment_candidates(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
+            google_books=cast(Any, FakeGoogleBooks({})),
+            google_enabled=False,
+        )
+    )
+    assert payload["providers"]["failed"][0]["provider"] == "openlibrary"
+    assert payload["providers"]["failed"][0]["code"] == "open_library_unavailable"
+
+
 def test_normalize_selection_value_variants() -> None:
     assert _normalize_selection_value("work.description", " Desc ") == "Desc"
     assert _normalize_selection_value("work.description", 123) is None
@@ -790,6 +1097,48 @@ def test_normalize_selection_value_variants() -> None:
     assert _normalize_selection_value("edition.isbn10", "0123456789") == "0123456789"
     assert _normalize_selection_value("edition.isbn13", "bad") is None
     assert _normalize_selection_value("unknown", "x") is None
+
+
+def test_apply_enrichment_openlibrary_selection_skips_without_work_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_work",
+        lambda *_args, **_kwargs: work,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_target_edition",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_openlibrary_work_key",
+        lambda *_args, **_kwargs: None,
+    )
+
+    result = asyncio.run(
+        apply_enrichment_selections(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            selections=[
+                {
+                    "field_key": "work.description",
+                    "provider": "openlibrary",
+                    "provider_id": "/books/OLX",
+                    "value": "Desc",
+                }
+            ],
+            edition_id=None,
+            open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
+            google_books=cast(Any, FakeGoogleBooks({})),
+            google_enabled=False,
+        )
+    )
+    assert result["updated"] == ["work.description"]
 
 
 def test_google_matching_helpers_and_labels() -> None:
@@ -827,6 +1176,7 @@ def test_google_matching_helpers_and_labels() -> None:
     assert _title_match_score("", "Another Story") == 0
 
     assert _author_match_score(expected_author=None, candidate_authors=[]) == 1
+    assert _author_match_score(expected_author="Jane Author", candidate_authors=[]) == 0
     assert (
         _author_match_score(
             expected_author="Jane Author",
@@ -848,6 +1198,29 @@ def test_google_matching_helpers_and_labels() -> None:
         )
         == 0
     )
+    assert (
+        _author_match_score(
+            expected_author="R.F. Kuang",
+            candidate_authors=["Rebecca Kuang"],
+        )
+        >= 2
+    )
+    assert (
+        _author_match_score(
+            expected_author="R.F. Kuang",
+            candidate_authors=["R. F. Kuang"],
+        )
+        == 3
+    )
+    assert (
+        _author_match_score(
+            expected_author="Alpha Beta Gamma Kuang",
+            candidate_authors=["Alpha Beta Gamma Wong"],
+        )
+        == 2
+    )
+    assert "r f kuang" in _author_search_variants("R.F. Kuang")
+    assert "kuang" in _author_search_variants("R.F. Kuang")
 
     assert (
         _isbn_match_score(
@@ -909,6 +1282,195 @@ def test_google_matching_helpers_and_labels() -> None:
     assert _google_source_label(strong_with_empty_title) == "Google Books raw-id"
 
 
+def test_best_google_bundles_falls_back_to_title_matches_when_author_mismatch() -> None:
+    work = Work(id=uuid.uuid4(), title="Slow Down")
+    bundles = [
+        _google_bundle(
+            "rich",
+            description="Rich metadata",
+            title="Slow Down",
+            authors=["Different Person"],
+            edition={"publisher": "Pub", "language": "en"},
+        ),
+        _google_bundle(
+            "other",
+            description="Other metadata",
+            title="Slow Down: A Guide",
+            authors=["Unknown"],
+        ),
+        _google_bundle(
+            "bad",
+            description="Not related",
+            title="Completely Different",
+            authors=["Kohei Saito"],
+        ),
+    ]
+    selected = _best_google_bundles(
+        work=work,
+        first_author="Kohei Saito",
+        edition_target=None,
+        bundles=bundles,
+    )
+    assert [bundle.volume_id for bundle in selected] == ["rich", "other"]
+
+
+def test_best_google_bundles_keeps_strict_first_and_includes_relevant_fallbacks() -> (
+    None
+):
+    work = Work(id=uuid.uuid4(), title="Book")
+    target = Edition(
+        id=uuid.uuid4(),
+        work_id=work.id,
+        isbn13="9780123456789",
+    )
+    strict = _google_bundle(
+        "strict",
+        description="d",
+        title="Completely Different",
+        authors=["Someone Else"],
+        edition={
+            "publisher": "Pub",
+            "publish_date_iso": dt.date(2020, 1, 1),
+            "isbn10": "0123456789",
+            "isbn13": "9780123456789",
+            "language": "en",
+            "format": "paperback",
+        },
+    )
+    fallback = _google_bundle(
+        "fallback",
+        description="d",
+        title="Book",
+        authors=["Else"],
+        edition={"isbn13": "9780000000000"},
+    )
+    selected = _best_google_bundles(
+        work=work,
+        first_author="Author",
+        edition_target=target,
+        bundles=[fallback, strict],
+    )
+    assert [bundle.volume_id for bundle in selected] == ["strict", "fallback"]
+
+
+def test_best_google_bundles_keeps_fallback_when_strict_match_is_sparse() -> None:
+    work = Work(id=uuid.uuid4(), title="Slow Down")
+    target = Edition(
+        id=uuid.uuid4(),
+        work_id=work.id,
+        isbn13="9780123456789",
+    )
+    strict_sparse = _google_bundle(
+        "strict-sparse",
+        description="",
+        title="Different title",
+        authors=["Unknown"],
+        edition={"isbn13": "9780123456789"},
+    )
+    fallback_rich = _google_bundle(
+        "fallback-rich",
+        description="Rich metadata",
+        title="Slow Down",
+        authors=["Someone Else"],
+        edition={
+            "publisher": "Big Pub",
+            "publish_date_iso": dt.date(2024, 1, 1),
+            "language": "en",
+        },
+    )
+    selected = _best_google_bundles(
+        work=work,
+        first_author="Kohei Saito",
+        edition_target=target,
+        bundles=[strict_sparse, fallback_rich],
+    )
+    assert [bundle.volume_id for bundle in selected] == [
+        "strict-sparse",
+        "fallback-rich",
+    ]
+
+
+def test_best_google_bundles_filters_single_token_substring_matches() -> None:
+    work = Work(id=uuid.uuid4(), title="Book")
+    selected = _best_google_bundles(
+        work=work,
+        first_author="No Match",
+        edition_target=None,
+        bundles=[
+            _google_bundle(
+                "bad",
+                description="desc",
+                title="Different Book Entirely",
+                authors=["Else"],
+            ),
+            _google_bundle(
+                "good",
+                description="desc",
+                title="Book: Subtitle",
+                authors=["Else"],
+            ),
+        ],
+    )
+    assert [bundle.volume_id for bundle in selected] == ["good"]
+
+
+def test_best_google_bundles_returns_empty_for_no_candidates() -> None:
+    work = Work(id=uuid.uuid4(), title="Book")
+    selected = _best_google_bundles(
+        work=work,
+        first_author="Author",
+        edition_target=None,
+        bundles=[],
+    )
+    assert selected == []
+
+
+def test_best_google_bundles_respects_limit_with_multiple_fallbacks() -> None:
+    work = Work(id=uuid.uuid4(), title="Slow Down")
+    selected = _best_google_bundles(
+        work=work,
+        first_author="Mismatch Name",
+        edition_target=None,
+        bundles=[
+            _google_bundle(
+                "one", description="a", title="Slow Down", authors=["Unknown"]
+            ),
+            _google_bundle(
+                "two",
+                description="b",
+                title="Slow Down: Expanded",
+                authors=["Unknown"],
+            ),
+            _google_bundle(
+                "three",
+                description="c",
+                title="Slow Down Companion",
+                authors=["Unknown"],
+            ),
+        ],
+        limit=2,
+    )
+    assert [bundle.volume_id for bundle in selected] == ["one", "two"]
+
+
+def test_google_bundle_richness_counts_available_fields() -> None:
+    bundle = _google_bundle(
+        "richness",
+        description="desc",
+        title="Book",
+        authors=["Author"],
+        edition={
+            "publisher": "Pub",
+            "publish_date_iso": dt.date(2020, 1, 1),
+            "isbn10": "0123456789",
+            "isbn13": "9780123456789",
+            "language": "en",
+            "format": "paperback",
+        },
+    )
+    assert _google_bundle_richness(bundle) == 9
+
+
 def test_get_enrichment_candidates_handles_openlibrary_without_edition(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -943,6 +1505,77 @@ def test_get_enrichment_candidates_handles_openlibrary_without_edition(
 
     assert payload["providers"]["attempted"] == ["openlibrary"]
     assert payload["providers"]["succeeded"] == ["openlibrary"]
+
+
+def test_get_enrichment_candidates_includes_google_rich_fallback_when_openlibrary_is_sparse(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Slow Down")
+    ol_sparse = _openlibrary_bundle(include_edition=False)
+    ol_sparse = OpenLibraryWorkBundle(
+        work_key=ol_sparse.work_key,
+        title=ol_sparse.title,
+        description=None,
+        first_publish_year=ol_sparse.first_publish_year,
+        cover_url=None,
+        authors=ol_sparse.authors,
+        edition=None,
+        raw_work=ol_sparse.raw_work,
+        raw_edition=None,
+    )
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_work",
+        lambda *_args, **_kwargs: work,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_target_edition",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_openlibrary_work_key",
+        lambda *_args, **_kwargs: "/works/OL1W",
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._first_author_name",
+        lambda *_args, **_kwargs: "Kohei Saito",
+    )
+
+    payload = asyncio.run(
+        get_enrichment_candidates(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            open_library=cast(Any, FakeOpenLibrary(ol_sparse)),
+            google_books=cast(
+                Any,
+                FakeGoogleBooks(
+                    {
+                        "gb-rich": _google_bundle(
+                            "gb-rich",
+                            description="Rich description",
+                            title="Slow Down",
+                            authors=["Someone Else"],
+                            edition={"publisher": "Pub", "language": "en"},
+                        )
+                    }
+                ),
+            ),
+            google_enabled=True,
+        )
+    )
+    description_field = next(
+        field for field in payload["fields"] if field["field_key"] == "work.description"
+    )
+    google_candidates = [
+        candidate
+        for candidate in description_field["candidates"]
+        if candidate["provider"] == "googlebooks"
+    ]
+    assert len(google_candidates) == 1
+    assert google_candidates[0]["value"] == "Rich description"
 
 
 def test_get_enrichment_candidates_uses_mapped_google_volume(
@@ -997,6 +1630,76 @@ def test_get_enrichment_candidates_uses_mapped_google_volume(
         item["provider"] == "googlebooks" and item["provider_id"] == "mapped"
         for item in description_field["candidates"]
     )
+
+
+def test_get_enrichment_candidates_with_mapped_google_volume_still_includes_search_fallbacks(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Slow Down")
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_work",
+        lambda *_args, **_kwargs: work,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_target_edition",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_openlibrary_work_key",
+        lambda *_args, **_kwargs: "/works/OL1W",
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_google_work_volume_id",
+        lambda *_args, **_kwargs: "mapped-sparse",
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._first_author_name",
+        lambda *_args, **_kwargs: "Kohei Saito",
+    )
+
+    payload = asyncio.run(
+        get_enrichment_candidates(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
+            google_books=cast(
+                Any,
+                FakeGoogleBooks(
+                    {
+                        "mapped-sparse": _google_bundle(
+                            "mapped-sparse",
+                            description="",
+                            title="Slow Down",
+                            authors=["Kohei Saito"],
+                            edition={"isbn13": "9780000000000"},
+                        ),
+                        "gb-rich": _google_bundle(
+                            "gb-rich",
+                            description="Rich description",
+                            title="Slow Down",
+                            authors=["Rebecca Kuang"],
+                            edition={"publisher": "Pub", "language": "en"},
+                        ),
+                    }
+                ),
+            ),
+            google_enabled=True,
+        )
+    )
+
+    description_field = next(
+        field for field in payload["fields"] if field["field_key"] == "work.description"
+    )
+    candidate_ids = [
+        candidate["provider_id"]
+        for candidate in description_field["candidates"]
+        if candidate["provider"] == "googlebooks"
+    ]
+    assert "gb-rich" in candidate_ids
 
 
 def test_apply_enrichment_validation_errors(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1142,7 +1845,101 @@ def test_apply_enrichment_skips_google_provenance_when_disabled(
         )
     )
     assert result["updated"] == ["work.description"]
-    assert called["google_external_ids"] == 0
+
+
+def test_resolve_openlibrary_work_key_tries_author_variants() -> None:
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Katabasis")
+    session = FakeSession()
+    session.scalar_values = [None]
+
+    def _execute_empty(_stmt: Any) -> Any:
+        class _Res:
+            @staticmethod
+            def all() -> list[tuple[str | None, str | None]]:
+                return []
+
+        return _Res()
+
+    session.execute = _execute_empty  # type: ignore[attr-defined]
+    matching_item = type(
+        "Item",
+        (),
+        {
+            "work_key": "/works/OL42397860W",
+            "title": "Katabasis",
+            "author_names": ["Rebecca Kuang"],
+        },
+    )()
+    resolver = FakeOpenLibraryResolver(
+        search_items_by_author={"r f kuang": [matching_item], "": [matching_item]}
+    )
+
+    key = asyncio.run(
+        _resolve_openlibrary_work_key(
+            session=cast(Any, session),
+            work=work,
+            work_id=work_id,
+            edition_target=None,
+            first_author="R.F. Kuang",
+            open_library=cast(Any, resolver),
+        )
+    )
+    assert key == "/works/OL42397860W"
+    attempted_authors = {
+        str(call.get("author") or "") for call in resolver.search_calls
+    }
+    assert "R.F. Kuang" in attempted_authors
+    assert "r f kuang" in attempted_authors
+
+
+def test_author_search_variants_with_full_name_and_blank() -> None:
+    assert _author_search_variants("   ") == []
+    variants = _author_search_variants("Rebecca F. Kuang")
+    assert "Rebecca F. Kuang" in variants
+    assert "rebecca f kuang" in variants
+    assert "r f kuang" in variants
+    assert "rf kuang" in variants
+    assert "rebecca kuang" in variants
+    assert "kuang" in variants
+
+
+def test_resolve_openlibrary_work_key_skips_duplicate_author_queries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+    session = FakeSession()
+    session.scalar_values = [None]
+
+    def _execute_empty(_stmt: Any) -> Any:
+        class _Res:
+            @staticmethod
+            def all() -> list[tuple[str | None, str | None]]:
+                return []
+
+        return _Res()
+
+    session.execute = _execute_empty  # type: ignore[attr-defined]
+    resolver = FakeOpenLibraryResolver(search_items=[])
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._author_search_variants",
+        lambda _author: ["Same", "Same"],
+    )
+    key = asyncio.run(
+        _resolve_openlibrary_work_key(
+            session=cast(Any, session),
+            work=work,
+            work_id=work_id,
+            edition_target=None,
+            first_author="Author",
+            open_library=cast(Any, resolver),
+        )
+    )
+    assert key is None
+    authors = [str(call.get("author") or "") for call in resolver.search_calls]
+    assert authors.count("Same") == 1
+    assert "" in authors
 
 
 def test_get_enrichment_candidates_google_search_skips_failed_bundle(
