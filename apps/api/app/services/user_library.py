@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import base64
 import datetime as dt
-import json
+import math
 import uuid
 from typing import Any, Literal, TypeAlias
 
@@ -23,27 +22,22 @@ LibraryItemVisibility: TypeAlias = Literal["private", "public"]
 
 DEFAULT_LIBRARY_STATUS: LibraryItemStatus = "to_read"
 DEFAULT_LIBRARY_VISIBILITY: LibraryItemVisibility = "private"
+LibraryItemSortMode: TypeAlias = Literal[
+    "newest",
+    "oldest",
+    "title_asc",
+    "title_desc",
+    "author_asc",
+    "author_desc",
+    "status_asc",
+    "status_desc",
+    "rating_asc",
+    "rating_desc",
+]
 
 
 def _default_handle(user_id: uuid.UUID) -> str:
     return f"user_{user_id.hex[:8]}"
-
-
-def _encode_cursor(created_at: dt.datetime, item_id: uuid.UUID) -> str:
-    payload = {"created_at": created_at.isoformat(), "id": str(item_id)}
-    raw = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-    return base64.urlsafe_b64encode(raw).decode("ascii")
-
-
-def _decode_cursor(cursor: str) -> tuple[dt.datetime, uuid.UUID]:
-    try:
-        raw = base64.urlsafe_b64decode(cursor.encode("ascii")).decode("utf-8")
-        payload = json.loads(raw)
-        return dt.datetime.fromisoformat(payload["created_at"]), uuid.UUID(
-            payload["id"]
-        )
-    except (ValueError, KeyError, json.JSONDecodeError) as exc:
-        raise ValueError("invalid cursor") from exc
 
 
 def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
@@ -144,8 +138,9 @@ def list_library_items(
     session: Session,
     *,
     user_id: uuid.UUID,
-    limit: int,
-    cursor: str | None,
+    page: int,
+    page_size: int,
+    sort: LibraryItemSortMode,
     status: str | None,
     tag: str | None,
     visibility: str | None,
@@ -159,8 +154,17 @@ def list_library_items(
         .group_by(ReadingSession.library_item_id)
         .subquery()
     )
+    author_sort_subquery = (
+        sa.select(
+            WorkAuthor.work_id.label("work_id"),
+            sa.func.min(sa.func.lower(Author.name)).label("first_author_name"),
+        )
+        .join(Author, Author.id == WorkAuthor.author_id)
+        .group_by(WorkAuthor.work_id)
+        .subquery()
+    )
 
-    stmt = (
+    filtered_stmt = (
         sa.select(
             LibraryItem,
             Work.title,
@@ -175,35 +179,107 @@ def list_library_items(
         .join(Work, Work.id == LibraryItem.work_id)
         .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
         .join(
+            author_sort_subquery,
+            author_sort_subquery.c.work_id == Work.id,
+            isouter=True,
+        )
+        .join(
             last_read_subquery,
             last_read_subquery.c.library_item_id == LibraryItem.id,
             isouter=True,
         )
         .where(LibraryItem.user_id == user_id)
-        .order_by(LibraryItem.created_at.desc(), LibraryItem.id.desc())
     )
     if status is not None:
-        stmt = stmt.where(LibraryItem.status == status)
+        filtered_stmt = filtered_stmt.where(LibraryItem.status == status)
     if visibility is not None:
-        stmt = stmt.where(LibraryItem.visibility == visibility)
+        filtered_stmt = filtered_stmt.where(LibraryItem.visibility == visibility)
     if tag is not None:
-        stmt = stmt.where(LibraryItem.tags.contains([tag]))
-
-    if cursor:
-        cursor_created, cursor_id = _decode_cursor(cursor)
-        stmt = stmt.where(
-            sa.or_(
-                LibraryItem.created_at < cursor_created,
-                sa.and_(
-                    LibraryItem.created_at == cursor_created,
-                    LibraryItem.id < cursor_id,
-                ),
+        filtered_stmt = filtered_stmt.where(
+            sa.func.lower(sa.cast(LibraryItem.tags, sa.Text)).like(
+                f"%{tag.strip().lower()}%"
             )
         )
 
-    rows = session.execute(stmt.limit(limit + 1)).all()
-    has_next = len(rows) > limit
-    selected = rows[:limit]
+    total_count_stmt = sa.select(sa.func.count()).select_from(
+        filtered_stmt.order_by(None).subquery()
+    )
+    total_count = int(session.scalar(total_count_stmt) or 0)
+
+    status_order = sa.case(
+        (LibraryItem.status == "abandoned", 1),
+        (LibraryItem.status == "completed", 2),
+        (LibraryItem.status == "reading", 3),
+        (LibraryItem.status == "to_read", 4),
+        else_=5,
+    )
+
+    order_by: tuple[Any, ...]
+    if sort == "newest":
+        order_by = (LibraryItem.created_at.desc(), LibraryItem.id.desc())
+    elif sort == "oldest":
+        order_by = (LibraryItem.created_at.asc(), LibraryItem.id.asc())
+    elif sort == "title_asc":
+        order_by = (
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    elif sort == "title_desc":
+        order_by = (
+            sa.func.lower(Work.title).desc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    elif sort == "author_asc":
+        order_by = (
+            sa.nulls_last(author_sort_subquery.c.first_author_name.asc()),
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    elif sort == "author_desc":
+        order_by = (
+            sa.nulls_last(author_sort_subquery.c.first_author_name.desc()),
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    elif sort == "status_asc":
+        order_by = (
+            status_order.asc(),
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    elif sort == "status_desc":
+        order_by = (
+            status_order.desc(),
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    elif sort == "rating_asc":
+        order_by = (
+            sa.nulls_last(LibraryItem.rating.asc()),
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+    else:
+        order_by = (
+            sa.nulls_last(LibraryItem.rating.desc()),
+            sa.func.lower(Work.title).asc(),
+            LibraryItem.created_at.desc(),
+            LibraryItem.id.desc(),
+        )
+
+    total_pages = math.ceil(total_count / page_size) if total_count else 0
+    offset = (page - 1) * page_size
+    rows = session.execute(
+        filtered_stmt.order_by(*order_by).offset(offset).limit(page_size)
+    ).all()
+    selected = rows
 
     # Avoid N+1: fetch author names for the works in the current page in one query.
     author_names_by_work: dict[uuid.UUID, list[str]] = {}
@@ -246,12 +322,22 @@ def list_library_items(
             }
         )
 
-    next_cursor = None
-    if has_next and selected:
-        last_item = selected[-1][0]
-        next_cursor = _encode_cursor(last_item.created_at, last_item.id)
+    from_value = offset + 1 if selected else 0
+    to_value = offset + len(selected) if selected else 0
 
-    return {"items": items, "next_cursor": next_cursor}
+    return {
+        "items": items,
+        "pagination": {
+            "page": page,
+            "page_size": page_size,
+            "total_count": total_count,
+            "total_pages": total_pages,
+            "from": from_value,
+            "to": to_value,
+            "has_prev": page > 1 and total_pages > 0,
+            "has_next": page < total_pages,
+        },
+    }
 
 
 def get_library_item_by_work_detail(

@@ -11,6 +11,9 @@
               <p class="text-sm text-[var(--p-text-muted-color)]">
                 Filter, sort, and jump back into a book.
               </p>
+              <p class="text-xs text-[var(--p-text-muted-color)]" data-test="library-range-summary">
+                {{ pageRangeLabel }}
+              </p>
             </div>
           </div>
         </div>
@@ -701,14 +704,25 @@
             body="Use the search bar in the top navigation to import books into your library."
           />
 
-          <Button
-            v-if="nextCursor"
-            label="Load more"
-            class="self-start"
-            :loading="loadingMore"
-            data-test="library-load-more"
-            @click="loadMore"
-          />
+          <div
+            v-if="totalCount > 0"
+            class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <p
+              class="text-sm text-[var(--p-text-muted-color)]"
+              data-test="library-pagination-summary"
+            >
+              {{ pageRangeLabel }} books
+            </p>
+            <Paginator
+              :first="Math.max(0, (page - 1) * pageSize)"
+              :rows="pageSize"
+              :total-records="totalCount"
+              :rows-per-page-options="[10, 25, 50, 100]"
+              data-test="library-paginator"
+              @page="onPageChange"
+            />
+          </div>
         </div>
       </template>
     </Card>
@@ -805,6 +819,16 @@ type LibraryItem = {
   last_read_at?: string | null;
   created_at?: string;
 };
+type LibraryPagination = {
+  page: number;
+  page_size: number;
+  total_count: number;
+  total_pages: number;
+  from: number;
+  to: number;
+  has_prev: boolean;
+  has_next: boolean;
+};
 
 const LIBRARY_UPDATED_EVENT = 'chapterverse:library-updated';
 const VIEW_MODE_STORAGE_KEY = 'seedbed.library.viewMode';
@@ -839,10 +863,15 @@ const visibilityFilter = ref<string>('');
 const tagFilter = ref('');
 const sortMode = ref<SortMode>('newest');
 const tableColumns = ref<TableColumnKey[]>([...DEFAULT_TABLE_COLUMNS]);
-const nextCursor = ref<string | null>(null);
+const page = ref(1);
+const pageSize = ref(25);
+const totalCount = ref(0);
+const totalPages = ref(0);
+const pageFrom = ref(0);
+const pageTo = ref(0);
 const loading = ref(false);
-const loadingMore = ref(false);
 const error = ref('');
+const tagFilterDebounceTimer = ref<number | null>(null);
 
 const pendingRemoveItem = ref<LibraryItem | null>(null);
 const removeConfirmOpen = ref(false);
@@ -1097,6 +1126,11 @@ const displayItems = computed(() => {
   return sorted;
 });
 
+const pageRangeLabel = computed(() => {
+  if (!totalCount.value || !totalPages.value) return '0 items';
+  return `${pageFrom.value}-${pageTo.value} of ${totalCount.value}`;
+});
+
 const itemFieldUpdateKey = (
   itemId: string,
   field: 'status' | 'visibility',
@@ -1151,7 +1185,7 @@ const updateLibraryItemField = async <TField extends 'status' | 'visibility'>(
         summary: 'This item was already removed. Refreshing...',
         life: 3000,
       });
-      await fetchPage(false);
+      await fetchPage();
     } else {
       const msg =
         err instanceof ApiClientError ? err.message : 'Unable to update this item right now.';
@@ -1174,29 +1208,48 @@ const onVisibilityEdit = (item: LibraryItem, next: unknown) => {
   void updateLibraryItemField(item, 'visibility', next as LibraryItemVisibility);
 };
 
-const fetchPage = async (append = false) => {
+const fetchPage = async () => {
   error.value = '';
-  if (append) {
-    loadingMore.value = true;
-  } else {
-    loading.value = true;
-  }
+  loading.value = true;
 
   try {
-    const payload = await apiRequest<{ items: LibraryItem[]; next_cursor: string | null }>(
-      '/api/v1/library/items',
-      {
-        query: {
-          limit: 10,
-          cursor: append ? nextCursor.value : undefined,
-          status: statusFilter.value || undefined,
-          visibility: visibilityFilter.value || undefined,
-        },
+    const payload = await apiRequest<{
+      items: LibraryItem[];
+      pagination?: LibraryPagination;
+      next_cursor?: string | null;
+    }>('/api/v1/library/items', {
+      query: {
+        page: page.value,
+        page_size: pageSize.value,
+        sort: sortMode.value,
+        status: statusFilter.value || undefined,
+        visibility: visibilityFilter.value || undefined,
+        tag: tagFilter.value.trim() || undefined,
       },
-    );
+    });
 
-    items.value = append ? [...items.value, ...payload.items] : payload.items;
-    nextCursor.value = payload.next_cursor;
+    const pagination: LibraryPagination = payload.pagination ?? {
+      page: page.value,
+      page_size: pageSize.value,
+      total_count: payload.items.length,
+      total_pages: payload.items.length > 0 ? page.value : 0,
+      from: payload.items.length > 0 ? (page.value - 1) * pageSize.value + 1 : 0,
+      to: (page.value - 1) * pageSize.value + payload.items.length,
+      has_prev: page.value > 1,
+      has_next: Boolean(payload.next_cursor),
+    };
+
+    if (pagination.total_pages > 0 && page.value > pagination.total_pages) {
+      page.value = pagination.total_pages;
+      await fetchPage();
+      return;
+    }
+
+    items.value = payload.items;
+    totalCount.value = pagination.total_count;
+    totalPages.value = pagination.total_pages;
+    pageFrom.value = pagination.from;
+    pageTo.value = pagination.to;
   } catch (err) {
     if (err instanceof ApiClientError) {
       error.value = err.message;
@@ -1205,7 +1258,6 @@ const fetchPage = async (append = false) => {
     }
   } finally {
     loading.value = false;
-    loadingMore.value = false;
   }
 };
 
@@ -1231,6 +1283,11 @@ const confirmRemove = async () => {
 
     removeConfirmOpen.value = false;
     pendingRemoveItem.value = null;
+
+    if (items.value.length === 0 && page.value > 1) {
+      page.value -= 1;
+    }
+    await fetchPage();
   } catch (err) {
     if (err instanceof ApiClientError && err.status === 404) {
       toast.add({
@@ -1240,7 +1297,7 @@ const confirmRemove = async () => {
       });
       removeConfirmOpen.value = false;
       pendingRemoveItem.value = null;
-      await fetchPage(false);
+      await fetchPage();
     } else {
       const msg =
         err instanceof ApiClientError ? err.message : 'Unable to remove this item right now.';
@@ -1251,12 +1308,32 @@ const confirmRemove = async () => {
   }
 };
 
-const loadMore = async () => {
-  await fetchPage(true);
+const resetToFirstPageAndFetch = () => {
+  page.value = 1;
+  void fetchPage();
 };
 
-watch([statusFilter, visibilityFilter], () => {
-  void fetchPage(false);
+const onPageChange = (event: { page: number; rows: number }) => {
+  const nextPage = event.page + 1;
+  const nextRows = event.rows;
+  if (nextPage === page.value && nextRows === pageSize.value) return;
+  page.value = nextPage;
+  pageSize.value = nextRows;
+  void fetchPage();
+};
+
+watch([statusFilter, visibilityFilter, sortMode], () => {
+  resetToFirstPageAndFetch();
+});
+
+watch(tagFilter, () => {
+  if (tagFilterDebounceTimer.value !== null) {
+    window.clearTimeout(tagFilterDebounceTimer.value);
+  }
+  tagFilterDebounceTimer.value = window.setTimeout(() => {
+    resetToFirstPageAndFetch();
+    tagFilterDebounceTimer.value = null;
+  }, 300);
 });
 
 watch(viewMode, (next) => {
@@ -1268,17 +1345,21 @@ watch(tableColumns, (next) => {
 });
 
 const onLibraryUpdated = () => {
-  void fetchPage(false);
+  void fetchPage();
 };
 
 onMounted(() => {
   viewMode.value = readStoredViewMode();
   tableColumns.value = readStoredTableColumns();
   window.addEventListener(LIBRARY_UPDATED_EVENT, onLibraryUpdated);
-  void fetchPage(false);
+  void fetchPage();
 });
 
 onBeforeUnmount(() => {
+  if (tagFilterDebounceTimer.value !== null) {
+    window.clearTimeout(tagFilterDebounceTimer.value);
+    tagFilterDebounceTimer.value = null;
+  }
   window.removeEventListener(LIBRARY_UPDATED_EVENT, onLibraryUpdated);
 });
 </script>

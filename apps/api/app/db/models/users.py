@@ -80,6 +80,25 @@ class LibraryItem(Base):
         sa.Index("ix_library_items_status", "status"),
         sa.Index("ix_library_items_visibility", "visibility"),
         sa.Index("ix_library_items_tags", "tags", postgresql_using="gin"),
+        sa.Index(
+            "ix_library_items_user_created_at_id",
+            "user_id",
+            "created_at",
+            "id",
+        ),
+        sa.Index("ix_library_items_user_rating_id", "user_id", "rating", "id"),
+        sa.Index(
+            "ix_library_items_user_status_created_at",
+            "user_id",
+            "status",
+            "created_at",
+        ),
+        sa.Index(
+            "ix_library_items_user_visibility_created_at",
+            "user_id",
+            "visibility",
+            "created_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(

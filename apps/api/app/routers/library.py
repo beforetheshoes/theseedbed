@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -50,8 +50,23 @@ router = APIRouter(
 def list_items(
     auth: Annotated[AuthContext, Depends(require_auth_context)],
     session: Annotated[Session, Depends(get_db_session)],
-    limit: Annotated[int, Query(ge=1, le=100)] = 20,
-    cursor: str | None = None,
+    page: Annotated[int, Query(ge=1)] = 1,
+    page_size: Annotated[int, Query(ge=1, le=100)] = 25,
+    sort: Annotated[
+        Literal[
+            "newest",
+            "oldest",
+            "title_asc",
+            "title_desc",
+            "author_asc",
+            "author_desc",
+            "status_asc",
+            "status_desc",
+            "rating_asc",
+            "rating_desc",
+        ],
+        Query(),
+    ] = "newest",
     status: str | None = None,
     tag: str | None = None,
     visibility: str | None = None,
@@ -60,8 +75,9 @@ def list_items(
         result = list_library_items(
             session,
             user_id=auth.user_id,
-            limit=limit,
-            cursor=cursor,
+            page=page,
+            page_size=page_size,
+            sort=sort,
             status=status,
             tag=tag,
             visibility=visibility,
