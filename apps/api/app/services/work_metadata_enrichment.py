@@ -68,6 +68,44 @@ def _get_google_work_volume_id(session: Session, *, work_id: uuid.UUID) -> str |
     )
 
 
+def _list_isbn_queries(
+    session: Session,
+    *,
+    work_id: uuid.UUID,
+    edition_target: Edition | None,
+) -> list[str]:
+    values: list[str] = []
+    if edition_target is not None:
+        if isinstance(edition_target.isbn13, str) and edition_target.isbn13.strip():
+            values.append(edition_target.isbn13.strip())
+        if isinstance(edition_target.isbn10, str) and edition_target.isbn10.strip():
+            values.append(edition_target.isbn10.strip())
+
+    rows = session.execute(
+        sa.select(Edition.isbn13, Edition.isbn10)
+        .where(Edition.work_id == work_id)
+        .order_by(Edition.created_at.desc(), Edition.id.desc())
+        .limit(8)
+    ).all()
+    for isbn13, isbn10 in rows:
+        if isinstance(isbn13, str) and isbn13.strip():
+            values.append(isbn13.strip())
+        if isinstance(isbn10, str) and isbn10.strip():
+            values.append(isbn10.strip())
+
+    result: list[str] = []
+    seen: set[str] = set()
+    for raw in values:
+        normalized = raw.replace("-", "").replace(" ", "")
+        if len(normalized) not in {10, 13}:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
 def _first_author_name(session: Session, *, work_id: uuid.UUID) -> str | None:
     return session.scalar(
         sa.select(Author.name)
@@ -200,6 +238,64 @@ def _normalize_match_text(value: str | None) -> str:
     return " ".join(tokens)
 
 
+def _author_search_variants(author: str | None) -> list[str]:
+    normalized = _normalize_match_text(author)
+    if not normalized:
+        return []
+    tokens = normalized.split()
+    variants: list[str] = []
+    raw = author.strip() if isinstance(author, str) else ""
+    if raw:
+        variants.append(raw)
+    variants.append(" ".join(tokens))
+
+    if len(tokens) >= 2:
+        last_name = tokens[-1]
+        given_tokens = tokens[:-1]
+        initials: list[str] = []
+        for token in given_tokens:
+            if token.isalpha() and len(token) <= 3:
+                initials.extend(list(token))
+            else:
+                initials.append(token[0])
+        if initials:
+            variants.append(f"{' '.join(initials)} {last_name}")
+            variants.append(f"{''.join(initials)} {last_name}")
+        if given_tokens and len(given_tokens[0]) > 1:
+            variants.append(f"{given_tokens[0]} {last_name}")
+        variants.append(last_name)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in variants:
+        candidate = value.strip()
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def _author_name_parts(value: str | None) -> tuple[str, set[str], set[str]]:
+    normalized = _normalize_match_text(value)
+    if not normalized:
+        return ("", set(), set())
+    tokens = normalized.split()
+    if not tokens:
+        return ("", set(), set())
+    last_name = tokens[-1]
+    given_tokens = [token for token in tokens[:-1] if token]
+    initials: set[str] = set()
+    for token in given_tokens:
+        if token.isalpha() and len(token) <= 3:
+            initials.update(token)
+        else:
+            initials.add(token[0])
+    given_set = set(given_tokens)
+    return (last_name, initials, given_set)
+
+
 def _title_match_score(work_title: str, candidate_title: str) -> int:
     expected = _normalize_match_text(work_title)
     actual = _normalize_match_text(candidate_title)
@@ -232,6 +328,9 @@ def _author_match_score(
         return 1
     if not candidate_authors:
         return 0
+    expected_last, expected_initials, expected_given = _author_name_parts(
+        expected_author
+    )
     for candidate in candidate_authors:
         normalized = _normalize_match_text(candidate)
         if not normalized:
@@ -248,6 +347,22 @@ def _author_match_score(
         coverage = overlap / len(expected_tokens)
         if coverage >= 0.7:
             return 2
+        candidate_last, candidate_initials, candidate_given = _author_name_parts(
+            candidate
+        )
+        if expected_last and candidate_last and expected_last == candidate_last:
+            if (
+                expected_initials
+                and candidate_initials
+                and (expected_initials & candidate_initials)
+            ):
+                return 2
+            if (
+                expected_given
+                and candidate_given
+                and (expected_given & candidate_given)
+            ):
+                return 2
     return 0
 
 
@@ -334,6 +449,95 @@ def _best_google_bundle(
         return None
     ranked.sort(key=lambda entry: entry[0], reverse=True)
     return ranked[0][1]
+
+
+def _google_bundle_richness(bundle: GoogleBooksWorkBundle) -> int:
+    edition = bundle.edition or {}
+    score = 0
+    if bundle.description:
+        score += 1
+    if bundle.cover_url:
+        score += 1
+    if bundle.first_publish_year is not None:
+        score += 1
+    if edition.get("publisher"):
+        score += 1
+    if edition.get("publish_date_iso"):
+        score += 1
+    if edition.get("isbn10"):
+        score += 1
+    if edition.get("isbn13"):
+        score += 1
+    if edition.get("language"):
+        score += 1
+    if edition.get("format"):
+        score += 1
+    return score
+
+
+def _best_google_bundles(
+    *,
+    work: Work,
+    first_author: str | None,
+    edition_target: Edition | None,
+    bundles: list[GoogleBooksWorkBundle],
+    limit: int = 3,
+) -> list[GoogleBooksWorkBundle]:
+    if not bundles:
+        return []
+
+    selected: list[GoogleBooksWorkBundle] = []
+    strict_best = _best_google_bundle(
+        work=work,
+        first_author=first_author,
+        edition_target=edition_target,
+        bundles=bundles,
+    )
+    seen_volume_ids: set[str] = set()
+    if strict_best is not None:
+        selected.append(strict_best)
+        seen_volume_ids.add(strict_best.volume_id)
+
+    expected_title = _normalize_match_text(work.title)
+    expected_tokens = expected_title.split()
+
+    ranked_title_fallback: list[
+        tuple[tuple[int, int, int, int], GoogleBooksWorkBundle]
+    ] = []
+    for bundle in bundles:
+        if bundle.volume_id in seen_volume_ids:
+            continue
+        isbn_score, title_score, author_score = _google_bundle_rank(
+            work=work,
+            first_author=first_author,
+            edition_target=edition_target,
+            bundle=bundle,
+        )
+        if title_score < 3:
+            continue
+        actual_title = _normalize_match_text(bundle.title)
+        actual_tokens = actual_title.split()
+        if len(expected_tokens) == 1 and len(actual_tokens) > 1:
+            if not actual_tokens or actual_tokens[0] != expected_tokens[0]:
+                continue
+        ranked_title_fallback.append(
+            (
+                (
+                    title_score,
+                    author_score,
+                    isbn_score,
+                    _google_bundle_richness(bundle),
+                ),
+                bundle,
+            )
+        )
+
+    ranked_title_fallback.sort(key=lambda entry: entry[0], reverse=True)
+    for _rank, bundle in ranked_title_fallback:
+        if len(selected) >= limit:
+            break
+        selected.append(bundle)
+    return selected
 
 
 def _google_source_label(bundle: GoogleBooksWorkBundle) -> str:
@@ -430,6 +634,119 @@ def _ensure_google_external_ids(
                     provider_id=volume_id,
                 )
             )
+
+
+def _ensure_openlibrary_external_ids(
+    session: Session,
+    *,
+    work_id: uuid.UUID,
+    edition_id: uuid.UUID | None,
+    work_key: str,
+    edition_key: str | None,
+) -> None:
+    work_link = session.scalar(
+        sa.select(ExternalId).where(
+            ExternalId.entity_type == "work",
+            ExternalId.entity_id == work_id,
+            ExternalId.provider == "openlibrary",
+        )
+    )
+    if work_link is None:
+        existing_provider_id = session.scalar(
+            sa.select(ExternalId).where(
+                ExternalId.entity_type == "work",
+                ExternalId.provider == "openlibrary",
+                ExternalId.provider_id == work_key,
+            )
+        )
+        if existing_provider_id is None:
+            session.add(
+                ExternalId(
+                    entity_type="work",
+                    entity_id=work_id,
+                    provider="openlibrary",
+                    provider_id=work_key,
+                )
+            )
+
+    if edition_id is None or not edition_key:
+        return
+
+    edition_link = session.scalar(
+        sa.select(ExternalId).where(
+            ExternalId.entity_type == "edition",
+            ExternalId.entity_id == edition_id,
+            ExternalId.provider == "openlibrary",
+        )
+    )
+    if edition_link is None:
+        existing_provider_id = session.scalar(
+            sa.select(ExternalId).where(
+                ExternalId.entity_type == "edition",
+                ExternalId.provider == "openlibrary",
+                ExternalId.provider_id == edition_key,
+            )
+        )
+        if existing_provider_id is None:
+            session.add(
+                ExternalId(
+                    entity_type="edition",
+                    entity_id=edition_id,
+                    provider="openlibrary",
+                    provider_id=edition_key,
+                )
+            )
+
+
+async def _resolve_openlibrary_work_key(
+    *,
+    session: Session,
+    work: Work,
+    work_id: uuid.UUID,
+    edition_target: Edition | None,
+    first_author: str | None,
+    open_library: OpenLibraryClient,
+) -> str | None:
+    existing = _get_openlibrary_work_key(session, work_id=work_id)
+    if existing:
+        return existing
+
+    for isbn in _list_isbn_queries(
+        session, work_id=work_id, edition_target=edition_target
+    ):
+        work_key = await open_library.find_work_key_by_isbn(isbn=isbn)
+        if work_key:
+            return work_key
+
+    if not work.title.strip():
+        return None
+    ranked: list[tuple[tuple[int, int], str]] = []
+    author_queries = _author_search_variants(first_author)
+    author_queries.append("")
+    seen_queries: set[str] = set()
+    for author_query in author_queries:
+        normalized_author_query = author_query.strip().lower()
+        if normalized_author_query in seen_queries:
+            continue
+        seen_queries.add(normalized_author_query)
+        search = await open_library.search_books(
+            query=work.title,
+            author=author_query or None,
+            limit=5,
+            sort="relevance",
+        )
+        for item in search.items:
+            title_score = _title_match_score(work.title, item.title)
+            author_score = _author_match_score(
+                expected_author=first_author,
+                candidate_authors=item.author_names,
+            )
+            if title_score >= 3 and (author_score >= 2 or not first_author):
+                ranked.append(((title_score, author_score), item.work_key))
+    if not ranked:
+        return None
+    ranked.sort(key=lambda entry: entry[0], reverse=True)
+    return ranked[0][1]
 
 
 def _bundle_values_openlibrary(bundle: OpenLibraryWorkBundle) -> dict[str, Any]:
@@ -554,78 +871,117 @@ async def get_enrichment_candidates(
         "succeeded": [],
         "failed": [],
     }
-
-    work_key = _get_openlibrary_work_key(session, work_id=work_id)
-    if not work_key:
-        raise LookupError("work does not have an Open Library mapping")
-
-    openlibrary_bundle = await open_library.fetch_work_bundle(work_key=work_key)
-    provider_status["succeeded"].append("openlibrary")
-    _upsert_source_record(
-        session,
-        provider="openlibrary",
-        entity_type="work",
-        provider_id=openlibrary_bundle.work_key,
-        raw=openlibrary_bundle.raw_work,
-    )
-    if openlibrary_bundle.edition and openlibrary_bundle.raw_edition:
-        edition_provider_id = str(openlibrary_bundle.edition.get("key") or "")
-        if edition_provider_id:
+    first_author = _first_author_name(session, work_id=work_id)
+    try:
+        work_key = await _resolve_openlibrary_work_key(
+            session=session,
+            work=work,
+            work_id=work_id,
+            edition_target=edition_target,
+            first_author=first_author,
+            open_library=open_library,
+        )
+        if work_key is not None:
+            openlibrary_bundle = await open_library.fetch_work_bundle(work_key=work_key)
+            provider_status["succeeded"].append("openlibrary")
             _upsert_source_record(
                 session,
                 provider="openlibrary",
-                entity_type="edition",
-                provider_id=edition_provider_id,
-                raw=openlibrary_bundle.raw_edition,
+                entity_type="work",
+                provider_id=openlibrary_bundle.work_key,
+                raw=openlibrary_bundle.raw_work,
             )
+            if openlibrary_bundle.edition and openlibrary_bundle.raw_edition:
+                edition_provider_id = str(openlibrary_bundle.edition.get("key") or "")
+                if edition_provider_id:
+                    _upsert_source_record(
+                        session,
+                        provider="openlibrary",
+                        entity_type="edition",
+                        provider_id=edition_provider_id,
+                        raw=openlibrary_bundle.raw_edition,
+                    )
 
-    for field_key, value in _bundle_values_openlibrary(openlibrary_bundle).items():
-        provider_id = work_key
-        if field_key.startswith("edition.") and openlibrary_bundle.edition:
-            provider_id = str(openlibrary_bundle.edition.get("key") or work_key)
-        _add_candidate(
-            field_key=field_key,
-            provider="openlibrary",
-            provider_id=provider_id,
-            value=value,
-            candidates_by_field=candidates_by_field,
-            seen=seen,
+            for field_key, value in _bundle_values_openlibrary(
+                openlibrary_bundle
+            ).items():
+                provider_id = work_key
+                if field_key.startswith("edition.") and openlibrary_bundle.edition:
+                    provider_id = str(openlibrary_bundle.edition.get("key") or work_key)
+                _add_candidate(
+                    field_key=field_key,
+                    provider="openlibrary",
+                    provider_id=provider_id,
+                    value=value,
+                    candidates_by_field=candidates_by_field,
+                    seen=seen,
+                )
+        else:
+            provider_status["failed"].append(
+                {
+                    "provider": "openlibrary",
+                    "code": "openlibrary_match_not_found",
+                    "message": "No Open Library match found for this work.",
+                }
+            )
+    except Exception as exc:
+        provider_status["failed"].append(
+            {
+                "provider": "openlibrary",
+                "code": "open_library_unavailable",
+                "message": str(exc),
+            }
         )
 
     if google_enabled:
         provider_status["attempted"].append("googlebooks")
         google_bundles: list[GoogleBooksWorkBundle] = []
         google_id = _get_google_work_volume_id(session, work_id=work_id)
-        first_author = _first_author_name(session, work_id=work_id)
         try:
+            fetched_by_volume: dict[str, GoogleBooksWorkBundle] = {}
             if google_id:
-                google_bundles = [
-                    await google_books.fetch_work_bundle(volume_id=google_id)
-                ]
-            else:
+                try:
+                    mapped_bundle = await google_books.fetch_work_bundle(
+                        volume_id=google_id
+                    )
+                except Exception:
+                    mapped_bundle = None
+                if mapped_bundle is not None:
+                    fetched_by_volume[mapped_bundle.volume_id] = mapped_bundle
+
+            author_queries = _author_search_variants(first_author)
+            author_queries.append("")
+            seen_author_queries: set[str] = set()
+            for author_query in author_queries:
+                normalized_author_query = author_query.strip().lower()
+                if normalized_author_query in seen_author_queries:
+                    continue
+                seen_author_queries.add(normalized_author_query)
                 search = await google_books.search_books(
                     query=work.title,
-                    author=first_author,
-                    limit=3,
+                    author=author_query or None,
+                    limit=5,
                     page=1,
                 )
-                fetched_bundles: list[GoogleBooksWorkBundle] = []
-                for item in search.items[:3]:
+                for item in search.items[:5]:
+                    if item.volume_id in fetched_by_volume:
+                        continue
                     try:
                         candidate_bundle = await google_books.fetch_work_bundle(
                             volume_id=item.volume_id
                         )
                     except Exception:
                         continue
-                    fetched_bundles.append(candidate_bundle)
-                best_bundle = _best_google_bundle(
-                    work=work,
-                    first_author=first_author,
-                    edition_target=edition_target,
-                    bundles=fetched_bundles,
-                )
-                if best_bundle is not None:
-                    google_bundles = [best_bundle]
+                    fetched_by_volume[item.volume_id] = candidate_bundle
+                if len(fetched_by_volume) >= 8:
+                    break
+            fetched_bundles = list(fetched_by_volume.values())
+            google_bundles = _best_google_bundles(
+                work=work,
+                first_author=first_author,
+                edition_target=edition_target,
+                bundles=fetched_bundles,
+            )
 
             for google_bundle in google_bundles:
                 _upsert_source_record(
@@ -779,9 +1135,14 @@ async def apply_enrichment_selections(
         updated.append(field_key)
 
     for provider, provider_id in selected_sources:
-        if provider == "openlibrary" and work_key:
+        if provider == "openlibrary":
+            selected_work_key = (
+                provider_id if provider_id.startswith("/works/") else work_key
+            )
+            if not selected_work_key:
+                continue
             openlibrary_bundle = await open_library.fetch_work_bundle(
-                work_key=work_key,
+                work_key=selected_work_key,
                 edition_key=(
                     provider_id if provider_id.startswith("/books/") else None
                 ),
@@ -792,6 +1153,17 @@ async def apply_enrichment_selections(
                 entity_type="work",
                 provider_id=openlibrary_bundle.work_key,
                 raw=openlibrary_bundle.raw_work,
+            )
+            _ensure_openlibrary_external_ids(
+                session,
+                work_id=work_id,
+                edition_id=edition_target.id if edition_target else None,
+                work_key=openlibrary_bundle.work_key,
+                edition_key=(
+                    str(openlibrary_bundle.edition.get("key") or "")
+                    if openlibrary_bundle.edition
+                    else None
+                ),
             )
             if openlibrary_bundle.edition and openlibrary_bundle.raw_edition:
                 edition_provider_id = str(openlibrary_bundle.edition.get("key") or "")

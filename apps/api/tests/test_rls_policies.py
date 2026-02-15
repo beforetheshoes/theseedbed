@@ -755,6 +755,8 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
         "work_authors",
         "external_ids",
         "source_records",
+        "storygraph_import_jobs",
+        "storygraph_import_job_rows",
     }
     # Some Supabase images may include extension tables in public.
     ignored = {

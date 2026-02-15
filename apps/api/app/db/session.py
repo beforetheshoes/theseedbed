@@ -25,3 +25,7 @@ def get_db_session() -> Iterator[Session]:
         yield session
     finally:
         session.close()
+
+
+def create_db_session() -> Session:
+    return _session_factory()()

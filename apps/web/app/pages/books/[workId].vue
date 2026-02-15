@@ -85,6 +85,10 @@
                 <span class="font-medium">Authors:</span>
                 {{ work.authors.map((a) => a.name).join(', ') }}
               </p>
+              <p v-if="identifierSummary.length" class="text-sm">
+                <span class="font-medium">Identifiers:</span>
+                {{ identifierSummary.join(' | ') }}
+              </p>
               <div
                 v-if="renderedDescriptionHtml"
                 class="prose prose-sm max-w-none dark:prose-invert"
@@ -958,6 +962,11 @@ type WorkDetail = {
   description: string | null;
   cover_url: string | null;
   authors: { id: string; name: string }[];
+  identifiers?: {
+    isbn10?: string | null;
+    isbn13?: string | null;
+    asin?: string | null;
+  } | null;
 };
 
 type LibraryItem = {
@@ -1119,21 +1128,39 @@ const effectiveCoverUrl = computed(
   () => libraryItem.value?.cover_url ?? work.value?.cover_url ?? null,
 );
 
+const identifierSummary = computed(() => {
+  const ids = work.value?.identifiers;
+  if (!ids) return [];
+  const values: string[] = [];
+  if (ids.isbn10) values.push(`ISBN-10 ${ids.isbn10}`);
+  if (ids.isbn13) values.push(`ISBN-13 ${ids.isbn13}`);
+  if (ids.asin) values.push(`ASIN ${ids.asin}`);
+  return values;
+});
+
 /* c8 ignore start */
 const enrichRows = computed<EnrichmentRow[]>(() =>
-  enrichFields.value.map((field) => {
-    const byProvider: Partial<Record<EnrichmentProvider, EnrichmentCandidate>> = {};
-    for (const candidate of field.candidates) {
-      byProvider[candidate.provider] = candidate;
-    }
-    return {
-      fieldKey: field.field_key,
-      label: enrichmentFieldLabel(field.field_key),
-      currentValue: field.current_value,
-      byProvider,
-      hasConflict: field.has_conflict,
-    };
-  }),
+  [...enrichFields.value]
+    .sort((a, b) => {
+      const aIsCover = a.field_key === 'work.cover_url';
+      const bIsCover = b.field_key === 'work.cover_url';
+      if (aIsCover && !bIsCover) return -1;
+      if (!aIsCover && bIsCover) return 1;
+      return 0;
+    })
+    .map((field) => {
+      const byProvider: Partial<Record<EnrichmentProvider, EnrichmentCandidate>> = {};
+      for (const candidate of field.candidates) {
+        byProvider[candidate.provider] = candidate;
+      }
+      return {
+        fieldKey: field.field_key,
+        label: enrichmentFieldLabel(field.field_key),
+        currentValue: field.current_value,
+        byProvider,
+        hasConflict: field.has_conflict,
+      };
+    }),
 );
 
 /* c8 ignore stop */
@@ -1628,7 +1655,10 @@ const openEnrichmentDialog = async () => {
   await loadEnrichmentCandidates();
 };
 
-const pickAllFromProvider = (provider: EnrichmentProvider) => {
+const pickAllFromProvider = async (provider: EnrichmentProvider) => {
+  if (enrichLoading.value || enrichApplying.value) {
+    return;
+  }
   const next = { ...enrichSelectionByField.value };
   for (const row of enrichRows.value) {
     if (row.byProvider[provider]) {
@@ -1636,6 +1666,7 @@ const pickAllFromProvider = (provider: EnrichmentProvider) => {
     }
   }
   enrichSelectionByField.value = next;
+  await applyEnrichmentSelections();
 };
 
 const resetAllToCurrent = () => {

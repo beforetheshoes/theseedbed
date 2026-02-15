@@ -12,6 +12,28 @@ from app.services.google_books import GoogleBooksWorkBundle
 from app.services.open_library import OpenLibraryWorkBundle
 
 
+def _normalize_isbn10(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().replace("-", "").replace(" ", "").upper()
+    if len(normalized) != 10:
+        return None
+    if not normalized[:9].isdigit():
+        return None
+    if not (normalized[9].isdigit() or normalized[9] == "X"):
+        return None
+    return normalized
+
+
+def _normalize_isbn13(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().replace("-", "").replace(" ", "")
+    if len(normalized) != 13 or not normalized.isdigit():
+        return None
+    return normalized
+
+
 def _get_external_id(
     session: Session,
     *,
@@ -146,6 +168,8 @@ def import_openlibrary_bundle(
     edition_id = None
     edition_key = None
     if bundle.edition is not None:
+        normalized_isbn10 = _normalize_isbn10(bundle.edition.get("isbn10"))
+        normalized_isbn13 = _normalize_isbn13(bundle.edition.get("isbn13"))
         edition_key = str(bundle.edition["key"])
         edition_external = _get_external_id(
             session,
@@ -157,10 +181,10 @@ def import_openlibrary_bundle(
             edition = session.get(Edition, edition_external.entity_id)
             if edition is None:
                 raise RuntimeError("edition external ID points to missing edition")
-            if edition.isbn10 is None and bundle.edition.get("isbn10"):
-                edition.isbn10 = bundle.edition.get("isbn10")
-            if edition.isbn13 is None and bundle.edition.get("isbn13"):
-                edition.isbn13 = bundle.edition.get("isbn13")
+            if edition.isbn10 is None and normalized_isbn10:
+                edition.isbn10 = normalized_isbn10
+            if edition.isbn13 is None and normalized_isbn13:
+                edition.isbn13 = normalized_isbn13
             if edition.publisher is None and bundle.edition.get("publisher"):
                 edition.publisher = bundle.edition.get("publisher")
             if edition.publish_date is None and isinstance(
@@ -176,8 +200,8 @@ def import_openlibrary_bundle(
         else:
             edition = Edition(
                 work_id=work.id,
-                isbn10=bundle.edition.get("isbn10"),
-                isbn13=bundle.edition.get("isbn13"),
+                isbn10=normalized_isbn10,
+                isbn13=normalized_isbn13,
                 publisher=bundle.edition.get("publisher"),
                 publish_date=(
                     bundle.edition.get("publish_date_iso")
@@ -282,12 +306,12 @@ def import_googlebooks_bundle(
     )
 
     edition_data = bundle.edition if isinstance(bundle.edition, dict) else {}
-    isbn10 = edition_data.get("isbn10")
-    isbn13 = edition_data.get("isbn13")
+    isbn10 = _normalize_isbn10(edition_data.get("isbn10"))
+    isbn13 = _normalize_isbn13(edition_data.get("isbn13"))
     matched_work = _find_work_by_isbn(
         session,
-        isbn10=isbn10 if isinstance(isbn10, str) else None,
-        isbn13=isbn13 if isinstance(isbn13, str) else None,
+        isbn10=isbn10,
+        isbn13=isbn13,
     )
 
     if work_external is not None:
@@ -384,9 +408,9 @@ def import_googlebooks_bundle(
         else:
             existing_by_isbn: Edition | None = None
             predicates: list[Any] = []
-            if isinstance(isbn13, str) and isbn13:
+            if isbn13:
                 predicates.append(Edition.isbn13 == isbn13)
-            if isinstance(isbn10, str) and isbn10:
+            if isbn10:
                 predicates.append(Edition.isbn10 == isbn10)
             if predicates:
                 existing_by_isbn = session.scalar(
@@ -400,8 +424,8 @@ def import_googlebooks_bundle(
             else:
                 edition = Edition(
                     work_id=work.id,
-                    isbn10=isbn10 if isinstance(isbn10, str) else None,
-                    isbn13=isbn13 if isinstance(isbn13, str) else None,
+                    isbn10=isbn10,
+                    isbn13=isbn13,
                     publisher=(
                         edition_data.get("publisher")
                         if isinstance(edition_data.get("publisher"), str)
@@ -444,9 +468,9 @@ def import_googlebooks_bundle(
                     )
                 )
 
-        if edition.isbn10 is None and isinstance(isbn10, str):
+        if edition.isbn10 is None and isbn10:
             edition.isbn10 = isbn10
-        if edition.isbn13 is None and isinstance(isbn13, str):
+        if edition.isbn13 is None and isbn13:
             edition.isbn13 = isbn13
         if edition.publisher is None and isinstance(edition_data.get("publisher"), str):
             edition.publisher = edition_data.get("publisher")

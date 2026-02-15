@@ -24,6 +24,7 @@ from app.routers import (
     protected,
     reviews,
     sessions,
+    storygraph_imports,
     version,
     works,
 )
@@ -81,6 +82,7 @@ def create_app() -> FastAPI:
     app.include_router(library.router)
     app.include_router(library_search.router)
     app.include_router(sessions.router)
+    app.include_router(storygraph_imports.router)
     app.include_router(notes.router)
     app.include_router(highlights.router)
     app.include_router(reviews.public_router)

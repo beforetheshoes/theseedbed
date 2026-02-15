@@ -10,6 +10,8 @@ from app.db.models.bibliography import Author, Edition, Work
 from app.db.models.external_provider import ExternalId, SourceRecord
 from app.services.catalog import (
     _get_external_id,
+    _normalize_isbn10,
+    _normalize_isbn13,
     _upsert_source_record,
     import_googlebooks_bundle,
     import_openlibrary_bundle,
@@ -108,6 +110,19 @@ def test_get_external_id_delegates_to_session_scalar() -> None:
         provider_id="/works/OL1W",
     )
     assert actual is expected
+
+
+def test_normalize_isbn_helpers_strip_hyphens_and_spaces() -> None:
+    assert _normalize_isbn10(" 0-306-40615-2 ") == "0306406152"
+    assert _normalize_isbn10("0 8044 2957 X") == "080442957X"
+    assert _normalize_isbn13(" 978-8804809845 ") == "9788804809845"
+
+
+def test_normalize_isbn_helpers_reject_invalid_values() -> None:
+    assert _normalize_isbn10("123") is None
+    assert _normalize_isbn10("ABCDEFGHIJ") is None
+    assert _normalize_isbn13("978-88ABC09845") is None
+    assert _normalize_isbn13("978880480984") is None
 
 
 def test_upsert_source_record_creates_and_updates() -> None:

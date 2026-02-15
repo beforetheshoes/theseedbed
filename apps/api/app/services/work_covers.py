@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
 
 import sqlalchemy as sa
@@ -13,6 +14,142 @@ from app.db.models.users import LibraryItem
 from app.services.covers import cache_cover_to_storage, cache_edition_cover_from_url
 from app.services.google_books import GoogleBooksClient
 from app.services.open_library import OpenLibraryClient
+
+_WORD_RE = re.compile(r"[a-z0-9]+")
+
+
+def _normalize_match_text(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    return " ".join(_WORD_RE.findall(value.lower()))
+
+
+def _author_search_variants(author: str | None) -> list[str]:
+    normalized = _normalize_match_text(author)
+    if not normalized:
+        return []
+    tokens = normalized.split()
+    variants: list[str] = []
+    raw = author.strip() if isinstance(author, str) else ""
+    if raw:
+        variants.append(raw)
+    variants.append(" ".join(tokens))
+    if len(tokens) >= 2:
+        last_name = tokens[-1]
+        given_tokens = tokens[:-1]
+        initials: list[str] = []
+        for token in given_tokens:
+            if token.isalpha() and len(token) <= 3:
+                initials.extend(list(token))
+            else:
+                initials.append(token[0])
+        if initials:
+            variants.append(f"{' '.join(initials)} {last_name}")
+            variants.append(f"{''.join(initials)} {last_name}")
+        if given_tokens and len(given_tokens[0]) > 1:
+            variants.append(f"{given_tokens[0]} {last_name}")
+        variants.append(last_name)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in variants:
+        candidate = value.strip()
+        key = candidate.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(candidate)
+    return deduped
+
+
+def _normalized_isbn_candidates(session: Session, *, work_id: uuid.UUID) -> list[str]:
+    values: list[str] = []
+    rows = session.execute(
+        sa.select(Edition.isbn13, Edition.isbn10)
+        .where(Edition.work_id == work_id)
+        .order_by(Edition.created_at.desc(), Edition.id.desc())
+        .limit(8)
+    ).all()
+    for isbn13, isbn10 in rows:
+        if isinstance(isbn13, str) and isbn13.strip():
+            values.append(isbn13.strip())
+        if isinstance(isbn10, str) and isbn10.strip():
+            values.append(isbn10.strip())
+    seen: set[str] = set()
+    result: list[str] = []
+    for raw in values:
+        normalized = raw.replace("-", "").replace(" ", "")
+        if len(normalized) not in {10, 13}:
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+    return result
+
+
+async def _search_openlibrary_cover_candidates(
+    session: Session,
+    *,
+    work_id: uuid.UUID,
+    open_library: OpenLibraryClient,
+) -> list[dict[str, object]]:
+    work = session.get(Work, work_id)
+    if work is None:
+        return []
+
+    title_query = work.title.strip()
+    author_query = _first_author_name(session, work_id=work_id)
+    search_queries = [
+        f"isbn:{isbn}" for isbn in _normalized_isbn_candidates(session, work_id=work_id)
+    ]
+    if title_query:
+        search_queries.append(title_query)
+
+    seen_queries: set[str] = set()
+    seen_urls: set[str] = set()
+    items: list[dict[str, object]] = []
+    for query in search_queries:
+        normalized_query = query.strip()
+        if not normalized_query or normalized_query in seen_queries:
+            continue
+        seen_queries.add(normalized_query)
+        author_queries = (
+            [""]
+            if normalized_query.startswith("isbn:")
+            else [*_author_search_variants(author_query), ""]
+        )
+        seen_author_queries: set[str] = set()
+        for author_candidate in author_queries:
+            normalized_author_candidate = author_candidate.strip().lower()
+            if normalized_author_candidate in seen_author_queries:
+                continue
+            seen_author_queries.add(normalized_author_candidate)
+            response = await open_library.search_books(
+                query=normalized_query,
+                limit=8,
+                page=1,
+                author=author_candidate or None,
+                sort="relevance",
+            )
+            for candidate in response.items:
+                if not candidate.cover_url:
+                    continue
+                if candidate.cover_url in seen_urls:
+                    continue
+                seen_urls.add(candidate.cover_url)
+                items.append(
+                    {
+                        "source": "openlibrary",
+                        "source_id": candidate.work_key,
+                        "thumbnail_url": candidate.cover_url,
+                        "image_url": candidate.cover_url,
+                        "source_url": candidate.cover_url,
+                    }
+                )
+                if len(items) >= 16:
+                    return items
+    return items
 
 
 def _work_has_global_cover(session: Session, *, work_id: uuid.UUID) -> bool:
@@ -41,7 +178,9 @@ async def list_openlibrary_cover_candidates(
         )
     )
     if provider_id is None:
-        return []
+        return await _search_openlibrary_cover_candidates(
+            session, work_id=work_id, open_library=open_library
+        )
 
     cover_ids: list[int] = []
     source = session.scalar(
@@ -80,7 +219,11 @@ async def list_openlibrary_cover_candidates(
                 "source_url": f"https://covers.openlibrary.org/b/id/{cover_id}-L.jpg",
             }
         )
-    return items
+    if items:
+        return items
+    return await _search_openlibrary_cover_candidates(
+        session, work_id=work_id, open_library=open_library
+    )
 
 
 def _list_isbn_queries(session: Session, *, work_id: uuid.UUID) -> list[str]:
@@ -177,34 +320,45 @@ async def list_googlebooks_cover_candidates(
         if not normalized_query or normalized_query in seen_queries:
             continue
         seen_queries.add(normalized_query)
-        response = await google_books.search_books(
-            query=normalized_query,
-            limit=8,
-            page=1,
-            author=(None if normalized_query.startswith("isbn:") else author_query),
-            sort="relevance",
+        author_queries = (
+            [""]
+            if normalized_query.startswith("isbn:")
+            else [*_author_search_variants(author_query), ""]
         )
-        for candidate in response.items:
-            if not candidate.cover_url:
+        seen_author_queries: set[str] = set()
+        for author_candidate in author_queries:
+            normalized_author_candidate = author_candidate.strip().lower()
+            if normalized_author_candidate in seen_author_queries:
                 continue
-            if candidate.cover_url in seen_urls:
-                continue
-            seen_urls.add(candidate.cover_url)
-            items.append(
-                {
-                    "source": "googlebooks",
-                    "source_id": candidate.volume_id,
-                    "thumbnail_url": candidate.cover_url,
-                    "image_url": candidate.cover_url,
-                    "source_url": candidate.cover_url,
-                    "attribution": {
-                        "text": "Cover image from Google Books",
-                        "url": candidate.attribution_url,
-                    },
-                }
+            seen_author_queries.add(normalized_author_candidate)
+            response = await google_books.search_books(
+                query=normalized_query,
+                limit=8,
+                page=1,
+                author=author_candidate or None,
+                sort="relevance",
             )
-            if len(items) >= 16:
-                return items
+            for candidate in response.items:
+                if not candidate.cover_url:
+                    continue
+                if candidate.cover_url in seen_urls:
+                    continue
+                seen_urls.add(candidate.cover_url)
+                items.append(
+                    {
+                        "source": "googlebooks",
+                        "source_id": candidate.volume_id,
+                        "thumbnail_url": candidate.cover_url,
+                        "image_url": candidate.cover_url,
+                        "source_url": candidate.cover_url,
+                        "attribution": {
+                            "text": "Cover image from Google Books",
+                            "url": candidate.attribution_url,
+                        },
+                    }
+                )
+                if len(items) >= 16:
+                    return items
     return items
 
 

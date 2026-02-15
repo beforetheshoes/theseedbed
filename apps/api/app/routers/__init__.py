@@ -11,6 +11,7 @@ from . import (
     protected,
     reviews,
     sessions,
+    storygraph_imports,
     version,
     works,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "protected",
     "reviews",
     "sessions",
+    "storygraph_imports",
     "version",
     "works",
 ]
