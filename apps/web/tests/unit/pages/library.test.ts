@@ -118,6 +118,11 @@ const mountPage = () =>
             @input="$emit('update:modelValue', $event.target.value)"
           />`,
         },
+        Paginator: {
+          props: ['first', 'rows', 'totalRecords', 'rowsPerPageOptions'],
+          emits: ['page'],
+          template: `<button v-bind="$attrs" @click="$emit('page', { page: 1, rows: 25 })" />`,
+        },
       },
     },
   });
@@ -153,13 +158,20 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: undefined, visibility: undefined },
+      query: {
+        page: 1,
+        page_size: 25,
+        sort: 'newest',
+        status: undefined,
+        visibility: undefined,
+        tag: undefined,
+      },
     });
     expect(wrapper.text()).toContain('Book A');
     expect(wrapper.findAll('[data-test="library-item-cover"]').length).toBeGreaterThan(0);
   });
 
-  it('loads next page when load more is clicked', async () => {
+  it('loads next page when paginator page changes', async () => {
     apiRequest
       .mockResolvedValueOnce({
         items: [
@@ -175,7 +187,16 @@ describe('library page', () => {
             created_at: '2026-02-08T00:00:00Z',
           },
         ],
-        next_cursor: 'cursor-1',
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 40,
+          total_pages: 2,
+          from: 1,
+          to: 25,
+          has_prev: false,
+          has_next: true,
+        },
       })
       .mockResolvedValueOnce({
         items: [
@@ -191,16 +212,32 @@ describe('library page', () => {
             created_at: '2026-02-09T00:00:00Z',
           },
         ],
-        next_cursor: null,
+        pagination: {
+          page: 2,
+          page_size: 25,
+          total_count: 40,
+          total_pages: 2,
+          from: 26,
+          to: 40,
+          has_prev: true,
+          has_next: false,
+        },
       });
 
     const wrapper = mountPage();
     await flushPromises();
-    await wrapper.get('[data-test="library-load-more"]').trigger('click');
+    await wrapper.get('[data-test="library-paginator"]').trigger('click');
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: 'cursor-1', status: undefined, visibility: undefined },
+      query: {
+        page: 2,
+        page_size: 25,
+        sort: 'newest',
+        status: undefined,
+        visibility: undefined,
+        tag: undefined,
+      },
     });
     expect(wrapper.text()).toContain('Book B');
     expect(wrapper.findAll('[data-test="library-item-cover-placeholder"]').length).toBeGreaterThan(
@@ -248,7 +285,14 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: 'reading', visibility: undefined },
+      query: {
+        page: 1,
+        page_size: 25,
+        sort: 'newest',
+        status: 'reading',
+        visibility: undefined,
+        tag: undefined,
+      },
     });
   });
 
@@ -263,7 +307,14 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: undefined, visibility: 'public' },
+      query: {
+        page: 1,
+        page_size: 25,
+        sort: 'newest',
+        status: undefined,
+        visibility: 'public',
+        tag: undefined,
+      },
     });
   });
 
@@ -279,7 +330,14 @@ describe('library page', () => {
     await flushPromises();
 
     expect(apiRequest).toHaveBeenNthCalledWith(2, '/api/v1/library/items', {
-      query: { limit: 10, cursor: undefined, status: undefined, visibility: undefined },
+      query: {
+        page: 1,
+        page_size: 25,
+        sort: 'newest',
+        status: undefined,
+        visibility: undefined,
+        tag: undefined,
+      },
     });
   });
 
@@ -1420,13 +1478,13 @@ describe('library page', () => {
     expect(wrapper.text()).toContain('Book B');
   });
 
-  it('does not request another page when no cursor is present', async () => {
+  it('does not render paginator when no items are present', async () => {
     apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
 
     const wrapper = mountPage();
     await flushPromises();
 
-    expect(wrapper.find('[data-test="library-load-more"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="library-paginator"]').exists()).toBe(false);
     expect(apiRequest).toHaveBeenCalledTimes(1);
   });
 
@@ -1990,5 +2048,38 @@ describe('library page', () => {
     await flushPromises();
 
     expect((wrapper.vm as any).sortMode).toBe('newest');
+  });
+
+  it('clears an existing debounce timer when tag filter changes rapidly', async () => {
+    vi.useFakeTimers();
+    const clearSpy = vi.spyOn(window, 'clearTimeout');
+    apiRequest
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+      .mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-tag-filter"]').setValue('fi');
+    await wrapper.get('[data-test="library-tag-filter"]').setValue('fic');
+    await flushPromises();
+
+    expect(clearSpy).toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+
+  it('clears a pending debounce timer on unmount', async () => {
+    vi.useFakeTimers();
+    const clearSpy = vi.spyOn(window, 'clearTimeout');
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-tag-filter"]').setValue('memoir');
+    wrapper.unmount();
+
+    expect(clearSpy).toHaveBeenCalled();
+    vi.useRealTimers();
   });
 });

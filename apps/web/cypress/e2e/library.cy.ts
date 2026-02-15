@@ -80,12 +80,31 @@ describe('library page (mocked api)', () => {
       const status = typeof req.query.status === 'string' ? req.query.status : undefined;
       const visibility =
         typeof req.query.visibility === 'string' ? req.query.visibility : undefined;
+      const page = Number(req.query.page ?? 1);
+      const pageSize = Number(req.query.page_size ?? 25);
       const filtered = items.filter(
         (item) =>
           (status ? item.status === status : true) &&
           (visibility ? item.visibility === visibility : true),
       );
-      req.reply({ statusCode: 200, body: { data: { items: filtered, next_cursor: null } } });
+      req.reply({
+        statusCode: 200,
+        body: {
+          data: {
+            items: filtered,
+            pagination: {
+              page,
+              page_size: pageSize,
+              total_count: filtered.length,
+              total_pages: filtered.length ? 1 : 0,
+              from: filtered.length ? 1 : 0,
+              to: filtered.length,
+              has_prev: false,
+              has_next: false,
+            },
+          },
+        },
+      });
     }).as('listItems');
 
     cy.intercept('PATCH', 'http://localhost:8000/api/v1/library/items/*', (req) => {
@@ -117,7 +136,10 @@ describe('library page (mocked api)', () => {
 
   it('filters by visibility', () => {
     cy.visit('/library', { onBeforeLoad: seedSession });
-    cy.wait('@listItems');
+    cy.wait('@listItems')
+      .its('request.url')
+      .should('include', 'page=1')
+      .and('include', 'page_size=25');
     cy.contains('Book A').should('be.visible');
     cy.contains('Book B').should('be.visible');
 

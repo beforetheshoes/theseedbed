@@ -8,9 +8,7 @@ import pytest
 
 from app.db.models.users import LibraryItem, User
 from app.services.user_library import (
-    _decode_cursor,
     _default_handle,
-    _encode_cursor,
     create_or_get_library_item,
     delete_library_item,
     get_library_item_by_work,
@@ -43,11 +41,14 @@ class FakeSession:
         self.execute_results: list[list[tuple[Any, ...]]] = []
         self.deleted: list[Any] = []
         self.committed = False
+        self.last_scalar_stmt: Any = None
+        self.last_execute_stmt: Any = None
 
     def get(self, model: type[Any], key: Any) -> Any:
         return self.get_map.get((model, key))
 
     def scalar(self, _stmt: Any) -> Any:
+        self.last_scalar_stmt = _stmt
         if self.scalar_values:
             return self.scalar_values.pop(0)
         return None
@@ -63,26 +64,13 @@ class FakeSession:
         self.committed = True
 
     def execute(self, _stmt: Any) -> FakeExecuteResult:
+        self.last_execute_stmt = _stmt
         if self.execute_results:
             return FakeExecuteResult(self.execute_results.pop(0))
         return FakeExecuteResult(self.execute_rows)
 
     def delete(self, obj: Any) -> None:
         self.deleted.append(obj)
-
-
-def test_cursor_encode_decode_roundtrip() -> None:
-    created_at = dt.datetime.now(tz=dt.UTC).replace(microsecond=0)
-    item_id = uuid.uuid4()
-    cursor = _encode_cursor(created_at, item_id)
-    decoded_created, decoded_id = _decode_cursor(cursor)
-    assert decoded_created == created_at
-    assert decoded_id == item_id
-
-
-def test_cursor_decode_invalid_raises() -> None:
-    with pytest.raises(ValueError):
-        _decode_cursor("not-base64")
 
 
 def test_default_handle() -> None:
@@ -274,37 +262,11 @@ def test_create_or_get_library_item_creates_profile_for_first_time_user() -> Non
     assert session.added[0].id == user_id
 
 
-def test_list_library_items_invalid_cursor() -> None:
+def test_list_library_items_returns_pagination_metadata() -> None:
     session = FakeSession()
-    with pytest.raises(ValueError):
-        list_library_items(
-            cast(Any, session),
-            user_id=uuid.uuid4(),
-            limit=10,
-            cursor="bad",
-            status=None,
-            tag=None,
-            visibility=None,
-        )
-
-
-def test_list_library_items_returns_cursor() -> None:
-    session = FakeSession()
+    session.scalar_values = [2]
     now = dt.datetime.now(tz=dt.UTC).replace(microsecond=0)
     item1 = type(
-        "Item",
-        (),
-        {
-            "id": uuid.uuid4(),
-            "work_id": uuid.uuid4(),
-            "status": "reading",
-            "visibility": "private",
-            "rating": None,
-            "tags": [],
-            "created_at": now,
-        },
-    )()
-    item2 = type(
         "Item",
         (),
         {
@@ -326,7 +288,6 @@ def test_list_library_items_returns_cursor() -> None:
                 None,
                 dt.datetime(2026, 2, 10, 12, 0, tzinfo=dt.UTC),
             ),
-            (item2, "Two", None, "https://example.com/cover.jpg", None),
         ],
         # Author lookup for the page.
         [(item1.work_id, "Author A"), (item1.work_id, "Author A")],
@@ -335,8 +296,9 @@ def test_list_library_items_returns_cursor() -> None:
     result = list_library_items(
         cast(Any, session),
         user_id=uuid.uuid4(),
-        limit=1,
-        cursor=None,
+        page=1,
+        page_size=1,
+        sort="newest",
         status="reading",
         tag=None,
         visibility=None,
@@ -346,7 +308,118 @@ def test_list_library_items_returns_cursor() -> None:
     assert result["items"][0]["work_description"] == "First description"
     assert result["items"][0]["author_names"] == ["Author A"]
     assert result["items"][0]["last_read_at"] == "2026-02-10T12:00:00+00:00"
-    assert result["next_cursor"] is not None
+    assert result["pagination"] == {
+        "page": 1,
+        "page_size": 1,
+        "total_count": 2,
+        "total_pages": 2,
+        "from": 1,
+        "to": 1,
+        "has_prev": False,
+        "has_next": True,
+    }
+
+
+def test_list_library_items_empty_page_metadata() -> None:
+    session = FakeSession()
+    session.scalar_values = [3]
+    session.execute_results = [[]]
+
+    result = list_library_items(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        page=3,
+        page_size=2,
+        sort="rating_desc",
+        status=None,
+        tag="memo",
+        visibility="public",
+    )
+
+    assert result["items"] == []
+    assert result["pagination"] == {
+        "page": 3,
+        "page_size": 2,
+        "total_count": 3,
+        "total_pages": 2,
+        "from": 0,
+        "to": 0,
+        "has_prev": True,
+        "has_next": False,
+    }
+
+
+def test_list_library_items_uses_partial_tag_filter_in_query() -> None:
+    session = FakeSession()
+    session.scalar_values = [0]
+    session.execute_results = [[]]
+
+    list_library_items(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        page=1,
+        page_size=25,
+        sort="newest",
+        status=None,
+        tag="FaV",
+        visibility=None,
+    )
+
+    stmt_text = str(session.last_execute_stmt)
+    assert "lower(CAST(library_items.tags AS TEXT)) LIKE" in stmt_text
+
+
+def test_list_library_items_rating_desc_uses_nulls_last() -> None:
+    session = FakeSession()
+    session.scalar_values = [0]
+    session.execute_results = [[]]
+
+    list_library_items(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        page=1,
+        page_size=25,
+        sort="rating_desc",
+        status=None,
+        tag=None,
+        visibility=None,
+    )
+
+    stmt_text = str(session.last_execute_stmt)
+    assert "NULLS LAST" in stmt_text
+
+
+@pytest.mark.parametrize(
+    "sort_mode",
+    [
+        "oldest",
+        "title_asc",
+        "title_desc",
+        "author_asc",
+        "author_desc",
+        "status_asc",
+        "status_desc",
+        "rating_asc",
+    ],
+)
+def test_list_library_items_supports_all_sort_modes(sort_mode: str) -> None:
+    session = FakeSession()
+    session.scalar_values = [0]
+    session.execute_results = [[]]
+
+    result = list_library_items(
+        cast(Any, session),
+        user_id=uuid.uuid4(),
+        page=1,
+        page_size=25,
+        sort=cast(Any, sort_mode),
+        status=None,
+        tag=None,
+        visibility=None,
+    )
+
+    assert result["items"] == []
+    assert result["pagination"]["page"] == 1
 
 
 def test_get_library_item_by_work_returns_none_when_missing() -> None:
@@ -358,6 +431,32 @@ def test_get_library_item_by_work_returns_none_when_missing() -> None:
         work_id=uuid.uuid4(),
     )
     assert item is None
+
+
+def test_get_library_item_by_work_detail_returns_none_when_missing() -> None:
+    session = FakeSession()
+    session.execute_results = [[]]
+    assert (
+        get_library_item_by_work_detail(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=uuid.uuid4(),
+        )
+        is None
+    )
+
+
+def test_search_library_items_returns_empty_for_blank_query() -> None:
+    session = FakeSession()
+    assert (
+        search_library_items(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            query="   ",
+            limit=10,
+        )
+        == []
+    )
 
 
 def test_update_library_item_requires_at_least_one_field() -> None:

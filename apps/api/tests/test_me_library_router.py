@@ -72,7 +72,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
 
     monkeypatch.setattr(
         "app.routers.library.list_library_items",
-        lambda session, *, user_id, limit, cursor, status, tag, visibility: {
+        lambda session, *, user_id, page, page_size, sort, status, tag, visibility: {
             "items": [
                 {
                     "id": str(uuid.uuid4()),
@@ -88,7 +88,16 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
                     "created_at": dt.datetime.now(tz=dt.UTC).isoformat(),
                 }
             ],
-            "next_cursor": None,
+            "pagination": {
+                "page": page,
+                "page_size": page_size,
+                "total_count": 1,
+                "total_pages": 1,
+                "from": 1,
+                "to": 1,
+                "has_prev": False,
+                "has_next": False,
+            },
         },
     )
     monkeypatch.setattr(
@@ -165,10 +174,19 @@ def test_list_library_items(app: FastAPI) -> None:
     client = TestClient(app)
     response = client.get(
         "/api/v1/library/items",
-        params={"status": "reading", "tag": "tag-a", "visibility": "public"},
+        params={
+            "status": "reading",
+            "tag": "tag-a",
+            "visibility": "public",
+            "page": 2,
+            "page_size": 25,
+            "sort": "author_desc",
+        },
     )
     assert response.status_code == 200
     assert response.json()["data"]["items"][0]["status"] == "reading"
+    assert response.json()["data"]["pagination"]["page"] == 2
+    assert response.json()["data"]["pagination"]["page_size"] == 25
     assert "last_read_at" in response.json()["data"]["items"][0]
 
 
@@ -295,16 +313,28 @@ def test_create_library_item_returns_404(
     assert response.status_code == 404
 
 
-def test_list_library_items_returns_400_for_bad_cursor(
+def test_list_library_items_returns_400_for_bad_params(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
         "app.routers.library.list_library_items",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("invalid cursor")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad params")),
     )
     client = TestClient(app)
-    response = client.get("/api/v1/library/items", params={"cursor": "bad"})
+    response = client.get("/api/v1/library/items", params={"status": "reading"})
     assert response.status_code == 400
+
+
+def test_list_library_items_rejects_invalid_sort(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.get("/api/v1/library/items", params={"sort": "random"})
+    assert response.status_code == 422
+
+
+def test_list_library_items_rejects_invalid_page_size(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.get("/api/v1/library/items", params={"page_size": 101})
+    assert response.status_code == 422
 
 
 def test_patch_library_item(app: FastAPI) -> None:
