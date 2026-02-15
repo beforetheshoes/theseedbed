@@ -69,6 +69,22 @@ const InputTextStub = defineComponent({
   },
 });
 
+const InputGroupStub = defineComponent({
+  name: 'InputGroup',
+  setup:
+    (_props, { slots, attrs }) =>
+    () =>
+      h('div', { ...attrs }, slots.default?.()),
+});
+
+const InputGroupAddonStub = defineComponent({
+  name: 'InputGroupAddon',
+  setup:
+    (_props, { slots, attrs }) =>
+    () =>
+      h('div', { ...attrs }, slots.default?.()),
+});
+
 const SelectButtonStub = defineComponent({
   name: 'SelectButton',
   props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
@@ -181,6 +197,8 @@ describe('AppTopBarBookSearch', () => {
         plugins: [[PrimeVue, { ripple: false }]],
         stubs: {
           Button: ButtonStub,
+          InputGroup: InputGroupStub,
+          InputGroupAddon: InputGroupAddonStub,
           InputText: InputTextStub,
           SelectButton: SelectButtonStub,
           Popover: PopoverStub,
@@ -533,6 +551,18 @@ describe('AppTopBarBookSearch', () => {
     await wrapper.get('[data-test="topbar-search-mobile-open"]').trigger('click');
     await wrapper.get('[data-test="topbar-search-mobile-close"]').trigger('click');
     await wrapper.get('[data-test="dialog-update-visible-false"]').trigger('click');
+  });
+
+  it('uses lg breakpoints so tablet follows the dialog search path', () => {
+    const wrapper = mountSearch();
+
+    const desktopWrapper = wrapper.get('[data-test="topbar-book-search-desktop"]');
+    expect(desktopWrapper.classes()).toContain('lg:block');
+    expect(desktopWrapper.classes()).not.toContain('md:block');
+
+    const dialogTrigger = wrapper.get('[data-test="topbar-search-mobile-open"]');
+    expect(dialogTrigger.classes()).toContain('lg:hidden');
+    expect(dialogTrigger.classes()).not.toContain('md:hidden');
   });
 
   it('mobile controls render and the mobile clear button clears the shared query', async () => {

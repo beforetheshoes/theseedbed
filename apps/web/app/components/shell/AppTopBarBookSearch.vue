@@ -1,31 +1,33 @@
 <template>
   <div>
-    <!-- Desktop: centered popover search -->
+    <!-- Large screens: centered popover search -->
     <div
       v-show="!mobileOpen"
-      class="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 md:block"
+      class="absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 lg:block"
       data-test="topbar-book-search-desktop"
     >
       <div class="flex w-[min(760px,92vw)] items-center gap-2 lg:w-[min(760px,52vw)]">
-        <div ref="anchorEl" class="relative flex flex-1 items-center">
-          <InputText
-            v-model="query"
-            placeholder="Find a book"
-            class="w-full pr-10"
-            data-test="topbar-search-input"
-            @focus="onFocus"
-          />
-          <Button
-            v-if="query.trim().length"
-            icon="pi pi-times"
-            variant="text"
-            severity="secondary"
-            size="small"
-            class="absolute right-1 top-1/2 -translate-y-1/2"
-            aria-label="Clear search"
-            data-test="topbar-search-clear"
-            @click="clear"
-          />
+        <div ref="anchorEl" class="flex flex-1">
+          <InputGroup class="w-full">
+            <InputText
+              v-model="query"
+              placeholder="Find a book"
+              class="w-full"
+              data-test="topbar-search-input"
+              @focus="onFocus"
+            />
+            <InputGroupAddon v-if="query.trim().length">
+              <Button
+                icon="pi pi-times"
+                variant="text"
+                severity="secondary"
+                size="small"
+                aria-label="Clear search"
+                data-test="topbar-search-clear"
+                @click="clear"
+              />
+            </InputGroupAddon>
+          </InputGroup>
         </div>
 
         <SelectButton
@@ -175,9 +177,9 @@
       </Popover>
     </div>
 
-    <!-- Mobile: button that opens a dialog -->
+    <!-- Mobile and tablet: button that opens a dialog -->
     <Button
-      class="md:hidden"
+      class="lg:hidden"
       icon="pi pi-search"
       variant="text"
       severity="secondary"
@@ -198,25 +200,25 @@
     >
       <div class="flex flex-col gap-3">
         <div class="flex flex-col gap-2">
-          <div class="relative flex items-center">
+          <InputGroup>
             <InputText
               v-model="query"
               placeholder="Find a book"
-              class="w-full pr-10"
+              class="w-full"
               data-test="topbar-search-input-mobile"
             />
-            <Button
-              v-if="query.trim().length"
-              icon="pi pi-times"
-              variant="text"
-              severity="secondary"
-              size="small"
-              class="absolute right-1 top-1/2 -translate-y-1/2"
-              aria-label="Clear search"
-              data-test="topbar-search-clear-mobile"
-              @click="clear"
-            />
-          </div>
+            <InputGroupAddon v-if="query.trim().length">
+              <Button
+                icon="pi pi-times"
+                variant="text"
+                severity="secondary"
+                size="small"
+                aria-label="Clear search"
+                data-test="topbar-search-clear-mobile"
+                @click="clear"
+              />
+            </InputGroupAddon>
+          </InputGroup>
 
           <SelectButton
             v-model="scope"
@@ -366,6 +368,8 @@ import Button from 'primevue/button';
 import Card from 'primevue/card';
 import Dialog from 'primevue/dialog';
 import Fieldset from 'primevue/fieldset';
+import InputGroup from 'primevue/inputgroup';
+import InputGroupAddon from 'primevue/inputgroupaddon';
 import InputText from 'primevue/inputtext';
 import Message from 'primevue/message';
 import Popover from 'primevue/popover';
