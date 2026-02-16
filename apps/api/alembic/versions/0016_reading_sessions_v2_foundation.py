@@ -87,72 +87,41 @@ def upgrade() -> None:
         """
     )
 
-    op.create_table(
-        "reading_progress_logs",
-        sa.Column(
-            "id",
-            sa.UUID(as_uuid=True),
-            primary_key=True,
-            server_default=sa.text("gen_random_uuid()"),
-        ),
-        sa.Column(
-            "user_id",
-            sa.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "library_item_id",
-            sa.UUID(as_uuid=True),
-            sa.ForeignKey("library_items.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column(
-            "reading_session_id",
-            sa.UUID(as_uuid=True),
-            sa.ForeignKey("reading_sessions.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("logged_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("unit", reading_progress_unit_enum, nullable=False),
-        sa.Column("value", sa.Numeric(10, 2), nullable=False),
-        sa.Column("canonical_percent", sa.Numeric(6, 3)),
-        sa.Column("note", sa.Text()),
-        sa.Column(
-            "created_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.Column(
-            "updated_at",
-            sa.DateTime(timezone=True),
-            nullable=False,
-            server_default=sa.text("now()"),
-        ),
-        sa.CheckConstraint(
-            "value >= 0",
-            name="ck_reading_progress_logs_value_nonnegative",
-        ),
-        sa.CheckConstraint(
-            "canonical_percent IS NULL OR (canonical_percent >= 0 AND canonical_percent <= 100)",
-            name="ck_reading_progress_logs_canonical_percent_range",
-        ),
-    )
-    op.create_index(
-        "ix_reading_progress_logs_user_id",
-        "reading_progress_logs",
-        ["user_id"],
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS reading_progress_logs (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            library_item_id UUID NOT NULL REFERENCES library_items(id) ON DELETE CASCADE,
+            reading_session_id UUID NOT NULL REFERENCES reading_sessions(id) ON DELETE CASCADE,
+            logged_at TIMESTAMPTZ NOT NULL,
+            unit reading_progress_unit NOT NULL,
+            value NUMERIC(10,2) NOT NULL,
+            canonical_percent NUMERIC(6,3),
+            note TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+            CONSTRAINT ck_reading_progress_logs_value_nonnegative CHECK (value >= 0),
+            CONSTRAINT ck_reading_progress_logs_canonical_percent_range
+                CHECK (canonical_percent IS NULL OR (canonical_percent >= 0 AND canonical_percent <= 100))
+        );
+        """
     )
     op.execute(
         """
-        CREATE INDEX ix_reading_progress_logs_library_item_logged_at
+        CREATE INDEX IF NOT EXISTS ix_reading_progress_logs_user_id
+        ON reading_progress_logs (user_id);
+        """
+    )
+    op.execute(
+        """
+        CREATE INDEX IF NOT EXISTS ix_reading_progress_logs_library_item_logged_at
         ON reading_progress_logs (library_item_id, logged_at DESC);
         """
     )
     op.execute(
         """
-        CREATE INDEX ix_reading_progress_logs_session_logged_at
+        CREATE INDEX IF NOT EXISTS ix_reading_progress_logs_session_logged_at
         ON reading_progress_logs (reading_session_id, logged_at DESC);
         """
     )
