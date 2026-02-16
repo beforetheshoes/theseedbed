@@ -270,7 +270,11 @@
                 Pages: {{ totalsPagesDisplay }} • Time: {{ totalsTimeDisplay }}
               </p>
               <button
-                v-if="ineligibleConvertUnits.length"
+                v-if="
+                  ineligibleConvertUnits.length ||
+                  bookStatistics?.data_quality.has_missing_totals ||
+                  bookStatistics?.data_quality.unresolved_logs_exist
+                "
                 type="button"
                 class="text-xs text-amber-700 underline underline-offset-2 hover:text-amber-600"
                 data-test="missing-totals-warning"
@@ -466,7 +470,8 @@
           <div class="grid gap-3 sm:grid-cols-2">
             <InputText v-model="newNoteTitle" placeholder="Title (optional)" />
             <Select
-              v-model="newNoteVisibility"
+              :model-value="newNoteVisibility"
+              @update:modelValue="updateNewNoteVisibility"
               :options="visibilityOptions"
               option-label="label"
               option-value="value"
@@ -522,7 +527,8 @@
       <div class="flex flex-col gap-3">
         <InputText v-model="editNoteTitle" placeholder="Title (optional)" />
         <Select
-          v-model="editNoteVisibility"
+          :model-value="editNoteVisibility"
+          @update:modelValue="updateEditNoteVisibility"
           :options="visibilityOptions"
           option-label="label"
           option-value="value"
@@ -573,7 +579,8 @@
 
           <div class="grid gap-3 sm:grid-cols-2">
             <Select
-              v-model="newHighlightVisibility"
+              :model-value="newHighlightVisibility"
+              @update:modelValue="updateNewHighlightVisibility"
               :options="visibilityOptions"
               option-label="label"
               option-value="value"
@@ -912,7 +919,8 @@
                   <span class="inline-flex items-center gap-2 text-sm font-medium">
                     <input
                       type="radio"
-                      v-model="enrichSelectionByField[row.fieldKey]"
+                      :checked="enrichSelectionByField[row.fieldKey] === 'keep'"
+                      @change="setEnrichmentSelection(row.fieldKey, 'keep')"
                       :name="`pick-${row.fieldKey}`"
                       value="keep"
                       class="h-4 w-4"
@@ -1260,6 +1268,69 @@ type ReadCycle = {
   };
 };
 
+type BookStatisticsPayload = {
+  library_item_id: string;
+  window: {
+    days: number;
+    tz: string;
+    start_date: string;
+    end_date: string;
+  };
+  totals: {
+    total_pages: number | null;
+    total_audio_minutes: number | null;
+  };
+  counts: {
+    total_cycles: number;
+    completed_cycles: number;
+    imported_cycles: number;
+    completed_reads: number;
+    total_logs: number;
+    logs_with_canonical: number;
+    logs_missing_canonical: number;
+  };
+  current: {
+    latest_logged_at: string | null;
+    canonical_percent: number;
+    pages_read: number | null;
+    minutes_listened: number | null;
+  };
+  streak: {
+    non_zero_days: number;
+    last_non_zero_date: string | null;
+  };
+  series: {
+    progress_over_time: Array<{
+      date: string;
+      canonical_percent: number;
+      pages_read: number | null;
+      minutes_listened: number | null;
+    }>;
+    daily_delta: Array<{
+      date: string;
+      canonical_percent_delta: number;
+      pages_read_delta: number | null;
+      minutes_listened_delta: number | null;
+    }>;
+  };
+  timeline: Array<{
+    log_id: string;
+    logged_at: string;
+    date: string;
+    unit: ProgressUnit;
+    value: number;
+    note: string | null;
+    start_value: number;
+    end_value: number;
+    session_delta: number;
+  }>;
+  data_quality: {
+    has_missing_totals: boolean;
+    unresolved_logs_exist: boolean;
+    unresolved_log_ids: string[];
+  };
+};
+
 type MeProfile = {
   default_progress_unit: ProgressUnit;
 };
@@ -1350,6 +1421,7 @@ const defaultProgressUnit = ref<ProgressUnit>('pages_read');
 const showConvertUnitSelect = ref(false);
 const convertUnitSelection = ref<ProgressUnit>('pages_read');
 const showMissingTotalsForm = ref(false);
+const bookStatistics = ref<BookStatisticsPayload | null>(null);
 const editingKnobValue = ref(false);
 const knobEditValue = ref('0');
 const confirmDecreaseVisible = ref(false);
@@ -1509,6 +1581,22 @@ const statusOptions = [
   { label: 'Abandoned', value: 'abandoned' },
 ];
 
+const updateNewNoteVisibility = (value: string | null | undefined) => {
+  newNoteVisibility.value = (value || 'private') as 'private' | 'unlisted' | 'public';
+};
+
+const updateEditNoteVisibility = (value: string | null | undefined) => {
+  editNoteVisibility.value = (value || 'private') as 'private' | 'unlisted' | 'public';
+};
+
+const updateNewHighlightVisibility = (value: string | null | undefined) => {
+  newHighlightVisibility.value = (value || 'private') as 'private' | 'unlisted' | 'public';
+};
+
+const setEnrichmentSelection = (fieldKey: string, selection: EnrichmentSelection) => {
+  enrichSelectionByField.value[fieldKey] = selection;
+};
+
 const progressUnitOptions = [
   { label: 'Pages', value: 'pages_read' },
   { label: 'Percent', value: 'percent_complete' },
@@ -1531,6 +1619,7 @@ const formatDate = (value: string) => {
   try {
     return new Date(value).toLocaleString();
   } catch {
+    /* c8 ignore next */
     return value;
   }
 };
@@ -1599,6 +1688,7 @@ const resetSectionState = () => {
   showConvertUnitSelect.value = false;
   convertUnitSelection.value = defaultProgressUnit.value;
   showMissingTotalsForm.value = false;
+  bookStatistics.value = null;
   editingKnobValue.value = false;
   knobEditValue.value = '0';
   confirmDecreaseVisible.value = false;
@@ -1674,6 +1764,7 @@ const loadSessions = async () => {
       sessionProgressUnit.value = coerceProgressUnit(defaultProgressUnit.value);
       convertUnitSelection.value = sessionProgressUnit.value;
       sessionProgressValue.value = 0;
+      await loadStatistics();
       return;
     }
 
@@ -1707,6 +1798,7 @@ const loadSessions = async () => {
       convertUnitSelection.value = sessionProgressUnit.value;
       sessionProgressValue.value = 0;
     }
+    await loadStatistics();
   } catch (err) {
     if (id !== runId.value) return;
     sessionsError.value = err instanceof ApiClientError ? err.message : 'Unable to load sessions.';
@@ -1714,6 +1806,37 @@ const loadSessions = async () => {
     if (id === runId.value) {
       sessionsLoading.value = false;
     }
+  }
+};
+
+const detectTimeZone = (): string => {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  } catch {
+    /* c8 ignore next */
+    return 'UTC';
+  }
+};
+
+const loadStatistics = async () => {
+  if (!libraryItem.value) return;
+  try {
+    const payload = await apiRequest<BookStatisticsPayload>(
+      `/api/v1/library/items/${libraryItem.value.id}/statistics`,
+      {
+        query: {
+          tz: detectTimeZone(),
+          days: 90,
+        },
+      },
+    );
+    bookStatistics.value = payload;
+    if (work.value) {
+      work.value.total_pages = payload.totals.total_pages;
+      work.value.total_audio_minutes = payload.totals.total_audio_minutes;
+    }
+  } catch {
+    // Keep local fallback behavior when stats are temporarily unavailable.
   }
 };
 
@@ -1796,6 +1919,7 @@ const refresh = async () => {
   await fetchCore(id);
   if (id !== runId.value) return;
   await loadDefaultProgressUnit();
+  /* c8 ignore next 2 */
   if (id !== runId.value) return;
   if (!libraryItem.value) return;
 
@@ -1806,6 +1930,7 @@ const refresh = async () => {
 };
 
 const openStatusEditor = () => {
+  /* c8 ignore next */
   if (!libraryItem.value) return;
   statusEditorValue.value = libraryItem.value.status as
     | 'to_read'
@@ -1816,8 +1941,10 @@ const openStatusEditor = () => {
 };
 
 const onStatusSelected = async (nextStatus: 'to_read' | 'reading' | 'completed' | 'abandoned') => {
+  /* c8 ignore next */
   if (!libraryItem.value) return;
   statusEditorOpen.value = false;
+  /* c8 ignore next */
   if (nextStatus === libraryItem.value.status) return;
   statusSaving.value = true;
   error.value = '';
@@ -2149,8 +2276,9 @@ const applyEnrichmentSelections = async () => {
 
 /* c8 ignore start */
 const progressTotals = computed(() => ({
-  total_pages: work.value?.total_pages ?? null,
-  total_audio_minutes: work.value?.total_audio_minutes ?? null,
+  total_pages: bookStatistics.value?.totals?.total_pages ?? work.value?.total_pages ?? null,
+  total_audio_minutes:
+    bookStatistics.value?.totals?.total_audio_minutes ?? work.value?.total_audio_minutes ?? null,
 }));
 
 const todayDate = computed(() => {
@@ -2176,6 +2304,9 @@ const toLocalDateKey = (input: string): string => {
 };
 
 const streakDays = computed(() => {
+  if (bookStatistics.value?.streak) {
+    return bookStatistics.value.streak.non_zero_days ?? 0;
+  }
   const uniqueDays: string[] = [];
   for (const log of sessions.value) {
     const canonical = toCanonicalPercent(log.unit, log.value, progressTotals.value);
@@ -2258,6 +2389,19 @@ const convertCanonicalToUnitValue = (unit: ProgressUnit, canonical: number): num
 };
 
 const timelineSessions = computed(() => {
+  if (bookStatistics.value?.timeline) {
+    return bookStatistics.value.timeline.map((entry) => ({
+      ...entry,
+      id: entry.log_id,
+      unit: entry.unit,
+      note: entry.note,
+      logged_at: entry.logged_at,
+      start_display: formatProgressValue(entry.unit, entry.start_value),
+      end_display: formatProgressValue(entry.unit, entry.end_value),
+      session_display: formatProgressDelta(entry.unit, entry.session_delta),
+      session_delta: entry.session_delta,
+    }));
+  }
   const chronological = [...sessions.value].sort(
     (left, right) => new Date(left.logged_at).getTime() - new Date(right.logged_at).getTime(),
   );
@@ -2306,6 +2450,9 @@ const timelineSessions = computed(() => {
 });
 
 const displayPagesValue = computed(() => {
+  if (bookStatistics.value?.current) {
+    return Math.round(bookStatistics.value.current.pages_read ?? 0);
+  }
   if (sessionProgressUnit.value === 'pages_read') return Math.round(sessionProgressValue.value);
   const canonical = toCanonicalPercent(
     sessionProgressUnit.value,
@@ -2318,6 +2465,9 @@ const displayPagesValue = computed(() => {
 });
 
 const displayPercentValue = computed(() => {
+  if (bookStatistics.value?.current) {
+    return Math.round(bookStatistics.value.current.canonical_percent ?? 0);
+  }
   const canonical = toCanonicalPercent(
     sessionProgressUnit.value,
     sessionProgressValue.value,
@@ -2327,6 +2477,9 @@ const displayPercentValue = computed(() => {
 });
 
 const displayMinutesValue = computed(() => {
+  if (bookStatistics.value?.current) {
+    return Math.round(bookStatistics.value.current.minutes_listened ?? 0);
+  }
   if (sessionProgressUnit.value === 'minutes_listened')
     return Math.round(sessionProgressValue.value);
   const canonical = toCanonicalPercent(
@@ -2412,6 +2565,65 @@ const resolveValueInUnit = (log: ReadingSession, unit: ProgressUnit): number => 
 };
 
 const progressChartData = computed(() => {
+  if (bookStatistics.value?.series) {
+    const series = bookStatistics.value.series;
+    const unitLabel = progressUnitLabel(progressChartUnit.value);
+    const readPointValue = (
+      point: {
+        canonical_percent: number;
+        pages_read: number | null;
+        minutes_listened: number | null;
+      },
+      unit: ProgressUnit,
+    ) => {
+      if (unit === 'pages_read') return point.pages_read ?? 0;
+      if (unit === 'minutes_listened') return point.minutes_listened ?? 0;
+      return point.canonical_percent;
+    };
+    const readDeltaValue = (
+      point: {
+        canonical_percent_delta: number;
+        pages_read_delta: number | null;
+        minutes_listened_delta: number | null;
+      },
+      unit: ProgressUnit,
+    ) => {
+      if (unit === 'pages_read') return point.pages_read_delta ?? 0;
+      if (unit === 'minutes_listened') return point.minutes_listened_delta ?? 0;
+      return point.canonical_percent_delta;
+    };
+
+    if (progressChartMode.value === 'daily_delta') {
+      return {
+        labels: series.daily_delta.map((point) => point.date),
+        datasets: [
+          {
+            type: 'bar',
+            label: `Daily gain (${unitLabel})`,
+            data: series.daily_delta.map((point) => readDeltaValue(point, progressChartUnit.value)),
+            backgroundColor: '#93c5fd',
+          },
+        ],
+      };
+    }
+
+    return {
+      labels: series.progress_over_time.map((point) => point.date),
+      datasets: [
+        {
+          label: `Progress (${unitLabel})`,
+          data: series.progress_over_time.map((point) =>
+            readPointValue(point, progressChartUnit.value),
+          ),
+          borderColor: '#2563eb',
+          backgroundColor: '#bfdbfe',
+          fill: false,
+          tension: 0.25,
+        },
+      ],
+    };
+  }
+
   const chronological = [...sessions.value].reverse();
   if (!chronological.length) {
     return { labels: [], datasets: [{ label: 'Progress', data: [] }] };

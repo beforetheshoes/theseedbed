@@ -11,6 +11,7 @@ from app.core.rate_limit import enforce_client_user_rate_limit
 from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
+from app.services.reading_statistics import get_library_item_statistics
 from app.services.user_library import (
     LibraryItemStatus,
     LibraryItemVisibility,
@@ -37,6 +38,89 @@ class UpdateLibraryItemRequest(BaseModel):
     visibility: LibraryItemVisibility | None = None
     rating: int | None = Field(default=None, ge=0, le=10)
     tags: list[str] | None = None
+
+
+class StatisticsWindow(BaseModel):
+    days: int
+    tz: str
+    start_date: str
+    end_date: str
+
+
+class StatisticsTotals(BaseModel):
+    total_pages: int | None
+    total_audio_minutes: int | None
+
+
+class StatisticsCounts(BaseModel):
+    total_cycles: int
+    completed_cycles: int
+    imported_cycles: int
+    completed_reads: int
+    total_logs: int
+    logs_with_canonical: int
+    logs_missing_canonical: int
+
+
+class StatisticsCurrent(BaseModel):
+    latest_logged_at: str | None
+    canonical_percent: float
+    pages_read: float | None
+    minutes_listened: float | None
+
+
+class StatisticsStreak(BaseModel):
+    non_zero_days: int
+    last_non_zero_date: str | None
+
+
+class StatisticsProgressPoint(BaseModel):
+    date: str
+    canonical_percent: float
+    pages_read: float | None
+    minutes_listened: float | None
+
+
+class StatisticsDailyDeltaPoint(BaseModel):
+    date: str
+    canonical_percent_delta: float
+    pages_read_delta: float | None
+    minutes_listened_delta: float | None
+
+
+class StatisticsSeries(BaseModel):
+    progress_over_time: list[StatisticsProgressPoint]
+    daily_delta: list[StatisticsDailyDeltaPoint]
+
+
+class StatisticsTimelineEntry(BaseModel):
+    log_id: str
+    logged_at: str
+    date: str
+    unit: Literal["pages_read", "percent_complete", "minutes_listened"]
+    value: float
+    note: str | None
+    start_value: float
+    end_value: float
+    session_delta: float
+
+
+class StatisticsDataQuality(BaseModel):
+    has_missing_totals: bool
+    unresolved_logs_exist: bool
+    unresolved_log_ids: list[str]
+
+
+class LibraryItemStatisticsResponse(BaseModel):
+    library_item_id: str
+    window: StatisticsWindow
+    totals: StatisticsTotals
+    counts: StatisticsCounts
+    current: StatisticsCurrent
+    streak: StatisticsStreak
+    series: StatisticsSeries
+    timeline: list[StatisticsTimelineEntry]
+    data_quality: StatisticsDataQuality
 
 
 router = APIRouter(
@@ -185,3 +269,26 @@ def get_item_by_work(
     if detail is None:
         raise HTTPException(status_code=404, detail="library item not found")
     return ok(detail)
+
+
+@router.get("/{item_id}/statistics")
+def get_item_statistics(
+    item_id: uuid.UUID,
+    auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
+    tz: str = "UTC",
+    days: int = 90,
+) -> dict[str, object]:
+    try:
+        data = get_library_item_statistics(
+            session,
+            user_id=auth.user_id,
+            library_item_id=item_id,
+            tz=tz,
+            days=days,
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return ok(LibraryItemStatisticsResponse.model_validate(data).model_dump())
