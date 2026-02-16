@@ -156,16 +156,6 @@ def test_reviews_table_schema_and_constraints() -> None:
     assert user_fk.ondelete == "CASCADE"
     assert library_item_fk.ondelete == "CASCADE"
 
-    unique_constraints = [
-        constraint
-        for constraint in table.constraints
-        if isinstance(constraint, sa.UniqueConstraint)
-    ]
-    unique_sets = {
-        tuple(constraint.columns.keys()) for constraint in unique_constraints
-    }
-    assert ("user_id", "library_item_id") in unique_sets
-
     check_constraints = [
         constraint
         for constraint in table.constraints

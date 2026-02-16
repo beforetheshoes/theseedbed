@@ -12,6 +12,7 @@ from app.db.models.imports import (
 from app.db.models.platform import ApiAuditLog, ApiClient
 from app.db.models.users import (
     LibraryItem,
+    LibraryItemMergeEvent,
     ReadingProgressLog,
     ReadingSession,
     ReadingStateEvent,
@@ -28,6 +29,7 @@ __all__ = [
     "GoodreadsImportJobRow",
     "Highlight",
     "LibraryItem",
+    "LibraryItemMergeEvent",
     "Note",
     "ReadingProgressLog",
     "ReadingSession",

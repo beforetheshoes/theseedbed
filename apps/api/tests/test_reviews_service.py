@@ -23,8 +23,10 @@ class FakeSession:
         self.added: list[Any] = []
         self.deleted: list[Any] = []
         self.committed = False
+        self.last_scalar_stmt: Any = None
 
     def scalar(self, _stmt: sa.Select[Any]) -> Any:
+        self.last_scalar_stmt = _stmt
         if self.scalar_values:
             return self.scalar_values.pop(0)
         return None
@@ -259,3 +261,49 @@ def test_delete_review_deletes_when_present() -> None:
     )
     assert session.deleted
     assert session.committed is True
+
+
+def test_upsert_review_picks_latest_review_when_multiple_exist() -> None:
+    user_id = uuid.uuid4()
+    work_id = uuid.uuid4()
+    item = LibraryItem(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        work_id=work_id,
+        preferred_edition_id=None,
+        status="to_read",
+        visibility="private",
+        rating=None,
+        tags=None,
+        created_at=dt.datetime.now(tz=dt.UTC),
+        updated_at=dt.datetime.now(tz=dt.UTC),
+    )
+
+    latest = Review(
+        id=uuid.uuid4(),
+        user_id=user_id,
+        library_item_id=item.id,
+        title="Latest",
+        body="Latest body",
+        rating=3,
+        visibility="private",
+        created_at=dt.datetime.now(tz=dt.UTC),
+        updated_at=dt.datetime.now(tz=dt.UTC),
+    )
+
+    session = FakeSession()
+    session.scalar_values = [item, latest]
+    upsert_review_for_work(
+        session,  # type: ignore[arg-type]
+        user_id=user_id,
+        work_id=work_id,
+        title="Updated",
+        body="Merged body",
+        rating=4,
+        visibility="public",
+        edition_id=None,
+    )
+
+    assert session.last_scalar_stmt is not None
+    stmt_text = str(session.last_scalar_stmt)
+    assert "ORDER BY reviews.created_at DESC, reviews.id DESC" in stmt_text

@@ -78,6 +78,15 @@
                   class="min-w-0 w-full"
                 />
               </div>
+              <div v-if="viewMode === 'table'" class="mt-3 flex items-center justify-end">
+                <Button
+                  label="Merge selected"
+                  icon="pi pi-clone"
+                  data-test="library-merge-open"
+                  :disabled="selectedMergeItems.length < 2 || loading"
+                  @click="openMergeDialog"
+                />
+              </div>
             </template>
           </Card>
 
@@ -107,6 +116,7 @@
           <template v-else-if="displayItems.length">
             <DataTable
               v-if="viewMode === 'table'"
+              v-model:selection="selectedMergeItems"
               :value="displayItems"
               data-key="id"
               size="small"
@@ -115,6 +125,7 @@
               class="w-full library-table"
               data-test="library-items-table"
             >
+              <Column selection-mode="multiple" class="w-[3rem] min-w-[3rem]" />
               <Column v-if="isColumnVisible('cover')" class="w-[72px] min-w-[72px]">
                 <template #header>
                   <span class="library-header-label">Cover</span>
@@ -952,6 +963,176 @@
     </Dialog>
 
     <Dialog
+      v-model:visible="mergeDialogOpen"
+      modal
+      header="Merge books"
+      :draggable="false"
+      style="width: 44rem"
+      data-test="library-merge-dialog"
+    >
+      <div class="flex flex-col gap-4">
+        <Message severity="warn" :closable="false">
+          This merge is irreversible. Source items will be removed after consolidation.
+        </Message>
+        <Message v-if="mergeError" severity="error" :closable="false">{{ mergeError }}</Message>
+
+        <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
+          <span class="text-sm font-medium">Merge into</span>
+          <Select
+            v-model="mergeTargetItemId"
+            :options="mergeTargetOptions"
+            option-label="label"
+            option-value="value"
+            data-test="library-merge-target-select"
+            :disabled="mergeLoading || mergeApplying"
+            class="w-full"
+          />
+        </div>
+
+        <div v-if="mergeLoading" class="grid gap-2" data-test="library-merge-loading">
+          <Skeleton width="100%" height="3rem" />
+          <Skeleton width="100%" height="3rem" />
+          <Skeleton width="100%" height="3rem" />
+        </div>
+
+        <template v-else-if="mergePreview">
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
+            <span class="text-sm font-medium">Status</span>
+            <div
+              v-if="!mergeFieldHasConflicts('status')"
+              class="merge-field-value"
+              data-test="library-merge-field-status-value"
+            >
+              {{ mergeUniformFieldLabel('status') }}
+            </div>
+            <Select
+              v-else
+              v-model="mergeFieldResolution.status"
+              :options="mergeResolutionOptions('status')"
+              option-label="label"
+              option-value="value"
+              data-test="library-merge-field-status"
+              :disabled="mergeApplying"
+            />
+          </div>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
+            <span class="text-sm font-medium">Visibility</span>
+            <div
+              v-if="!mergeFieldHasConflicts('visibility')"
+              class="merge-field-value"
+              data-test="library-merge-field-visibility-value"
+            >
+              {{ mergeUniformFieldLabel('visibility') }}
+            </div>
+            <Select
+              v-else
+              v-model="mergeFieldResolution.visibility"
+              :options="mergeResolutionOptions('visibility')"
+              option-label="label"
+              option-value="value"
+              data-test="library-merge-field-visibility"
+              :disabled="mergeApplying"
+            />
+          </div>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
+            <span class="text-sm font-medium">Rating</span>
+            <div
+              v-if="!mergeFieldHasConflicts('rating')"
+              class="merge-field-value"
+              data-test="library-merge-field-rating-value"
+            >
+              {{ mergeUniformFieldLabel('rating') }}
+            </div>
+            <Select
+              v-else
+              v-model="mergeFieldResolution.rating"
+              :options="mergeResolutionOptions('rating')"
+              option-label="label"
+              option-value="value"
+              data-test="library-merge-field-rating"
+              :disabled="mergeApplying"
+            />
+          </div>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
+            <span class="text-sm font-medium">Preferred edition</span>
+            <div
+              v-if="!mergeFieldHasConflicts('preferred_edition_id')"
+              class="merge-field-value"
+              data-test="library-merge-field-edition-value"
+            >
+              {{ mergeUniformFieldLabel('preferred_edition_id') }}
+            </div>
+            <Select
+              v-else
+              :model-value="mergeFieldResolution.preferred_edition_id"
+              :options="mergeResolutionOptions('preferred_edition_id')"
+              option-label="label"
+              option-value="value"
+              data-test="library-merge-field-edition"
+              :disabled="mergeApplying"
+              @update:model-value="
+                mergeFieldResolution.preferred_edition_id = typeof $event === 'string' ? $event : ''
+              "
+            />
+          </div>
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
+            <span class="text-sm font-medium">Tags</span>
+            <div
+              v-if="!mergeFieldHasConflicts('tags')"
+              class="merge-field-value"
+              data-test="library-merge-field-tags-value"
+            >
+              {{ mergeUniformFieldLabel('tags') }}
+            </div>
+            <Select
+              v-else
+              v-model="mergeFieldResolution.tags"
+              :options="mergeResolutionOptions('tags')"
+              option-label="label"
+              option-value="value"
+              data-test="library-merge-field-tags"
+              :disabled="mergeApplying"
+            />
+          </div>
+
+          <div
+            class="rounded-lg border border-[var(--p-content-border-color)] p-3 text-sm"
+            data-test="library-merge-summary"
+          >
+            <p class="font-semibold">Dependent records moved from source items</p>
+            <p class="text-[var(--p-text-muted-color)]">
+              Read cycles: {{ mergePreview?.dependencies?.totals_for_sources?.read_cycles ?? 0 }} |
+              Progress logs:
+              {{ mergePreview?.dependencies?.totals_for_sources?.progress_logs ?? 0 }} | Notes:
+              {{ mergePreview?.dependencies?.totals_for_sources?.notes ?? 0 }} | Highlights:
+              {{ mergePreview?.dependencies?.totals_for_sources?.highlights ?? 0 }} | Reviews:
+              {{ mergePreview?.dependencies?.totals_for_sources?.reviews ?? 0 }}
+            </p>
+          </div>
+        </template>
+
+        <div class="flex items-center justify-end gap-2">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            variant="text"
+            data-test="library-merge-cancel"
+            :disabled="mergeApplying"
+            @click="closeMergeDialog"
+          />
+          <Button
+            label="Merge now"
+            icon="pi pi-check"
+            data-test="library-merge-apply"
+            :loading="mergeApplying"
+            :disabled="mergeLoading || !mergePreview || mergeApplying"
+            @click="applyMerge"
+          />
+        </div>
+      </div>
+    </Dialog>
+
+    <Dialog
       v-model:visible="removeConfirmOpen"
       modal
       header="Remove from library"
@@ -1053,6 +1234,43 @@ type LibraryPagination = {
   has_prev: boolean;
   has_next: boolean;
 };
+type MergeFieldKey = 'status' | 'visibility' | 'rating' | 'preferred_edition_id' | 'tags';
+type MergeDependencies = {
+  read_cycles: number;
+  progress_logs: number;
+  notes: number;
+  highlights: number;
+  reviews: number;
+};
+type MergePreviewPayload = {
+  selection: {
+    target_item_id: string;
+    source_item_ids: string[];
+    selected_item_ids: string[];
+  };
+  fields: {
+    candidates: Record<MergeFieldKey, Record<string, unknown>>;
+    resolution: Record<MergeFieldKey, string>;
+    defaults: Record<MergeFieldKey, string>;
+  };
+  dependencies: {
+    by_item: Record<string, MergeDependencies>;
+    totals_for_sources: MergeDependencies;
+  };
+  warnings: string[];
+};
+
+type MergeApplyPayload = {
+  merge_event_id: string;
+  target_item_id: string;
+  merged_source_item_ids: string[];
+  moved_counts: MergeDependencies;
+  fields: {
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+  };
+  message: string;
+};
 
 const LIBRARY_UPDATED_EVENT = 'chapterverse:library-updated';
 const VIEW_MODE_STORAGE_KEY = 'seedbed.library.viewMode';
@@ -1102,6 +1320,20 @@ const removeConfirmOpen = ref(false);
 const removeConfirmLoading = ref(false);
 const itemFieldUpdates = ref<Record<string, boolean>>({});
 const itemReadDateUpdates = ref<Record<string, boolean>>({});
+const selectedMergeItems = ref<LibraryItem[]>([]);
+const mergeDialogOpen = ref(false);
+const mergeLoading = ref(false);
+const mergeApplying = ref(false);
+const mergeError = ref('');
+const mergePreview = ref<MergePreviewPayload | null>(null);
+const mergeTargetItemId = ref('');
+const mergeFieldResolution = ref<Record<MergeFieldKey, string>>({
+  status: '',
+  visibility: '',
+  rating: '',
+  preferred_edition_id: '',
+  tags: 'combine',
+});
 const readDateDialogOpen = ref(false);
 const readDateDialogStatus = ref<LibraryItemStatus | null>(null);
 const readDateTargetItem = ref<LibraryItem | null>(null);
@@ -1433,6 +1665,107 @@ const pageRangeLabel = computed(() => {
   return `${pageFrom.value}-${pageTo.value} of ${totalCount.value}`;
 });
 
+const mergeTargetOptions = computed(() =>
+  selectedMergeItems.value.map((item) => ({
+    label: item.work_title,
+    value: item.id,
+  })),
+);
+
+const mergeItemLabel = (itemId: string) => {
+  return selectedMergeItems.value.find((item) => item.id === itemId)?.work_title || itemId;
+};
+
+const mergeCandidateRawValue = (field: MergeFieldKey, itemId: string) =>
+  mergePreview.value?.fields?.candidates?.[field]?.[itemId];
+
+const mergeCandidateNormalizedValue = (field: MergeFieldKey, itemId: string) => {
+  const value = mergeCandidateRawValue(field, itemId);
+  if (field === 'tags') {
+    if (!Array.isArray(value)) return '';
+    return value.join('||');
+  }
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const mergeCandidateItemIds = (field: MergeFieldKey) => {
+  const selectedIds = selectedMergeItems.value
+    .map((item) => item.id)
+    .filter((itemId) => typeof itemId === 'string' && itemId.length > 0);
+  if (!mergePreview.value) return selectedIds;
+  return selectedIds.filter((itemId) => mergeCandidateRawValue(field, itemId) !== undefined);
+};
+
+const mergeFirstCandidateItemId = (field: MergeFieldKey) => {
+  const itemIds = mergeCandidateItemIds(field);
+  return itemIds[0] || '';
+};
+
+const mergeFieldHasConflicts = (field: MergeFieldKey) => {
+  const itemIds = mergeCandidateItemIds(field);
+  if (itemIds.length < 2) return false;
+  const first = mergeCandidateNormalizedValue(field, itemIds[0]);
+  return itemIds.some((itemId) => mergeCandidateNormalizedValue(field, itemId) !== first);
+};
+
+const mergeUniformFieldLabel = (field: MergeFieldKey) => {
+  const itemId = mergeFirstCandidateItemId(field);
+  if (!itemId) {
+    if (field === 'tags') return 'No tags';
+    if (field === 'rating') return 'No rating';
+    if (field === 'preferred_edition_id') return 'No preferred edition';
+    return 'Unset';
+  }
+  return mergeCandidateLabel(field, itemId);
+};
+
+const mergeCandidateLabel = (field: MergeFieldKey, itemId: string) => {
+  const value = mergeCandidateRawValue(field, itemId);
+  if (field === 'tags') {
+    const tags = Array.isArray(value) ? value : [];
+    return tags.length ? tags.join(', ') : 'No tags';
+  }
+  if (field === 'status') {
+    const status = typeof value === 'string' ? value : '';
+    if (
+      status === 'to_read' ||
+      status === 'reading' ||
+      status === 'completed' ||
+      status === 'abandoned'
+    ) {
+      return libraryStatusLabel(status);
+    }
+  }
+  if (field === 'visibility') {
+    const visibility = typeof value === 'string' ? value : '';
+    if (visibility === 'public' || visibility === 'private') {
+      return libraryVisibilityLabel(visibility);
+    }
+  }
+  if (field === 'rating') {
+    if (value === null || value === undefined) return 'No rating';
+    return `${String(value)}/10`;
+  }
+  if (field === 'preferred_edition_id') {
+    return value ? String(value) : 'No preferred edition';
+  }
+  return value === null || value === undefined || String(value).trim() === ''
+    ? 'Unset'
+    : String(value);
+};
+
+const mergeResolutionOptions = (field: MergeFieldKey) => {
+  const keepOptions = selectedMergeItems.value.map((item) => ({
+    label: `${mergeCandidateLabel(field, item.id)} (${mergeItemLabel(item.id)})`,
+    value: `keep:${item.id}`,
+  }));
+  if (field === 'tags') {
+    return [{ label: 'Combine all tags', value: 'combine' }, ...keepOptions];
+  }
+  return keepOptions;
+};
+
 const readDateDialogHeader = computed(() => {
   if (readDateDialogStatus.value === 'reading') return 'Add reading start date';
   return 'Add completion date';
@@ -1738,9 +2071,9 @@ const saveReadDatePrompt = async (quickToday = false) => {
     );
     const latestStarted = payloads.reduce(
       (latest, body) => (body.started_at > latest ? body.started_at : latest),
-      payloads[0]?.started_at ?? '',
+      payloads[0].started_at,
     );
-    if (latestStarted) item.last_read_at = latestStarted;
+    item.last_read_at = latestStarted;
     toast.add({
       severity: 'success',
       summary:
@@ -1766,6 +2099,135 @@ const saveReadDatePrompt = async (quickToday = false) => {
   } finally {
     setItemReadDateUpdating(item.id, false);
     readDateSaving.value = false;
+  }
+};
+
+const mergeFieldResolutionPayload = () => {
+  const payload: Partial<Record<MergeFieldKey, string>> = {};
+  (Object.keys(mergeFieldResolution.value) as MergeFieldKey[]).forEach((field) => {
+    const value = mergeFieldResolution.value[field];
+    if (typeof value !== 'string' || !value.trim()) return;
+    payload[field] = value;
+  });
+  return payload;
+};
+
+const syncMergeResolutionFromPreview = () => {
+  if (!mergePreview.value) return;
+  (Object.keys(mergeFieldResolution.value) as MergeFieldKey[]).forEach((field) => {
+    const existing = mergeFieldResolution.value[field];
+    if (existing && existing.trim()) return;
+    const firstItemId = mergeFirstCandidateItemId(field);
+
+    if (!mergeFieldHasConflicts(field)) {
+      mergeFieldResolution.value[field] = firstItemId ? `keep:${firstItemId}` : '';
+      return;
+    }
+
+    /* c8 ignore start */
+    if (field === 'visibility') {
+      const privateItemId = mergeCandidateItemIds(field).find(
+        (itemId) => mergeCandidateRawValue('visibility', itemId) === 'private',
+      );
+      if (privateItemId) {
+        mergeFieldResolution.value[field] = `keep:${privateItemId}`;
+        return;
+      }
+    }
+
+    mergeFieldResolution.value[field] =
+      mergePreview.value?.fields.resolution[field] ||
+      mergePreview.value?.fields.defaults[field] ||
+      '';
+    /* c8 ignore stop */
+  });
+};
+
+const loadMergePreview = async () => {
+  if (!mergeDialogOpen.value) return;
+  if (selectedMergeItems.value.length < 2 || !mergeTargetItemId.value) return;
+
+  mergeLoading.value = true;
+  mergeError.value = '';
+  try {
+    const payload = await apiRequest<MergePreviewPayload>('/api/v1/library/items/merge/preview', {
+      method: 'POST',
+      body: {
+        item_ids: selectedMergeItems.value.map((item) => item.id),
+        target_item_id: mergeTargetItemId.value,
+        field_resolution: mergeFieldResolutionPayload(),
+      },
+    });
+    mergePreview.value = payload;
+    syncMergeResolutionFromPreview();
+  } catch (err) {
+    mergePreview.value = null;
+    mergeError.value =
+      err instanceof ApiClientError ? err.message : 'Unable to load merge preview right now.';
+  } finally {
+    mergeLoading.value = false;
+  }
+};
+
+const openMergeDialog = async () => {
+  if (selectedMergeItems.value.length < 2) return;
+  mergeDialogOpen.value = true;
+  mergeError.value = '';
+  mergePreview.value = null;
+  mergeFieldResolution.value = {
+    status: '',
+    visibility: '',
+    rating: '',
+    preferred_edition_id: '',
+    tags: 'combine',
+  };
+  mergeTargetItemId.value =
+    selectedMergeItems.value[0]?.id || selectedMergeItems.value.find((item) => item.id)?.id || '';
+  await loadMergePreview();
+};
+
+const closeMergeDialog = (force = false) => {
+  if (mergeApplying.value && !force) return;
+  mergeDialogOpen.value = false;
+  mergeLoading.value = false;
+  mergeError.value = '';
+  mergePreview.value = null;
+  mergeTargetItemId.value = '';
+  mergeFieldResolution.value = {
+    status: '',
+    visibility: '',
+    rating: '',
+    preferred_edition_id: '',
+    tags: 'combine',
+  };
+};
+
+const applyMerge = async () => {
+  if (mergeApplying.value || !mergePreview.value) return;
+  mergeApplying.value = true;
+  mergeError.value = '';
+  try {
+    const result = await apiRequest<MergeApplyPayload>('/api/v1/library/items/merge', {
+      method: 'POST',
+      body: {
+        item_ids: selectedMergeItems.value.map((item) => item.id),
+        target_item_id: mergeTargetItemId.value,
+        field_resolution: mergeFieldResolutionPayload(),
+      },
+    });
+    toast.add({
+      severity: 'success',
+      summary: result.message || 'Books merged successfully.',
+      life: 3000,
+    });
+    selectedMergeItems.value = [];
+    closeMergeDialog(true);
+    await fetchPage();
+  } catch (err) {
+    mergeError.value =
+      err instanceof ApiClientError ? err.message : 'Unable to merge selected books right now.';
+  } finally {
+    mergeApplying.value = false;
   }
 };
 
@@ -1807,6 +2269,8 @@ const fetchPage = async () => {
     }
 
     items.value = payload.items;
+    const selectedIds = new Set(selectedMergeItems.value.map((item) => item.id));
+    selectedMergeItems.value = payload.items.filter((item) => selectedIds.has(item.id));
     totalCount.value = pagination.total_count;
     totalPages.value = pagination.total_pages;
     pageFrom.value = pagination.from;
@@ -1899,10 +2363,19 @@ watch(tagFilter, () => {
 
 watch(viewMode, (next) => {
   writeStoredViewMode(next);
+  if (next !== 'table') {
+    selectedMergeItems.value = [];
+    closeMergeDialog();
+  }
 });
 
 watch(tableColumns, (next) => {
   writeStoredTableColumns(next);
+});
+
+watch(mergeTargetItemId, () => {
+  if (!mergeDialogOpen.value) return;
+  void loadMergePreview();
 });
 
 const onLibraryUpdated = () => {
@@ -1998,5 +2471,16 @@ onBeforeUnmount(() => {
   padding: 0.05rem 0.3rem;
   background: color-mix(in oklab, var(--p-content-border-color) 35%, transparent);
   font-size: 0.92em;
+}
+
+.merge-field-value {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border-radius: 0.5rem;
+  border: 1px solid var(--p-content-border-color);
+  background: var(--p-content-background);
+  padding: 0.5rem 0.75rem;
+  color: var(--p-text-color);
 }
 </style>

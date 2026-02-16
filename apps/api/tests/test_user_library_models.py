@@ -5,6 +5,7 @@ import sqlalchemy as sa
 from app.db.base import Base
 from app.db.models import (
     LibraryItem,
+    LibraryItemMergeEvent,
     ReadingProgressLog,
     ReadingSession,
     ReadingStateEvent,
@@ -22,6 +23,7 @@ def test_user_library_tables_registered() -> None:
     assert ReadingSession.__tablename__ in Base.metadata.tables
     assert ReadingProgressLog.__tablename__ in Base.metadata.tables
     assert ReadingStateEvent.__tablename__ in Base.metadata.tables
+    assert LibraryItemMergeEvent.__tablename__ in Base.metadata.tables
 
 
 def test_users_table_schema() -> None:
@@ -297,3 +299,47 @@ def test_reading_state_events_table_schema() -> None:
     assert "ix_reading_state_events_user_id" in index_names
     assert "ix_reading_state_events_library_item_id" in index_names
     assert "ix_reading_state_events_occurred_at" in index_names
+
+
+def test_library_item_merge_events_table_schema() -> None:
+    table = _get_table("library_item_merge_events")
+    assert set(table.columns.keys()) == {
+        "id",
+        "user_id",
+        "target_library_item_id",
+        "source_library_item_ids",
+        "field_resolution",
+        "result_summary",
+        "created_at",
+    }
+    assert isinstance(table.columns["id"].type, sa.UUID)
+    assert isinstance(table.columns["user_id"].type, sa.UUID)
+    assert isinstance(table.columns["target_library_item_id"].type, sa.UUID)
+    assert isinstance(table.columns["source_library_item_ids"].type, sa.ARRAY)
+    assert isinstance(table.columns["field_resolution"].type, sa.JSON)
+    assert isinstance(table.columns["result_summary"].type, sa.JSON)
+    created_at_type = cast(sa.DateTime, table.columns["created_at"].type)
+    assert created_at_type.timezone is True
+
+    fk_targets = {fk.target_fullname for fk in table.foreign_keys}
+    assert "users.id" in fk_targets
+    assert "library_items.id" in fk_targets
+    users_fk = next(fk for fk in table.foreign_keys if fk.target_fullname == "users.id")
+    target_fk = next(
+        fk for fk in table.foreign_keys if fk.target_fullname == "library_items.id"
+    )
+    assert users_fk.ondelete == "CASCADE"
+    assert target_fk.ondelete == "SET NULL"
+
+    check_constraints = [
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, sa.CheckConstraint)
+    ]
+    check_names = {constraint.name for constraint in check_constraints}
+    assert "ck_library_item_merge_events_source_nonempty" in check_names
+
+    index_names = {index.name for index in table.indexes}
+    assert "ix_library_item_merge_events_user_id" in index_names
+    assert "ix_library_item_merge_events_created_at" in index_names
+    assert "ix_library_item_merge_events_target_library_item_id" in index_names
