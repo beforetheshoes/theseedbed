@@ -29,34 +29,63 @@ reading_progress_unit_enum = postgresql.ENUM(
 def upgrade() -> None:
     reading_progress_unit_enum.create(op.get_bind(), checkfirst=True)
 
-    op.add_column("editions", sa.Column("total_pages", sa.Integer(), nullable=True))
-    op.add_column(
-        "editions", sa.Column("total_audio_minutes", sa.Integer(), nullable=True)
+    op.execute(
+        """
+        ALTER TABLE editions
+        ADD COLUMN IF NOT EXISTS total_pages INTEGER;
+        """
     )
-    op.create_check_constraint(
-        "ck_editions_total_pages_positive",
-        "editions",
-        "total_pages IS NULL OR total_pages >= 1",
+    op.execute(
+        """
+        ALTER TABLE editions
+        ADD COLUMN IF NOT EXISTS total_audio_minutes INTEGER;
+        """
     )
-    op.create_check_constraint(
-        "ck_editions_total_audio_minutes_positive",
-        "editions",
-        "total_audio_minutes IS NULL OR total_audio_minutes >= 1",
+    op.execute(
+        "ALTER TABLE editions DROP CONSTRAINT IF EXISTS ck_editions_total_pages_positive;"
+    )
+    op.execute(
+        """
+        ALTER TABLE editions
+        ADD CONSTRAINT ck_editions_total_pages_positive
+        CHECK (total_pages IS NULL OR total_pages >= 1);
+        """
+    )
+    op.execute(
+        "ALTER TABLE editions DROP CONSTRAINT IF EXISTS ck_editions_total_audio_minutes_positive;"
+    )
+    op.execute(
+        """
+        ALTER TABLE editions
+        ADD CONSTRAINT ck_editions_total_audio_minutes_positive
+        CHECK (total_audio_minutes IS NULL OR total_audio_minutes >= 1);
+        """
     )
 
-    op.drop_constraint(
-        "ck_reading_sessions_pages_read_nonnegative",
-        "reading_sessions",
-        type_="check",
+    op.execute(
+        "ALTER TABLE reading_sessions DROP CONSTRAINT IF EXISTS ck_reading_sessions_pages_read_nonnegative;"
     )
-    op.drop_constraint(
-        "ck_reading_sessions_progress_percent_range",
-        "reading_sessions",
-        type_="check",
+    op.execute(
+        "ALTER TABLE reading_sessions DROP CONSTRAINT IF EXISTS ck_reading_sessions_progress_percent_range;"
     )
-    op.drop_column("reading_sessions", "pages_read")
-    op.drop_column("reading_sessions", "progress_percent")
-    op.add_column("reading_sessions", sa.Column("title", sa.String(length=255)))
+    op.execute(
+        """
+        ALTER TABLE reading_sessions
+        DROP COLUMN IF EXISTS pages_read;
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE reading_sessions
+        DROP COLUMN IF EXISTS progress_percent;
+        """
+    )
+    op.execute(
+        """
+        ALTER TABLE reading_sessions
+        ADD COLUMN IF NOT EXISTS title VARCHAR(255);
+        """
+    )
 
     op.create_table(
         "reading_progress_logs",
