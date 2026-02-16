@@ -19,9 +19,15 @@ LibraryItemStatus: TypeAlias = Literal[
     "abandoned",
 ]
 LibraryItemVisibility: TypeAlias = Literal["private", "public"]
+ProgressUnit: TypeAlias = Literal[
+    "pages_read",
+    "percent_complete",
+    "minutes_listened",
+]
 
 DEFAULT_LIBRARY_STATUS: LibraryItemStatus = "to_read"
 DEFAULT_LIBRARY_VISIBILITY: LibraryItemVisibility = "private"
+DEFAULT_PROGRESS_UNIT: ProgressUnit = "pages_read"
 LibraryItemSortMode: TypeAlias = Literal[
     "newest",
     "oldest",
@@ -51,6 +57,7 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         display_name=None,
         avatar_url=None,
         enable_google_books=False,
+        default_progress_unit=DEFAULT_PROGRESS_UNIT,
     )
     session.add(profile)
     session.commit()
@@ -65,6 +72,7 @@ def update_profile(
     display_name: str | None,
     avatar_url: str | None,
     enable_google_books: bool | None,
+    default_progress_unit: ProgressUnit | None,
 ) -> User:
     profile = get_or_create_profile(session, user_id=user_id)
 
@@ -87,6 +95,9 @@ def update_profile(
 
     if enable_google_books is not None:
         profile.enable_google_books = enable_google_books
+
+    if default_progress_unit is not None:
+        profile.default_progress_unit = default_progress_unit
 
     session.commit()
     return profile

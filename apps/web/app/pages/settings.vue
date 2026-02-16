@@ -70,6 +70,28 @@
           </template>
         </Card>
 
+        <Card>
+          <template #content>
+            <div class="flex items-start justify-between gap-4">
+              <div>
+                <p class="m-0 text-sm font-medium">Default progress unit</p>
+                <p class="m-0 text-xs text-[var(--p-text-muted-color)]">
+                  Used as the default unit when logging reading progress.
+                </p>
+              </div>
+              <select
+                v-model="defaultProgressUnit"
+                data-test="settings-default-progress-unit"
+                class="rounded border border-[var(--p-content-border-color)] bg-transparent px-2 py-1 text-sm"
+              >
+                <option value="pages_read">Pages</option>
+                <option value="percent_complete">Percent</option>
+                <option value="minutes_listened">Minutes</option>
+              </select>
+            </div>
+          </template>
+        </Card>
+
         <Card class="storygraph-import-card" data-test="storygraph-import-card">
           <template #content>
             <div class="flex flex-col gap-4">
@@ -718,6 +740,7 @@ type MeProfile = {
   display_name: string | null;
   avatar_url: string | null;
   enable_google_books: boolean;
+  default_progress_unit: 'pages_read' | 'percent_complete' | 'minutes_listened';
 };
 
 type ImportPreviewRow = {
@@ -773,6 +796,9 @@ const handle = ref('');
 const displayName = ref('');
 const avatarUrl = ref('');
 const enableGoogleBooks = ref(false);
+const defaultProgressUnit = ref<'pages_read' | 'percent_complete' | 'minutes_listened'>(
+  'pages_read',
+);
 
 const importing = ref(false);
 const importError = ref('');
@@ -896,6 +922,7 @@ const loadProfile = async () => {
     displayName.value = data.display_name ?? '';
     avatarUrl.value = data.avatar_url ?? '';
     enableGoogleBooks.value = Boolean(data.enable_google_books);
+    defaultProgressUnit.value = data.default_progress_unit || 'pages_read';
   } catch (err) {
     error.value = err instanceof ApiClientError ? err.message : 'Unable to load settings.';
   } finally {
@@ -915,6 +942,7 @@ const save = async () => {
         display_name: displayName.value,
         avatar_url: avatarUrl.value,
         enable_google_books: enableGoogleBooks.value,
+        default_progress_unit: defaultProgressUnit.value,
       },
     });
     saved.value = true;

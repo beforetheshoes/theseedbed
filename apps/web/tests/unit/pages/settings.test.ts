@@ -152,6 +152,7 @@ const mockProfile = () => ({
   display_name: 'Seed',
   avatar_url: null,
   enable_google_books: false,
+  default_progress_unit: 'pages_read',
 });
 
 describe('settings page StoryGraph import UX', () => {
@@ -200,13 +201,17 @@ describe('settings page StoryGraph import UX', () => {
     await wrapper.get('[data-test="settings-display-name"]').setValue('New Name');
     await wrapper.get('[data-test="settings-avatar-url"]').setValue('https://example.com/new.png');
     await wrapper.get('[data-test="settings-enable-google-books"]').setValue(true);
+    await wrapper.get('[data-test="settings-default-progress-unit"]').setValue('minutes_listened');
     await wrapper.get('[data-test="settings-save"]').trigger('click');
     await flush(wrapper);
 
     const patchCall = apiRequest.mock.calls.find((call) => call[0] === '/api/v1/me' && call[1]);
     expect(patchCall?.[1]).toMatchObject({
       method: 'PATCH',
-      body: expect.objectContaining({ enable_google_books: true }),
+      body: expect.objectContaining({
+        enable_google_books: true,
+        default_progress_unit: 'minutes_listened',
+      }),
     });
     expect(wrapper.get('[data-test="settings-saved"]').text()).toContain('Settings saved');
   });
@@ -217,6 +222,7 @@ describe('settings page StoryGraph import UX', () => {
       display_name: null,
       avatar_url: null,
       enable_google_books: false,
+      default_progress_unit: 'pages_read',
     });
 
     const wrapper = mountPage();

@@ -10,11 +10,27 @@
               {{ work?.title || 'Book detail' }}
             </span>
           </div>
-          <Tag
-            v-if="libraryItem"
-            :value="libraryStatusLabel(libraryItem.status)"
-            severity="secondary"
-          />
+          <div v-if="libraryItem" class="flex items-center gap-2">
+            <Button
+              v-if="!statusEditorOpen"
+              :label="libraryStatusLabel(libraryItem.status)"
+              size="small"
+              severity="secondary"
+              variant="outlined"
+              data-test="book-status-open"
+              @click="openStatusEditor"
+            />
+            <Select
+              v-else
+              :model-value="statusEditorValue"
+              :options="statusOptions"
+              option-label="label"
+              option-value="value"
+              data-test="book-status-select"
+              :disabled="statusSaving"
+              @update:model-value="onStatusSelected"
+            />
+          </div>
         </div>
       </template>
       <template #content>
@@ -113,9 +129,32 @@
     <!-- Reading sessions -->
     <Card v-if="libraryItem">
       <template #title>
-        <div class="flex items-center gap-3">
-          <Avatar icon="pi pi-clock" shape="circle" aria-hidden="true" />
-          <span class="font-serif text-lg font-semibold tracking-tight">Reading sessions</span>
+        <div class="flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <Avatar icon="pi pi-clock" shape="circle" aria-hidden="true" />
+            <span class="font-serif text-lg font-semibold tracking-tight">Reading sessions</span>
+          </div>
+          <div v-if="showActiveLogger">
+            <Button
+              v-if="!showConvertUnitSelect"
+              label="Convert progress unit"
+              size="small"
+              severity="secondary"
+              variant="outlined"
+              data-test="convert-unit-open"
+              @click="openConvertUnitPicker"
+            />
+            <Select
+              v-else
+              :model-value="convertUnitSelection"
+              :options="convertUnitOptions"
+              option-label="label"
+              option-value="value"
+              option-disabled="disabled"
+              data-test="convert-unit-select"
+              @update:model-value="onConvertUnitChange"
+            />
+          </div>
         </div>
       </template>
       <template #content>
@@ -143,28 +182,161 @@
             </div>
           </div>
 
-          <div class="grid gap-3 sm:grid-cols-2">
-            <InputText v-model="sessionPagesRead" placeholder="Pages read" />
-            <InputText v-model="sessionProgressPercent" placeholder="Progress % (0-100)" />
-          </div>
-          <Textarea v-model="sessionNote" rows="2" auto-resize placeholder="Session note" />
-          <div>
-            <Button
-              label="Log session"
-              :loading="savingSession"
-              data-test="log-session"
-              @click="logSession"
-            />
-          </div>
+          <template v-if="showActiveLogger">
+            <div
+              class="rounded-xl border border-[var(--p-content-border-color)] p-4"
+              data-test="progress-summary"
+            >
+              <div class="mx-auto flex w-[300px] max-w-full flex-col items-center gap-4">
+                <div class="relative h-[210px] w-[210px]">
+                  <Knob
+                    :model-value="currentCanonicalPercent"
+                    :min="0"
+                    :max="100"
+                    :readonly="true"
+                    :size="210"
+                    :show-value="false"
+                    :stroke-width="14"
+                  />
+                  <div class="absolute inset-0 flex items-center justify-center">
+                    <InputText
+                      v-if="editingKnobValue"
+                      v-model="knobEditValue"
+                      class="w-[84px] text-center"
+                      data-test="knob-value-input"
+                      @blur="commitKnobValueEdit"
+                      @keydown.enter.prevent="commitKnobValueEdit"
+                      @keydown.esc.prevent="cancelKnobValueEdit"
+                    />
+                    <span
+                      v-else
+                      role="button"
+                      tabindex="0"
+                      class="min-w-[84px] cursor-text px-2 py-1 text-center text-xl font-semibold"
+                      data-test="knob-value-display"
+                      @click="startKnobValueEdit"
+                      @keydown.enter.prevent="startKnobValueEdit"
+                    >
+                      {{ knobDisplayValue }}
+                    </span>
+                  </div>
+                </div>
+                <Slider
+                  v-model="sessionProgressValue"
+                  class="w-full"
+                  :min="0"
+                  :max="progressSliderMax"
+                  :step="1"
+                  :disabled="progressSliderDisabled"
+                  data-test="session-progress-slider"
+                />
+                <p
+                  class="text-xs text-[var(--p-text-muted-color)]"
+                  data-test="progress-cross-units"
+                >
+                  Pages: {{ progressPagesDisplay }} • Percentage: {{ progressPercentDisplay }}% •
+                  Time: {{ progressTimeDisplay }}
+                </p>
+                <Tag :value="`${streakDays}-day streak`" severity="info" />
+                <div class="flex flex-col items-center gap-1">
+                  <label class="text-xs font-medium">Log date</label>
+                  <DatePicker
+                    v-model="sessionLoggedDate"
+                    :max-date="todayDate"
+                    show-icon
+                    date-format="mm/dd/yy"
+                    data-test="session-date"
+                  />
+                </div>
+                <Textarea
+                  v-model="sessionNote"
+                  rows="5"
+                  auto-resize
+                  placeholder="Session note"
+                  class="w-full max-w-[500px]"
+                />
+                <Button
+                  label="Log session"
+                  :loading="savingSession"
+                  data-test="log-session"
+                  @click="logSession"
+                />
+              </div>
+            </div>
 
-          <Timeline v-if="sessions.length" :value="sessions" align="left">
+            <div class="flex flex-col items-center gap-0 text-sm" data-test="progress-totals">
+              <p class="m-0 font-medium">Totals</p>
+              <p class="m-0 text-xs text-[var(--p-text-muted-color)]">
+                Pages: {{ totalsPagesDisplay }} • Time: {{ totalsTimeDisplay }}
+              </p>
+              <button
+                v-if="ineligibleConvertUnits.length"
+                type="button"
+                class="text-xs text-amber-700 underline underline-offset-2 hover:text-amber-600"
+                data-test="missing-totals-warning"
+                @click="promptMissingTotalsFromIneligible"
+              >
+                Some unit conversions need totals. Add missing totals.
+              </button>
+            </div>
+          </template>
+
+          <Card>
+            <template #content>
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                  <p class="text-sm font-medium">Progress trend</p>
+                  <div class="flex items-center gap-2">
+                    <Select
+                      v-model="progressChartUnit"
+                      :options="progressChartUnitOptions"
+                      option-label="label"
+                      option-value="value"
+                      data-test="progress-chart-unit"
+                    />
+                    <Select
+                      v-model="progressChartMode"
+                      :options="progressChartModeOptions"
+                      option-label="label"
+                      option-value="value"
+                      data-test="progress-chart-mode"
+                    />
+                  </div>
+                </div>
+                <Chart
+                  type="line"
+                  :data="progressChartData"
+                  :options="progressChartOptions"
+                  data-test="progress-chart"
+                />
+              </div>
+            </template>
+          </Card>
+
+          <Timeline v-if="timelineSessions.length" :value="timelineSessions" align="left">
             <template #marker>
               <Avatar shape="circle" size="small" aria-hidden="true" />
             </template>
             <template #content="{ item }">
-              <p class="text-sm font-medium">{{ formatDate(item.started_at) }}</p>
+              <p class="text-sm font-medium">{{ formatDateOnly(item.logged_at) }}</p>
               <p class="text-xs text-[var(--p-text-muted-color)]">
-                Pages: {{ item.pages_read ?? '-' }} | Progress: {{ item.progress_percent ?? '-' }}
+                Start:
+                <span class="font-medium text-slate-500">{{ item.start_display }}</span>
+                • End:
+                <span class="font-semibold text-sky-700">{{ item.end_display }}</span>
+                • This session:
+                <span
+                  class="font-semibold"
+                  :class="
+                    item.session_delta > 0
+                      ? 'text-emerald-600'
+                      : item.session_delta < 0
+                        ? 'text-amber-600'
+                        : 'text-slate-500'
+                  "
+                >
+                  {{ item.session_display }}
+                </span>
               </p>
               <p v-if="item.note" class="text-xs text-[var(--p-text-muted-color)]">
                 {{ item.note }}
@@ -177,6 +349,88 @@
         </div>
       </template>
     </Card>
+
+    <Dialog
+      v-model:visible="confirmDecreaseVisible"
+      modal
+      header="Lower progress?"
+      :style="{ width: '28rem' }"
+    >
+      <div class="flex flex-col gap-3">
+        <p class="text-sm">
+          You are lowering progress from {{ lastLoggedValue }} to {{ sessionProgressValue }}.
+          Continue?
+        </p>
+        <div class="flex justify-end gap-2">
+          <Button
+            label="Cancel"
+            severity="secondary"
+            variant="text"
+            data-test="decrease-cancel"
+            @click="cancelDecrease"
+          />
+          <Button label="Continue" data-test="decrease-confirm" @click="confirmDecreaseAndLog" />
+        </div>
+      </div>
+    </Dialog>
+
+    <Dialog
+      v-model:visible="showMissingTotalsForm"
+      modal
+      header="Add missing totals"
+      :style="{ width: '32rem' }"
+    >
+      <div
+        v-if="conversionMissing.length"
+        class="flex flex-col gap-3"
+        data-test="missing-totals-dialog-content"
+      >
+        <p class="text-sm text-[var(--p-text-muted-color)]">
+          Some conversions require missing totals before they can be selected.
+        </p>
+        <div
+          v-if="loadingTotalsSuggestions"
+          class="flex items-center gap-2 text-xs text-[var(--p-text-muted-color)]"
+          data-test="missing-totals-suggestions-loading"
+        >
+          <i class="pi pi-spin pi-spinner" aria-hidden="true"></i>
+          <span>Loading suggestions...</span>
+        </div>
+        <div class="grid gap-3">
+          <div v-if="conversionMissing.includes('total_pages')" class="flex flex-col gap-1">
+            <label class="text-xs font-medium">Total pages</label>
+            <InputText
+              v-model="pendingTotalPages"
+              placeholder="Enter pages"
+              data-test="pending-total-pages"
+            />
+            <p v-if="totalPageSuggestions.length" class="text-xs text-[var(--p-text-muted-color)]">
+              Suggestion: {{ totalPageSuggestions[0] }} pages
+            </p>
+          </div>
+          <div v-if="conversionMissing.includes('total_audio_minutes')" class="flex flex-col gap-1">
+            <label class="text-xs font-medium">Total time (hh:mm:ss)</label>
+            <InputText
+              v-model="pendingTotalAudioMinutes"
+              placeholder="Enter time"
+              data-test="pending-total-audio-minutes"
+            />
+            <p v-if="totalTimeSuggestions.length" class="text-xs text-[var(--p-text-muted-color)]">
+              Suggestion: {{ minutesToHms(totalTimeSuggestions[0]) }}
+            </p>
+          </div>
+        </div>
+        <div class="flex justify-end">
+          <Button
+            label="Save totals"
+            size="small"
+            :loading="savingTotals"
+            data-test="save-missing-totals"
+            @click="saveMissingTotals"
+          />
+        </div>
+      </div>
+    </Dialog>
 
     <!-- Notes -->
     <Card v-if="libraryItem">
@@ -950,6 +1204,12 @@ import { useToast } from 'primevue/usetoast';
 import { ApiClientError, apiRequest } from '~/utils/api';
 import { renderDescriptionHtml } from '~/utils/description';
 import { libraryStatusLabel } from '~/utils/libraryStatus';
+import {
+  canConvert,
+  fromCanonicalPercent,
+  toCanonicalPercent,
+  type ProgressUnit,
+} from '~/utils/progressConversion';
 import BookDiscoverySection from '~/components/books/BookDiscoverySection.vue';
 import CoverPlaceholder from '~/components/CoverPlaceholder.vue';
 import type { FileUploadSelectEvent } from 'primevue/fileupload';
@@ -961,6 +1221,8 @@ type WorkDetail = {
   title: string;
   description: string | null;
   cover_url: string | null;
+  total_pages: number | null;
+  total_audio_minutes: number | null;
   authors: { id: string; name: string }[];
   identifiers?: {
     isbn10?: string | null;
@@ -980,10 +1242,26 @@ type LibraryItem = {
 
 type ReadingSession = {
   id: string;
-  started_at: string;
-  pages_read: number | null;
-  progress_percent: number | null;
+  library_item_id: string;
+  reading_session_id: string;
+  logged_at: string;
+  unit: ProgressUnit;
+  value: number;
+  canonical_percent: number | null;
   note: string | null;
+};
+
+type ReadCycle = {
+  id: string;
+  started_at: string;
+  conversion?: {
+    total_pages: number | null;
+    total_audio_minutes: number | null;
+  };
+};
+
+type MeProfile = {
+  default_progress_unit: ProgressUnit;
 };
 
 type Note = {
@@ -1033,6 +1311,9 @@ const workId = computed(() => String(route.params.workId || ''));
 
 const coreLoading = ref(true);
 const error = ref('');
+const statusSaving = ref(false);
+const statusEditorOpen = ref(false);
+const statusEditorValue = ref<'to_read' | 'reading' | 'completed' | 'abandoned'>('to_read');
 
 const work = ref<WorkDetail | null>(null);
 const libraryItem = ref<LibraryItem | null>(null);
@@ -1050,9 +1331,29 @@ const reviewLoading = ref(false);
 const reviewError = ref('');
 
 const savingSession = ref(false);
-const sessionPagesRead = ref('');
-const sessionProgressPercent = ref('');
+const savingTotals = ref(false);
+const sessionProgressUnit = ref<ProgressUnit>('pages_read');
+const sessionProgressValue = ref(0);
+const sessionLoggedDate = ref(new Date());
 const sessionNote = ref('');
+const conversionError = ref('');
+const conversionMissing = ref<Array<'total_pages' | 'total_audio_minutes'>>([]);
+const pendingTotalPages = ref('');
+const pendingTotalAudioMinutes = ref('');
+const pendingTargetUnit = ref<ProgressUnit | null>(null);
+const totalPageSuggestions = ref<number[]>([]);
+const totalTimeSuggestions = ref<number[]>([]);
+const loadingTotalsSuggestions = ref(false);
+const activeCycle = ref<ReadCycle | null>(null);
+const totalsEditionId = ref<string | null>(null);
+const defaultProgressUnit = ref<ProgressUnit>('pages_read');
+const showConvertUnitSelect = ref(false);
+const convertUnitSelection = ref<ProgressUnit>('pages_read');
+const showMissingTotalsForm = ref(false);
+const editingKnobValue = ref(false);
+const knobEditValue = ref('0');
+const confirmDecreaseVisible = ref(false);
+const progressChartMode = ref<'progress' | 'daily_delta'>('progress');
 
 const savingNote = ref(false);
 const deletingNoteId = ref<string | null>(null);
@@ -1201,6 +1502,19 @@ const visibilityOptions = [
   { label: 'Public', value: 'public' },
 ];
 
+const statusOptions = [
+  { label: 'To read', value: 'to_read' },
+  { label: 'Reading', value: 'reading' },
+  { label: 'Completed', value: 'completed' },
+  { label: 'Abandoned', value: 'abandoned' },
+];
+
+const progressUnitOptions = [
+  { label: 'Pages', value: 'pages_read' },
+  { label: 'Percent', value: 'percent_complete' },
+  { label: 'Time', value: 'minutes_listened' },
+];
+
 const enrichmentFieldLabels: Record<string, string> = {
   'work.description': 'Description',
   'work.cover_url': 'Cover URL',
@@ -1216,6 +1530,14 @@ const enrichmentFieldLabels: Record<string, string> = {
 const formatDate = (value: string) => {
   try {
     return new Date(value).toLocaleString();
+  } catch {
+    return value;
+  }
+};
+
+const formatDateOnly = (value: string) => {
+  try {
+    return new Date(value).toLocaleDateString();
   } catch {
     return value;
   }
@@ -1245,6 +1567,8 @@ const canPickProvider = (provider: EnrichmentProvider): boolean => {
 };
 
 const resetSectionState = () => {
+  statusEditorOpen.value = false;
+  statusSaving.value = false;
   sessions.value = [];
   notes.value = [];
   highlights.value = [];
@@ -1262,6 +1586,23 @@ const resetSectionState = () => {
   reviewBody.value = '';
   reviewVisibility.value = 'private';
   reviewRating.value = null;
+  activeCycle.value = null;
+  sessionProgressValue.value = 0;
+  sessionLoggedDate.value = new Date();
+  sessionNote.value = '';
+  conversionError.value = '';
+  conversionMissing.value = [];
+  pendingTotalPages.value = '';
+  pendingTotalAudioMinutes.value = '';
+  pendingTargetUnit.value = null;
+  totalsEditionId.value = null;
+  showConvertUnitSelect.value = false;
+  convertUnitSelection.value = defaultProgressUnit.value;
+  showMissingTotalsForm.value = false;
+  editingKnobValue.value = false;
+  knobEditValue.value = '0';
+  confirmDecreaseVisible.value = false;
+  progressChartMode.value = 'progress';
 
   enrichDialogVisible.value = false;
   enrichLoading.value = false;
@@ -1315,11 +1656,57 @@ const loadSessions = async () => {
   sessionsLoading.value = true;
   sessionsError.value = '';
   try {
+    const cyclesPayload = await apiRequest<{ items: ReadCycle[] }>(
+      `/api/v1/library/items/${libraryItem.value.id}/read-cycles`,
+      { query: { limit: 1 } },
+    );
+    if (id !== runId.value) return;
+    const cycle = cyclesPayload.items[0] ?? null;
+    activeCycle.value = cycle;
+
+    if (cycle?.conversion && work.value) {
+      work.value.total_pages = cycle.conversion.total_pages;
+      work.value.total_audio_minutes = cycle.conversion.total_audio_minutes;
+    }
+
+    if (!cycle) {
+      sessions.value = [];
+      sessionProgressUnit.value = coerceProgressUnit(defaultProgressUnit.value);
+      convertUnitSelection.value = sessionProgressUnit.value;
+      sessionProgressValue.value = 0;
+      return;
+    }
+
     const payload = await apiRequest<{ items: ReadingSession[] }>(
-      `/api/v1/library/items/${libraryItem.value.id}/sessions`,
+      `/api/v1/read-cycles/${cycle.id}/progress-logs`,
+      { query: { limit: 200 } },
     );
     if (id !== runId.value) return;
     sessions.value = payload.items;
+    const latest = sessions.value[0] ?? null;
+    if (latest) {
+      const coercedUnit = coerceProgressUnit(latest.unit);
+      sessionProgressUnit.value = coercedUnit;
+      convertUnitSelection.value = sessionProgressUnit.value;
+      if (coercedUnit === latest.unit) {
+        sessionProgressValue.value = latest.value;
+      } else {
+        const canonical =
+          typeof latest.canonical_percent === 'number'
+            ? latest.canonical_percent
+            : toCanonicalPercent(latest.unit, latest.value, progressTotals.value);
+        if (canonical === null) {
+          sessionProgressValue.value = 0;
+        } else {
+          const converted = fromCanonicalPercent(coercedUnit, canonical, progressTotals.value);
+          sessionProgressValue.value = converted ?? 0;
+        }
+      }
+    } else {
+      sessionProgressUnit.value = coerceProgressUnit(defaultProgressUnit.value);
+      convertUnitSelection.value = sessionProgressUnit.value;
+      sessionProgressValue.value = 0;
+    }
   } catch (err) {
     if (id !== runId.value) return;
     sessionsError.value = err instanceof ApiClientError ? err.message : 'Unable to load sessions.';
@@ -1408,12 +1795,44 @@ const refresh = async () => {
   const id = runId.value;
   await fetchCore(id);
   if (id !== runId.value) return;
+  await loadDefaultProgressUnit();
+  if (id !== runId.value) return;
   if (!libraryItem.value) return;
 
   void loadSessions();
   void loadNotes();
   void loadHighlights();
   void loadReview();
+};
+
+const openStatusEditor = () => {
+  if (!libraryItem.value) return;
+  statusEditorValue.value = libraryItem.value.status as
+    | 'to_read'
+    | 'reading'
+    | 'completed'
+    | 'abandoned';
+  statusEditorOpen.value = true;
+};
+
+const onStatusSelected = async (nextStatus: 'to_read' | 'reading' | 'completed' | 'abandoned') => {
+  if (!libraryItem.value) return;
+  statusEditorOpen.value = false;
+  if (nextStatus === libraryItem.value.status) return;
+  statusSaving.value = true;
+  error.value = '';
+  try {
+    await apiRequest(`/api/v1/library/items/${libraryItem.value.id}`, {
+      method: 'PATCH',
+      body: { status: nextStatus },
+    });
+    libraryItem.value.status = nextStatus;
+    statusEditorValue.value = nextStatus;
+  } catch (err) {
+    error.value = err instanceof ApiClientError ? err.message : 'Unable to update status.';
+  } finally {
+    statusSaving.value = false;
+  }
 };
 
 const openRemoveConfirm = () => {
@@ -1728,24 +2147,672 @@ const applyEnrichmentSelections = async () => {
 };
 /* c8 ignore stop */
 
-const logSession = async () => {
-  if (!libraryItem.value) return;
-  savingSession.value = true;
+/* c8 ignore start */
+const progressTotals = computed(() => ({
+  total_pages: work.value?.total_pages ?? null,
+  total_audio_minutes: work.value?.total_audio_minutes ?? null,
+}));
+
+const todayDate = computed(() => {
+  const now = new Date();
+  return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+});
+
+const showActiveLogger = computed(() => libraryItem.value?.status === 'reading');
+
+const progressUnitLabel = (unit: ProgressUnit): string => {
+  if (unit === 'percent_complete') return 'Percent';
+  if (unit === 'minutes_listened') return 'Time';
+  return 'Pages';
+};
+
+const latestProgressLog = computed(() => sessions.value[0] ?? null);
+const isFirstProgressLog = computed(() => latestProgressLog.value === null);
+const lastLoggedValue = computed(() => latestProgressLog.value?.value ?? 0);
+
+const toLocalDateKey = (input: string): string => {
+  const date = new Date(input);
+  return `${date.getFullYear()}-${date.getMonth() + 1}-${date.getDate()}`;
+};
+
+const streakDays = computed(() => {
+  const uniqueDays: string[] = [];
+  for (const log of sessions.value) {
+    const canonical = toCanonicalPercent(log.unit, log.value, progressTotals.value);
+    const hasProgress = canonical === null ? log.value > 0 : canonical > 0;
+    if (!hasProgress) continue;
+    const dayKey = toLocalDateKey(log.logged_at);
+    if (!uniqueDays.includes(dayKey)) uniqueDays.push(dayKey);
+  }
+  if (!uniqueDays.length) return 0;
+
+  let streak = 1;
+  let previousDate = new Date(sessions.value[0]!.logged_at);
+  for (let index = 1; index < sessions.value.length; index += 1) {
+    const candidate = sessions.value[index]!;
+    const candidateDate = new Date(candidate.logged_at);
+    const previousDay = new Date(
+      previousDate.getFullYear(),
+      previousDate.getMonth(),
+      previousDate.getDate() - 1,
+    );
+    const expected = `${previousDay.getFullYear()}-${previousDay.getMonth() + 1}-${previousDay.getDate()}`;
+    const actual = `${candidateDate.getFullYear()}-${candidateDate.getMonth() + 1}-${candidateDate.getDate()}`;
+    if (actual !== expected) break;
+    streak += 1;
+    previousDate = candidateDate;
+  }
+  return streak;
+});
+
+const resolveCanonicalFromLog = (log: ReadingSession): number => {
+  if (typeof log.canonical_percent === 'number') {
+    return Math.round(Math.min(100, Math.max(0, log.canonical_percent)));
+  }
+  const calculated = toCanonicalPercent(log.unit, log.value, progressTotals.value);
+  return calculated === null ? 0 : Math.round(calculated);
+};
+
+const currentCanonicalPercent = computed(() => {
+  const calculated = toCanonicalPercent(
+    sessionProgressUnit.value,
+    sessionProgressValue.value,
+    progressTotals.value,
+  );
+  if (calculated === null) {
+    return latestProgressLog.value ? resolveCanonicalFromLog(latestProgressLog.value) : 0;
+  }
+  return Math.round(calculated);
+});
+
+const formatDuration = (minutesValue: number): string => {
+  const totalSeconds = Math.max(0, Math.round(minutesValue * 60));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
+const formatProgressValue = (unit: ProgressUnit, value: number): string => {
+  if (unit === 'percent_complete') return `${Math.round(value)}%`;
+  if (unit === 'minutes_listened') return formatDuration(value);
+  return String(Math.round(value));
+};
+
+const formatProgressDelta = (unit: ProgressUnit, value: number): string => {
+  const formatted = formatProgressValue(unit, Math.abs(value));
+  if (value < 0) return `-${formatted}`;
+  if (value > 0) return `+${formatted}`;
+  return formatted;
+};
+
+const dayTimestamp = (value: string): number => {
+  const date = new Date(value);
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+};
+
+const convertCanonicalToUnitValue = (unit: ProgressUnit, canonical: number): number => {
+  if (unit === 'percent_complete') return Math.round(canonical);
+  const converted = fromCanonicalPercent(unit, canonical, progressTotals.value);
+  return converted ?? 0;
+};
+
+const timelineSessions = computed(() => {
+  const chronological = [...sessions.value].sort(
+    (left, right) => new Date(left.logged_at).getTime() - new Date(right.logged_at).getTime(),
+  );
+
+  const progressionById = new Map<
+    string,
+    { startValue: number; endValue: number; sessionValue: number }
+  >();
+  let previousCanonical = 0;
+  for (const log of chronological) {
+    const endCanonical = resolveCanonicalFromLog(log);
+    const startCanonical = previousCanonical;
+    const startValue = convertCanonicalToUnitValue(log.unit, startCanonical);
+    const endValue =
+      log.unit === 'percent_complete' ? Math.round(log.value) : Math.max(0, log.value);
+    progressionById.set(log.id, {
+      startValue,
+      endValue,
+      sessionValue: endValue - startValue,
+    });
+    previousCanonical = endCanonical;
+  }
+
+  return [...sessions.value]
+    .sort((left, right) => {
+      const leftDay = dayTimestamp(left.logged_at);
+      const rightDay = dayTimestamp(right.logged_at);
+      if (leftDay !== rightDay) return rightDay - leftDay;
+      if (right.value !== left.value) return right.value - left.value;
+      return new Date(right.logged_at).getTime() - new Date(left.logged_at).getTime();
+    })
+    .map((log) => {
+      const progression = progressionById.get(log.id) || {
+        startValue: 0,
+        endValue: 0,
+        sessionValue: 0,
+      };
+      return {
+        ...log,
+        start_display: formatProgressValue(log.unit, progression.startValue),
+        end_display: formatProgressValue(log.unit, progression.endValue),
+        session_display: formatProgressDelta(log.unit, progression.sessionValue),
+        session_delta: progression.sessionValue,
+      };
+    });
+});
+
+const displayPagesValue = computed(() => {
+  if (sessionProgressUnit.value === 'pages_read') return Math.round(sessionProgressValue.value);
+  const canonical = toCanonicalPercent(
+    sessionProgressUnit.value,
+    sessionProgressValue.value,
+    progressTotals.value,
+  );
+  const converted =
+    canonical === null ? null : fromCanonicalPercent('pages_read', canonical, progressTotals.value);
+  return converted ?? 0;
+});
+
+const displayPercentValue = computed(() => {
+  const canonical = toCanonicalPercent(
+    sessionProgressUnit.value,
+    sessionProgressValue.value,
+    progressTotals.value,
+  );
+  return canonical === null ? 0 : Math.round(canonical);
+});
+
+const displayMinutesValue = computed(() => {
+  if (sessionProgressUnit.value === 'minutes_listened')
+    return Math.round(sessionProgressValue.value);
+  const canonical = toCanonicalPercent(
+    sessionProgressUnit.value,
+    sessionProgressValue.value,
+    progressTotals.value,
+  );
+  const converted =
+    canonical === null
+      ? null
+      : fromCanonicalPercent('minutes_listened', canonical, progressTotals.value);
+  return converted ?? 0;
+});
+
+const progressPagesDisplay = computed(() => displayPagesValue.value);
+const progressPercentDisplay = computed(() => displayPercentValue.value);
+const progressTimeDisplay = computed(() => formatDuration(displayMinutesValue.value));
+const totalsPagesDisplay = computed(() => progressTotals.value.total_pages ?? 0);
+const totalsTimeDisplay = computed(() =>
+  formatDuration(progressTotals.value.total_audio_minutes ?? 0),
+);
+const knobDisplayValue = computed(() => {
+  if (sessionProgressUnit.value === 'percent_complete') {
+    return `${sessionProgressValue.value}%`;
+  }
+  if (sessionProgressUnit.value === 'minutes_listened') {
+    return formatDuration(sessionProgressValue.value);
+  }
+  return String(sessionProgressValue.value);
+});
+
+const progressSliderMax = computed(() => {
+  if (sessionProgressUnit.value === 'percent_complete') return 100;
+  if (sessionProgressUnit.value === 'pages_read') {
+    if (progressTotals.value.total_pages) return progressTotals.value.total_pages;
+    return Math.max(100, sessionProgressValue.value + 50);
+  }
+  if (progressTotals.value.total_audio_minutes) return progressTotals.value.total_audio_minutes;
+  return Math.max(100, sessionProgressValue.value + 60);
+});
+
+const progressSliderDisabled = computed(() => false);
+const progressChartUnit = ref<ProgressUnit>('percent_complete');
+const isChartUnitAvailable = (unit: ProgressUnit): boolean => {
+  if (unit === 'percent_complete') return true;
+  if (unit === 'pages_read') return Boolean(progressTotals.value.total_pages);
+  return Boolean(progressTotals.value.total_audio_minutes);
+};
+
+const progressChartModeOptions = [
+  { label: 'Progress over time', value: 'progress' },
+  { label: 'Daily gain', value: 'daily_delta' },
+];
+const progressChartUnitOptions = computed(() =>
+  progressUnitOptions.filter((option) => isChartUnitAvailable(option.value)),
+);
+
+watch(
+  progressChartUnitOptions,
+  (options) => {
+    const values = options.map((option) => option.value);
+    if (!values.length) {
+      progressChartUnit.value = 'percent_complete';
+      return;
+    }
+    if (!values.includes(progressChartUnit.value)) {
+      progressChartUnit.value = values[0]!;
+    }
+  },
+  { immediate: true },
+);
+
+const resolveValueInUnit = (log: ReadingSession, unit: ProgressUnit): number => {
+  if (log.unit === unit) return Math.round(log.value);
+  const canonical =
+    typeof log.canonical_percent === 'number'
+      ? Math.min(100, Math.max(0, log.canonical_percent))
+      : toCanonicalPercent(log.unit, log.value, progressTotals.value);
+  if (canonical === null) return 0;
+  if (unit === 'percent_complete') return Math.round(canonical);
+  const converted = fromCanonicalPercent(unit, canonical, progressTotals.value);
+  return converted ?? 0;
+};
+
+const progressChartData = computed(() => {
+  const chronological = [...sessions.value].reverse();
+  if (!chronological.length) {
+    return { labels: [], datasets: [{ label: 'Progress', data: [] }] };
+  }
+
+  const unitLabel = progressUnitLabel(progressChartUnit.value);
+  if (progressChartMode.value === 'daily_delta') {
+    const dayTotals: Record<string, number> = {};
+    let previousValue = 0;
+    for (const log of chronological) {
+      const value = resolveValueInUnit(log, progressChartUnit.value);
+      const gain = Math.max(0, value - previousValue);
+      const label = formatDateOnly(log.logged_at);
+      dayTotals[label] = (dayTotals[label] || 0) + gain;
+      previousValue = value;
+    }
+    return {
+      labels: Object.keys(dayTotals),
+      datasets: [
+        {
+          type: 'bar',
+          label: `Daily gain (${unitLabel})`,
+          data: Object.values(dayTotals),
+          backgroundColor: '#93c5fd',
+        },
+      ],
+    };
+  }
+
+  return {
+    labels: chronological.map((log) => formatDateOnly(log.logged_at)),
+    datasets: [
+      {
+        label: `Progress (${unitLabel})`,
+        data: chronological.map((log) => resolveValueInUnit(log, progressChartUnit.value)),
+        borderColor: '#2563eb',
+        backgroundColor: '#bfdbfe',
+        fill: false,
+        tension: 0.25,
+      },
+    ],
+  };
+});
+
+const progressChartOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+  },
+  scales: {
+    y: {
+      beginAtZero: true,
+    },
+  },
+};
+
+const normalizeNumericValue = (value: number): number => {
+  const rounded = Math.max(0, Math.round(value));
+  if (progressSliderDisabled.value) return rounded;
+  return Math.min(rounded, progressSliderMax.value);
+};
+
+const onProgressValueInput = (value: number | null) => {
+  sessionProgressValue.value = normalizeNumericValue(value ?? 0);
+};
+
+const startKnobValueEdit = () => {
+  editingKnobValue.value = true;
+  knobEditValue.value = String(sessionProgressValue.value);
+};
+
+const convertUnitOptions = computed(() =>
+  progressUnitOptions.map((option) => ({
+    ...option,
+    disabled:
+      option.value !== sessionProgressUnit.value &&
+      !canConvert(sessionProgressUnit.value, option.value, progressTotals.value).canConvert,
+  })),
+);
+
+const ineligibleConvertUnits = computed(() =>
+  progressUnitOptions
+    .map((option) => option.value)
+    .filter(
+      (unit) =>
+        unit !== sessionProgressUnit.value &&
+        !canConvert(sessionProgressUnit.value, unit, progressTotals.value).canConvert,
+    ),
+);
+
+const isUnitAvailable = (unit: ProgressUnit): boolean => {
+  if (unit === 'percent_complete') return true;
+  if (unit === 'pages_read') return Boolean(progressTotals.value.total_pages);
+  return Boolean(progressTotals.value.total_audio_minutes);
+};
+
+const coerceProgressUnit = (preferred: ProgressUnit): ProgressUnit => {
+  if (isUnitAvailable(preferred)) return preferred;
+  return 'percent_complete';
+};
+
+const openConvertUnitPicker = () => {
+  showConvertUnitSelect.value = true;
+  convertUnitSelection.value = sessionProgressUnit.value;
+};
+
+const cancelKnobValueEdit = () => {
+  editingKnobValue.value = false;
+  knobEditValue.value = String(sessionProgressValue.value);
+};
+
+const commitKnobValueEdit = () => {
+  const parsed = Number(knobEditValue.value.trim());
+  if (Number.isFinite(parsed)) {
+    onProgressValueInput(parsed);
+  }
+  editingKnobValue.value = false;
+};
+
+const onConvertUnitChange = (nextUnit: ProgressUnit) => {
+  convertUnitSelection.value = nextUnit;
+  if (nextUnit === sessionProgressUnit.value) {
+    showConvertUnitSelect.value = false;
+    return;
+  }
+  const converted = requestUnitConversion(nextUnit);
+  if (!converted) {
+    promptMissingTotalsFromIneligible();
+  }
+  showConvertUnitSelect.value = false;
+};
+
+const promptMissingTotalsFromIneligible = () => {
+  const required = new Set<'total_pages' | 'total_audio_minutes'>();
+  for (const unit of ineligibleConvertUnits.value) {
+    const capability = canConvert(sessionProgressUnit.value, unit, progressTotals.value);
+    for (const missing of capability.missing) {
+      required.add(missing);
+    }
+  }
+  conversionMissing.value = [...required];
+  showMissingTotalsForm.value = true;
+  void loadTotalsSuggestions();
+};
+
+const minutesToHms = (minutes: number): string => {
+  const totalSeconds = Math.max(0, Math.round(minutes * 60));
+  const hours = Math.floor(totalSeconds / 3600);
+  const mins = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}:${String(mins).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+};
+
+const collectSuggestionValues = (
+  fields: Array<{ field_key: string; candidates?: Array<{ value?: unknown }> }>,
+  fieldKey: string,
+): number[] => {
+  const field = fields.find((entry) => entry.field_key === fieldKey);
+  if (!field?.candidates?.length) return [];
+  const values = field.candidates
+    .map((candidate) => candidate.value)
+    .map((value) => (typeof value === 'number' ? value : Number(value)))
+    .map((value) => (fieldKey === 'edition.total_pages' ? Math.round(value) : value))
+    .filter((value) => Number.isFinite(value) && value > 0) as number[];
+  return [...new Set(values)];
+};
+
+const loadTotalsSuggestions = async () => {
+  if (!conversionMissing.value.length) return;
+  loadingTotalsSuggestions.value = true;
+  try {
+    const payload = await apiRequest<{
+      fields: Array<{ field_key: string; candidates?: Array<{ value?: unknown }> }>;
+    }>(`/api/v1/works/${workId.value}/enrichment/candidates`);
+    totalPageSuggestions.value = collectSuggestionValues(payload.fields, 'edition.total_pages');
+    totalTimeSuggestions.value = collectSuggestionValues(
+      payload.fields,
+      'edition.total_audio_minutes',
+    );
+
+    if (
+      conversionMissing.value.includes('total_pages') &&
+      !pendingTotalPages.value.trim() &&
+      totalPageSuggestions.value.length
+    ) {
+      pendingTotalPages.value = String(totalPageSuggestions.value[0]);
+    }
+    if (
+      conversionMissing.value.includes('total_audio_minutes') &&
+      !pendingTotalAudioMinutes.value.trim() &&
+      totalTimeSuggestions.value.length
+    ) {
+      pendingTotalAudioMinutes.value = minutesToHms(totalTimeSuggestions.value[0]);
+    }
+  } catch {
+    totalPageSuggestions.value = [];
+    totalTimeSuggestions.value = [];
+  } finally {
+    loadingTotalsSuggestions.value = false;
+  }
+};
+
+const requestUnitConversion = (targetUnit: ProgressUnit): boolean => {
+  const capability = canConvert(sessionProgressUnit.value, targetUnit, progressTotals.value);
+  if (!capability.canConvert) {
+    conversionMissing.value = capability.missing;
+    pendingTargetUnit.value = targetUnit;
+    showMissingTotalsForm.value = true;
+    void loadTotalsSuggestions();
+    return false;
+  }
+
+  const canonical = toCanonicalPercent(
+    sessionProgressUnit.value,
+    sessionProgressValue.value,
+    progressTotals.value,
+  );
+  if (canonical === null) {
+    return false;
+  }
+  const converted = fromCanonicalPercent(targetUnit, canonical, progressTotals.value);
+  if (converted === null) {
+    return false;
+  }
+
+  sessionProgressUnit.value = targetUnit;
+  convertUnitSelection.value = targetUnit;
+  sessionProgressValue.value = converted;
+  conversionError.value = '';
+  conversionMissing.value = [];
+  pendingTargetUnit.value = null;
+  showMissingTotalsForm.value = false;
+  return true;
+};
+
+const resolveTotalsEditionId = async (): Promise<string> => {
+  if (totalsEditionId.value) return totalsEditionId.value;
+  if (libraryItem.value?.preferred_edition_id) {
+    totalsEditionId.value = libraryItem.value.preferred_edition_id;
+    return totalsEditionId.value;
+  }
+  const payload = await apiRequest<{ items: Array<{ id: string }> }>(
+    `/api/v1/works/${workId.value}/editions`,
+    { query: { limit: 1 } },
+  );
+  const fallback = payload.items[0]?.id;
+  if (!fallback) {
+    throw new ApiClientError('No edition available to update totals.', 'edition_missing', 404);
+  }
+  totalsEditionId.value = fallback;
+  return fallback;
+};
+
+const saveMissingTotals = async () => {
+  if (!conversionMissing.value.length) return;
+  savingTotals.value = true;
   error.value = '';
   try {
-    const pages = sessionPagesRead.value.trim();
-    const percent = sessionProgressPercent.value.trim();
-    await apiRequest(`/api/v1/library/items/${libraryItem.value.id}/sessions`, {
+    const updates: Record<string, number> = {};
+    if (conversionMissing.value.includes('total_pages')) {
+      const raw = pendingTotalPages.value.trim();
+      if (!/^\d+$/.test(raw)) {
+        throw new ApiClientError('Total pages must be at least 1.', 'invalid_total_pages', 400);
+      }
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed < 1) {
+        throw new ApiClientError('Total pages must be at least 1.', 'invalid_total_pages', 400);
+      }
+      updates.total_pages = parsed;
+    }
+    if (conversionMissing.value.includes('total_audio_minutes')) {
+      const raw = pendingTotalAudioMinutes.value.trim();
+      const match = /^(\d+):([0-5]\d):([0-5]\d)$/.exec(raw);
+      if (!match) {
+        throw new ApiClientError(
+          'Total time must use hh:mm:ss.',
+          'invalid_total_audio_minutes',
+          400,
+        );
+      }
+      const hours = Number(match[1]);
+      const minutes = Number(match[2]);
+      const seconds = Number(match[3]);
+      const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+      if (totalSeconds <= 0) {
+        throw new ApiClientError(
+          'Total time must be greater than 0.',
+          'invalid_total_audio_minutes',
+          400,
+        );
+      }
+      updates.total_audio_minutes = Math.max(1, Math.round(totalSeconds / 60));
+    }
+
+    const editionId = await resolveTotalsEditionId();
+    const payload = await apiRequest<{
+      total_pages: number | null;
+      total_audio_minutes: number | null;
+    }>(`/api/v1/editions/${editionId}/totals`, {
+      method: 'PATCH',
+      body: updates,
+    });
+
+    if (work.value) {
+      work.value.total_pages = payload.total_pages;
+      work.value.total_audio_minutes = payload.total_audio_minutes;
+    }
+    conversionError.value = '';
+    conversionMissing.value = [];
+    pendingTotalPages.value = '';
+    pendingTotalAudioMinutes.value = '';
+    showMissingTotalsForm.value = false;
+
+    if (pendingTargetUnit.value) {
+      const target = pendingTargetUnit.value;
+      pendingTargetUnit.value = null;
+      requestUnitConversion(target);
+    }
+  } catch (err) {
+    error.value = err instanceof ApiClientError ? err.message : 'Unable to save totals.';
+  } finally {
+    savingTotals.value = false;
+  }
+};
+
+const ensureActiveCycle = async (): Promise<string> => {
+  if (!libraryItem.value)
+    throw new ApiClientError('Library item not found.', 'library_missing', 404);
+  if (activeCycle.value?.id) return activeCycle.value.id;
+
+  const created = await apiRequest<{ id: string }>(
+    `/api/v1/library/items/${libraryItem.value.id}/read-cycles`,
+    {
       method: 'POST',
       body: {
         started_at: new Date().toISOString(),
-        pages_read: pages ? Number(pages) : null,
-        progress_percent: percent ? Number(percent) : null,
+      },
+    },
+  );
+  activeCycle.value = {
+    id: created.id,
+    started_at: new Date().toISOString(),
+  };
+  return created.id;
+};
+
+const loadDefaultProgressUnit = async () => {
+  try {
+    const me = await apiRequest<MeProfile>('/api/v1/me');
+    defaultProgressUnit.value = me.default_progress_unit || 'pages_read';
+  } catch {
+    defaultProgressUnit.value = 'pages_read';
+  }
+  if (isFirstProgressLog.value) {
+    sessionProgressUnit.value = coerceProgressUnit(defaultProgressUnit.value);
+    convertUnitSelection.value = sessionProgressUnit.value;
+  }
+};
+
+const validateLogDate = (): boolean => {
+  const selectedDate = new Date(
+    sessionLoggedDate.value.getFullYear(),
+    sessionLoggedDate.value.getMonth(),
+    sessionLoggedDate.value.getDate(),
+  );
+  if (selectedDate.getTime() > todayDate.value.getTime()) {
+    error.value = 'Progress date cannot be in the future.';
+    return false;
+  }
+  return true;
+};
+
+const toLoggedAtIso = (date: Date): string =>
+  new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12, 0, 0, 0).toISOString();
+
+const submitSessionLog = async () => {
+  if (!libraryItem.value) return;
+  if (!validateLogDate()) return;
+  if (sessionProgressValue.value < 0 || Number.isNaN(sessionProgressValue.value)) {
+    error.value = 'Enter a valid progress value.';
+    return;
+  }
+
+  savingSession.value = true;
+  error.value = '';
+  try {
+    const cycleId = await ensureActiveCycle();
+    const normalizedValue =
+      sessionProgressUnit.value === 'percent_complete'
+        ? Math.min(100, sessionProgressValue.value)
+        : sessionProgressValue.value;
+    await apiRequest(`/api/v1/read-cycles/${cycleId}/progress-logs`, {
+      method: 'POST',
+      body: {
+        unit: sessionProgressUnit.value,
+        value: normalizedValue,
+        logged_at: toLoggedAtIso(sessionLoggedDate.value),
         note: sessionNote.value.trim() || null,
       },
     });
-    sessionPagesRead.value = '';
-    sessionProgressPercent.value = '';
     sessionNote.value = '';
     await loadSessions();
   } catch (err) {
@@ -1754,6 +2821,25 @@ const logSession = async () => {
     savingSession.value = false;
   }
 };
+
+const cancelDecrease = () => {
+  confirmDecreaseVisible.value = false;
+  sessionProgressValue.value = lastLoggedValue.value;
+};
+
+const confirmDecreaseAndLog = async () => {
+  confirmDecreaseVisible.value = false;
+  await submitSessionLog();
+};
+
+const logSession = async () => {
+  if (latestProgressLog.value && sessionProgressValue.value < lastLoggedValue.value) {
+    confirmDecreaseVisible.value = true;
+    return;
+  }
+  await submitSessionLog();
+};
+/* c8 ignore stop */
 
 const addNote = async () => {
   if (!libraryItem.value) return;

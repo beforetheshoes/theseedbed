@@ -36,6 +36,10 @@ FIELD_DEFINITIONS: dict[str, FieldDefinition] = {
     "edition.isbn13": FieldDefinition("edition.isbn13", "edition"),
     "edition.language": FieldDefinition("edition.language", "edition"),
     "edition.format": FieldDefinition("edition.format", "edition"),
+    "edition.total_pages": FieldDefinition("edition.total_pages", "edition"),
+    "edition.total_audio_minutes": FieldDefinition(
+        "edition.total_audio_minutes", "edition"
+    ),
 }
 
 _WORD_RE = re.compile(r"[a-z0-9]+")
@@ -204,6 +208,58 @@ def _normalize_publish_date(value: Any) -> dt.date | None:
             return dt.date.fromisoformat(candidate)
         except ValueError:
             return None
+    return None
+
+
+def _normalize_positive_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.isdigit():
+            parsed = int(stripped)
+            return parsed if parsed > 0 else None
+    return None
+
+
+def _parse_duration_minutes(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value if value > 0 else None
+    if isinstance(value, float):
+        parsed = int(value)
+        return parsed if parsed > 0 else None
+    if not isinstance(value, str):
+        return None
+    text = value.strip().lower()
+    if not text:
+        return None
+    if text.isdigit():
+        parsed = int(text)
+        return parsed if parsed > 0 else None
+    hms = re.match(r"^(\d+):([0-5]\d):([0-5]\d)$", text)
+    if hms:
+        hours = int(hms.group(1))
+        minutes = int(hms.group(2))
+        seconds = int(hms.group(3))
+        total_seconds = hours * 3600 + minutes * 60 + seconds
+        return max(1, round(total_seconds / 60))
+    hm = re.match(r"^(\d+):([0-5]\d)$", text)
+    if hm:
+        hours = int(hm.group(1))
+        minutes = int(hm.group(2))
+        total_seconds = hours * 3600 + minutes * 60
+        return max(1, round(total_seconds / 60))
+    wordy = re.search(
+        r"(?:(\d+)\s*h(?:ours?)?)?\s*(?:(\d+)\s*m(?:in(?:ute)?s?)?)?", text
+    )
+    if wordy and (wordy.group(1) or wordy.group(2)):
+        hours = int(wordy.group(1) or "0")
+        minutes = int(wordy.group(2) or "0")
+        total = hours * 60 + minutes
+        return total if total > 0 else None
     return None
 
 
@@ -751,6 +807,7 @@ async def _resolve_openlibrary_work_key(
 
 def _bundle_values_openlibrary(bundle: OpenLibraryWorkBundle) -> dict[str, Any]:
     edition = bundle.edition or {}
+    raw_edition = bundle.raw_edition or {}
     return {
         "work.description": bundle.description,
         "work.cover_url": bundle.cover_url,
@@ -762,6 +819,12 @@ def _bundle_values_openlibrary(bundle: OpenLibraryWorkBundle) -> dict[str, Any]:
         "edition.isbn13": edition.get("isbn13"),
         "edition.language": edition.get("language"),
         "edition.format": edition.get("format"),
+        "edition.total_pages": _normalize_positive_int(
+            edition.get("total_pages") or raw_edition.get("number_of_pages")
+        ),
+        "edition.total_audio_minutes": _parse_duration_minutes(
+            edition.get("total_audio_minutes") or raw_edition.get("duration")
+        ),
     }
 
 
@@ -777,6 +840,10 @@ def _bundle_values_google(bundle: GoogleBooksWorkBundle) -> dict[str, Any]:
         "edition.isbn13": edition.get("isbn13"),
         "edition.language": edition.get("language"),
         "edition.format": edition.get("format"),
+        "edition.total_pages": _normalize_positive_int(edition.get("total_pages")),
+        "edition.total_audio_minutes": _parse_duration_minutes(
+            edition.get("total_audio_minutes")
+        ),
     }
 
 
@@ -791,6 +858,10 @@ def _current_field_values(work: Work, edition: Edition | None) -> dict[str, Any]
         "edition.isbn13": edition.isbn13 if edition else None,
         "edition.language": edition.language if edition else None,
         "edition.format": edition.format if edition else None,
+        "edition.total_pages": edition.total_pages if edition else None,
+        "edition.total_audio_minutes": (
+            edition.total_audio_minutes if edition else None
+        ),
     }
 
 
@@ -915,6 +986,23 @@ async def get_enrichment_candidates(
                     value=value,
                     candidates_by_field=candidates_by_field,
                     seen=seen,
+                )
+
+            try:
+                audiobook_durations = await open_library.fetch_work_audiobook_durations(
+                    work_key=work_key
+                )
+            except Exception:
+                audiobook_durations = []
+            for duration_minutes in audiobook_durations:
+                _add_candidate(
+                    field_key="edition.total_audio_minutes",
+                    provider="openlibrary",
+                    provider_id=work_key,
+                    value=duration_minutes,
+                    candidates_by_field=candidates_by_field,
+                    seen=seen,
+                    source_label="Open Library audiobook edition",
                 )
         else:
             provider_status["failed"].append(
@@ -1046,6 +1134,8 @@ def _normalize_selection_value(field_key: str, value: Any) -> Any:
         return _normalize_isbn(value, length=10)
     if field_key == "edition.isbn13":
         return _normalize_isbn(value, length=13)
+    if field_key in {"edition.total_pages", "edition.total_audio_minutes"}:
+        return _normalize_positive_int(value)
     if field_key in {
         "work.description",
         "work.cover_url",
@@ -1132,6 +1222,10 @@ async def apply_enrichment_selections(
             edition_target.language = normalized
         elif field_key == "edition.format" and edition_target is not None:
             edition_target.format = normalized
+        elif field_key == "edition.total_pages" and edition_target is not None:
+            edition_target.total_pages = normalized
+        elif field_key == "edition.total_audio_minutes" and edition_target is not None:
+            edition_target.total_audio_minutes = normalized
         updated.append(field_key)
 
     for provider, provider_id in selected_sources:
