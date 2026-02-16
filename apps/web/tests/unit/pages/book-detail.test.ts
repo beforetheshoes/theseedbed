@@ -1207,6 +1207,374 @@ describe('book detail page', () => {
     expect(wrapper.text()).not.toContain('9:00:00');
   });
 
+  it('uses statistics endpoint for streak, chart, and timeline values', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          total_pages: 300,
+          total_audio_minutes: 600,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') {
+        return { default_progress_unit: 'pages_read' };
+      }
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET') {
+        return { items: [{ id: 'cycle-1', started_at: '2026-02-08T00:00:00Z' }] };
+      }
+      if (url === '/api/v1/read-cycles/cycle-1/progress-logs' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/statistics' && method === 'GET') {
+        return {
+          library_item_id: 'item-1',
+          window: { days: 90, tz: 'UTC', start_date: '2026-01-01', end_date: '2026-02-10' },
+          totals: { total_pages: 300, total_audio_minutes: 600 },
+          counts: {
+            total_cycles: 1,
+            completed_cycles: 1,
+            imported_cycles: 0,
+            completed_reads: 1,
+            total_logs: 2,
+            logs_with_canonical: 2,
+            logs_missing_canonical: 0,
+          },
+          current: {
+            latest_logged_at: '2026-02-10T12:00:00Z',
+            canonical_percent: 40,
+            pages_read: 120,
+            minutes_listened: 240,
+          },
+          streak: { non_zero_days: 3, last_non_zero_date: '2026-02-10' },
+          series: {
+            progress_over_time: [
+              {
+                date: '2026-02-08',
+                canonical_percent: 20,
+                pages_read: 60,
+                minutes_listened: 120,
+              },
+              {
+                date: '2026-02-10',
+                canonical_percent: 40,
+                pages_read: 120,
+                minutes_listened: 240,
+              },
+            ],
+            daily_delta: [
+              {
+                date: '2026-02-08',
+                canonical_percent_delta: 20,
+                pages_read_delta: 60,
+                minutes_listened_delta: 120,
+              },
+              {
+                date: '2026-02-10',
+                canonical_percent_delta: 20,
+                pages_read_delta: 60,
+                minutes_listened_delta: 120,
+              },
+            ],
+          },
+          timeline: [
+            {
+              log_id: 'log-2',
+              logged_at: '2026-02-10T12:00:00Z',
+              date: '2026-02-10',
+              unit: 'percent_complete',
+              value: 40,
+              note: null,
+              start_value: 20,
+              end_value: 40,
+              session_delta: 20,
+            },
+          ],
+          data_quality: {
+            has_missing_totals: false,
+            unresolved_logs_exist: false,
+            unresolved_log_ids: [],
+          },
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('3-day streak');
+    expect((wrapper.vm as any).timelineSessions[0].id).toBe('log-2');
+    expect((wrapper.vm as any).progressChartData.labels).toEqual(['2026-02-08', '2026-02-10']);
+  });
+
+  it('reloads statistics after logging a session', async () => {
+    const statsCalls: string[] = [];
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          total_pages: 300,
+          total_audio_minutes: 500,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') {
+        return { default_progress_unit: 'pages_read' };
+      }
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET') {
+        return { items: [{ id: 'cycle-1', started_at: '2026-02-08T00:00:00Z' }] };
+      }
+      if (url === '/api/v1/read-cycles/cycle-1/progress-logs' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/statistics' && method === 'GET') {
+        statsCalls.push(url);
+        return {
+          library_item_id: 'item-1',
+          window: { days: 90, tz: 'UTC', start_date: '2026-01-01', end_date: '2026-02-10' },
+          totals: { total_pages: 300, total_audio_minutes: 500 },
+          counts: {
+            total_cycles: 1,
+            completed_cycles: 0,
+            imported_cycles: 0,
+            completed_reads: 0,
+            total_logs: 0,
+            logs_with_canonical: 0,
+            logs_missing_canonical: 0,
+          },
+          current: {
+            latest_logged_at: null,
+            canonical_percent: 0,
+            pages_read: 0,
+            minutes_listened: 0,
+          },
+          streak: { non_zero_days: 0, last_non_zero_date: null },
+          series: { progress_over_time: [], daily_delta: [] },
+          timeline: [],
+          data_quality: {
+            has_missing_totals: false,
+            unresolved_logs_exist: false,
+            unresolved_log_ids: [],
+          },
+        };
+      }
+      if (url === '/api/v1/read-cycles/cycle-1/progress-logs' && method === 'POST') {
+        return { id: 'log-1' };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="knob-value-display"]').trigger('click');
+    await wrapper.get('[data-test="knob-value-input"]').setValue('12');
+    await wrapper.get('[data-test="knob-value-input"]').trigger('blur');
+    await clickButton(wrapper, 'Log session');
+    await flushPromises();
+
+    expect(statsCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('falls back to raw date text when locale formatting throws', async () => {
+    const localeSpy = vi.spyOn(Date.prototype, 'toLocaleString').mockImplementation(() => {
+      throw new Error('locale unavailable');
+    });
+
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          total_pages: 200,
+          total_audio_minutes: 300,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: null,
+          status: 'reading',
+          created_at: '2026-02-01T00:00:00Z',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/library/items/item-1/statistics' && method === 'GET') {
+        return {
+          library_item_id: 'item-1',
+          window: { days: 90, tz: 'UTC', start_date: '2026-01-01', end_date: '2026-02-10' },
+          totals: { total_pages: 200, total_audio_minutes: 300 },
+          counts: {
+            total_cycles: 0,
+            completed_cycles: 0,
+            imported_cycles: 0,
+            completed_reads: 0,
+            total_logs: 0,
+            logs_with_canonical: 0,
+            logs_missing_canonical: 0,
+          },
+          current: {
+            latest_logged_at: null,
+            canonical_percent: 0,
+            pages_read: 0,
+            minutes_listened: 0,
+          },
+          streak: { non_zero_days: 0, last_non_zero_date: null },
+          series: { progress_over_time: [], daily_delta: [] },
+          timeline: [],
+          data_quality: {
+            has_missing_totals: false,
+            unresolved_logs_exist: false,
+            unresolved_log_ids: [],
+          },
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return {
+          items: [
+            {
+              id: 'note-1',
+              title: 'n',
+              body: 'body',
+              visibility: 'private',
+              created_at: '2026-02-08T08:00:00Z',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('2026-02-08T08:00:00Z');
+    localeSpy.mockRestore();
+  });
+
+  it('falls back to UTC timezone for statistics when Intl timezone detection throws', async () => {
+    const original = Intl.DateTimeFormat;
+    (Intl as any).DateTimeFormat = () => {
+      throw new Error('Intl unavailable');
+    };
+
+    const statsQueries: any[] = [];
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          total_pages: 200,
+          total_audio_minutes: 300,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: null,
+          status: 'reading',
+          created_at: '2026-02-01T00:00:00Z',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/library/items/item-1/statistics' && method === 'GET') {
+        statsQueries.push(opts?.query);
+        return {
+          library_item_id: 'item-1',
+          window: { days: 90, tz: 'UTC', start_date: '2026-01-01', end_date: '2026-02-10' },
+          totals: { total_pages: 200, total_audio_minutes: 300 },
+          counts: {
+            total_cycles: 0,
+            completed_cycles: 0,
+            imported_cycles: 0,
+            completed_reads: 0,
+            total_logs: 0,
+            logs_with_canonical: 0,
+            logs_missing_canonical: 0,
+          },
+          current: {
+            latest_logged_at: null,
+            canonical_percent: 0,
+            pages_read: 0,
+            minutes_listened: 0,
+          },
+          streak: { non_zero_days: 0, last_non_zero_date: null },
+          series: { progress_over_time: [], daily_delta: [] },
+          timeline: [],
+          data_quality: {
+            has_missing_totals: false,
+            unresolved_logs_exist: false,
+            unresolved_log_ids: [],
+          },
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.exists()).toBe(true);
+    expect(statsQueries.some((query) => query?.tz === 'UTC')).toBe(true);
+
+    (Intl as any).DateTimeFormat = original;
+  });
+
   it('creates a read cycle before logging when none exists', async () => {
     const calls: Array<{ url: string; opts?: any }> = [];
     let hasCycle = false;
@@ -3346,6 +3714,268 @@ describe('book detail page', () => {
       '[data-test="book-enrich-cell-work.cover_url-googlebooks"] input[type="radio"]',
     );
     expect((googleOption.element as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('updates note/highlight visibility selects including edit-note dialog select', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: null,
+          status: 'reading',
+          created_at: '2026-02-01T00:00:00Z',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/library/items/item-1/statistics' && method === 'GET') {
+        return {
+          library_item_id: 'item-1',
+          window: { days: 90, tz: 'UTC', start_date: '2026-01-01', end_date: '2026-02-10' },
+          totals: { total_pages: 100, total_audio_minutes: 120 },
+          counts: {
+            total_cycles: 0,
+            completed_cycles: 0,
+            imported_cycles: 0,
+            completed_reads: 0,
+            total_logs: 0,
+            logs_with_canonical: 0,
+            logs_missing_canonical: 0,
+          },
+          current: {
+            latest_logged_at: null,
+            canonical_percent: 0,
+            pages_read: 0,
+            minutes_listened: 0,
+          },
+          streak: { non_zero_days: 0, last_non_zero_date: null },
+          series: { progress_over_time: [], daily_delta: [] },
+          timeline: [],
+          data_quality: {
+            has_missing_totals: false,
+            unresolved_logs_exist: false,
+            unresolved_log_ids: [],
+          },
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        return {
+          items: [
+            {
+              id: 'note-1',
+              title: 'n',
+              body: 'body',
+              visibility: 'private',
+              created_at: '2026-02-08T08:00:00Z',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        return {
+          items: [
+            {
+              id: 'h-1',
+              quote: 'q',
+              visibility: 'private',
+              created_at: '2026-02-08T08:00:00Z',
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const selects = wrapper.findAll('select');
+    expect(selects.length).toBeGreaterThan(2);
+    await selects[0]!.setValue('public');
+    await selects[1]!.setValue('public');
+
+    await clickButton(wrapper, 'Edit');
+    await flushPromises();
+
+    const dialogSelect = wrapper.findAll('select').at(-1);
+    expect(dialogSelect).toBeTruthy();
+    await dialogSelect!.setValue('unlisted');
+  });
+
+  it('allows selecting the current enrichment radio option', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: 'https://current.example/cover.jpg',
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: null,
+          providers: {
+            attempted: ['openlibrary'],
+            succeeded: ['openlibrary'],
+            failed: [],
+          },
+          fields: [
+            {
+              field_key: 'work.cover_url',
+              scope: 'work',
+              current_value: 'https://current.example/cover.jpg',
+              has_conflict: false,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'https://openlibrary.example/cover.jpg',
+                  display_value: 'https://openlibrary.example/cover.jpg',
+                  source_label: 'Open Library OL1W',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+
+    const currentRadio = wrapper.get(
+      '[data-test="book-enrich-cell-work.cover_url-current"] input[type="radio"]',
+    );
+    await currentRadio.trigger('change');
+    expect((wrapper.vm as any).enrichSelectionByField['work.cover_url']).toBe('keep');
+  });
+
+  it('applies visibility/update helpers for note/highlight and enrichment selection state', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: null,
+          status: 'reading',
+          created_at: '2026-02-01T00:00:00Z',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/library/items/item-1/statistics' && method === 'GET') {
+        return {
+          library_item_id: 'item-1',
+          window: { days: 90, tz: 'UTC', start_date: '2026-01-01', end_date: '2026-02-10' },
+          totals: { total_pages: 100, total_audio_minutes: 120 },
+          counts: {
+            total_cycles: 0,
+            completed_cycles: 0,
+            imported_cycles: 0,
+            completed_reads: 0,
+            total_logs: 0,
+            logs_with_canonical: 0,
+            logs_missing_canonical: 0,
+          },
+          current: {
+            latest_logged_at: null,
+            canonical_percent: 0,
+            pages_read: 0,
+            minutes_listened: 0,
+          },
+          streak: { non_zero_days: 0, last_non_zero_date: null },
+          series: { progress_over_time: [], daily_delta: [] },
+          timeline: [],
+          data_quality: {
+            has_missing_totals: false,
+            unresolved_logs_exist: false,
+            unresolved_log_ids: [],
+          },
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).updateNewNoteVisibility(undefined);
+    (wrapper.vm as any).updateNewNoteVisibility('public');
+    (wrapper.vm as any).updateEditNoteVisibility(undefined);
+    (wrapper.vm as any).updateEditNoteVisibility('public');
+    (wrapper.vm as any).updateNewHighlightVisibility(undefined);
+    (wrapper.vm as any).updateNewHighlightVisibility('unlisted');
+    (wrapper.vm as any).setEnrichmentSelection('work.cover_url', 'keep');
+    await flushPromises();
+
+    expect((wrapper.vm as any).newNoteVisibility).toBe('public');
+    expect((wrapper.vm as any).editNoteVisibility).toBe('public');
+    expect((wrapper.vm as any).newHighlightVisibility).toBe('unlisted');
+    expect((wrapper.vm as any).enrichSelectionByField['work.cover_url']).toBe('keep');
+  });
+
+  it('covers refresh/status guard paths for no-library and unchanged-status flows', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return { id: 'work-1', title: 'Book A', description: null, cover_url: null, authors: [] };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1' && method === 'PATCH') {
+        return { id: 'item-1', status: opts?.body?.status };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await (wrapper.vm as any).refresh();
+    await flushPromises();
+
+    (wrapper.vm as any).openStatusEditor();
+    (wrapper.vm as any).libraryItem = {
+      id: 'item-1',
+      work_id: 'work-1',
+      preferred_edition_id: null,
+      status: 'reading',
+      created_at: '2026-02-01T00:00:00Z',
+    };
+    (wrapper.vm as any).openStatusEditor();
+    await (wrapper.vm as any).onStatusSelected('reading');
+    await (wrapper.vm as any).onStatusSelected('completed');
+    await flushPromises();
+
+    expect((wrapper.vm as any).libraryItem.status).toBe('completed');
   });
 
   it('picks all Open Library suggestions and applies selections', async () => {
