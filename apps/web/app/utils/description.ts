@@ -1,5 +1,4 @@
 import MarkdownIt from 'markdown-it';
-import sanitizeHtml from 'sanitize-html';
 
 const markdownInline = new MarkdownIt({
   html: false,
@@ -44,24 +43,80 @@ const escapeHtml = (value: string): string =>
 const renderPlainTextWithBreaks = (value: string): string =>
   escapeHtml(value).replace(/\n/g, '<br>');
 
-const sanitizeDescriptionHtml = (value: string): string =>
-  sanitizeHtml(value, {
-    allowedTags: ['a', 'b', 'blockquote', 'br', 'code', 'em', 'i', 'li', 'ol', 'p', 'strong', 'ul'],
-    allowedAttributes: {
-      a: ['href', 'target', 'rel'],
-    },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    transformTags: {
-      a: (_tagName, attribs) => ({
-        tagName: 'a',
-        attribs: {
-          href: attribs.href ?? '',
-          rel: 'noopener noreferrer nofollow',
-          target: '_blank',
-        },
-      }),
-    },
-  }).trim();
+const allowedDescriptionTags = [
+  'a',
+  'b',
+  'blockquote',
+  'br',
+  'code',
+  'em',
+  'i',
+  'li',
+  'ol',
+  'p',
+  'strong',
+  'ul',
+] as const;
+
+const allowedDescriptionTagSet = new Set<string>(allowedDescriptionTags);
+const allowedDescriptionSchemes = new Set(['http:', 'https:', 'mailto:']);
+
+const isSafeHref = (href: string): boolean => {
+  const trimmed = href.trim();
+  if (!trimmed) return false;
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('?')) return true;
+  try {
+    const parsed = new URL(trimmed);
+    return allowedDescriptionSchemes.has(parsed.protocol);
+  } catch {
+    return false;
+  }
+};
+
+const sanitizeDescriptionHtmlInBrowser = (value: string): string => {
+  if (typeof DOMParser === 'undefined' || typeof document === 'undefined') {
+    return renderPlainTextWithBreaks(value);
+  }
+
+  const parser = new DOMParser();
+  const parsed = parser.parseFromString(value, 'text/html');
+  const output = document.createElement('div');
+
+  const appendSanitized = (node: ChildNode, parent: HTMLElement) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const text = node.textContent;
+      if (text) parent.append(text);
+      return;
+    }
+
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const element = node as HTMLElement;
+    const tag = element.tagName.toLowerCase();
+    if (!allowedDescriptionTagSet.has(tag)) {
+      for (const child of Array.from(element.childNodes)) appendSanitized(child, parent);
+      return;
+    }
+
+    const sanitized = document.createElement(tag);
+    if (tag === 'a') {
+      const href = element.getAttribute('href') ?? '';
+      if (isSafeHref(href)) sanitized.setAttribute('href', href);
+      sanitized.setAttribute('rel', 'noopener noreferrer nofollow');
+      sanitized.setAttribute('target', '_blank');
+    }
+
+    for (const child of Array.from(element.childNodes)) appendSanitized(child, sanitized);
+    parent.append(sanitized);
+  };
+
+  for (const child of Array.from(parsed.body.childNodes)) appendSanitized(child, output);
+  return output.innerHTML.trim();
+};
+
+const sanitizeDescriptionHtml = (value: string): string => {
+  return sanitizeDescriptionHtmlInBrowser(value);
+};
 
 export const renderDescriptionHtml = (
   value?: string | null,
