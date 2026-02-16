@@ -330,6 +330,109 @@ describe('book detail page', () => {
     expect(wrapper.get('[data-test="book-status-open"]').text()).toContain('Completed');
   });
 
+  it('applies cycle conversion totals when loading sessions', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          total_pages: null,
+          total_audio_minutes: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET') {
+        return {
+          items: [
+            {
+              id: 'cycle-1',
+              started_at: '2026-02-08T00:00:00Z',
+              conversion: { total_pages: 555, total_audio_minutes: 777 },
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/read-cycles/cycle-1/progress-logs' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    expect((wrapper.vm as any).work.total_pages).toBe(555);
+    expect((wrapper.vm as any).work.total_audio_minutes).toBe(777);
+  });
+
+  it('shows generic error when status update fails with non-api error', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          total_pages: 300,
+          total_audio_minutes: 600,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET') {
+        return { items: [{ id: 'cycle-1', started_at: '2026-02-08T00:00:00Z' }] };
+      }
+      if (url === '/api/v1/read-cycles/cycle-1/progress-logs' && method === 'GET') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1' && method === 'PATCH') {
+        throw new Error('boom');
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await wrapper.get('[data-test="book-status-open"]').trigger('click');
+    await wrapper.get('[data-test="book-status-select"]').setValue('completed');
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="book-detail-error"]').text()).toContain(
+      'Unable to update status.',
+    );
+  });
+
   it('removes a library item after confirmation and redirects back to the library', async () => {
     apiRequest.mockImplementation(async (url: string, opts?: any) => {
       const method = (opts?.method || 'GET').toUpperCase();
@@ -3368,6 +3471,97 @@ describe('book detail page', () => {
     expect((wrapper.vm as any).enrichError).toBe('Unable to apply enrichment selections.');
   });
 
+  it('picks all Google Books enrichment candidates and applies selections', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: 'Current',
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET')
+        return { items: [] };
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Preferred' },
+          providers: {
+            attempted: ['openlibrary', 'googlebooks'],
+            succeeded: ['openlibrary', 'googlebooks'],
+            failed: [],
+          },
+          fields: [
+            {
+              field_key: 'work.description',
+              scope: 'work',
+              current_value: 'Current',
+              has_conflict: true,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'OL Suggestion',
+                  display_value: 'OL Suggestion',
+                  source_label: 'Open Library OL1W',
+                },
+                {
+                  provider: 'googlebooks',
+                  provider_id: 'g1',
+                  value: 'GB Suggestion',
+                  display_value: 'GB Suggestion',
+                  source_label: 'Google Books g1',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      if (url === '/api/v1/works/work-1/enrichment/apply' && method === 'POST') {
+        expect(opts?.body).toEqual({
+          edition_id: 'edition-1',
+          selections: [
+            {
+              field_key: 'work.description',
+              provider: 'googlebooks',
+              provider_id: 'g1',
+              value: 'GB Suggestion',
+            },
+          ],
+        });
+        return { updated: ['work.description'], skipped: [] };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    await clickButton(wrapper, 'Pick all Google Books');
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Updated 1 fields.' }),
+    );
+  });
+
   it('uses image_url as cover candidate key fallback', async () => {
     apiRequest.mockImplementation(async (url: string) => {
       if (url === '/api/v1/works/work-1') {
@@ -3768,5 +3962,112 @@ describe('book detail page', () => {
       thumbnail_url: 'thumb',
       image_url: 'https://example.com/fallback.jpg',
     });
+  });
+
+  it('covers remaining session/dialog/select/radio bindings and api-error branches', async () => {
+    apiRequest.mockImplementation(async (url: string, opts?: any) => {
+      const method = (opts?.method || 'GET').toUpperCase();
+      if (url === '/api/v1/works/work-1' && method === 'GET') {
+        return {
+          id: 'work-1',
+          title: 'Book A',
+          description: null,
+          cover_url: null,
+          authors: [],
+        };
+      }
+      if (url === '/api/v1/library/items/by-work/work-1' && method === 'GET') {
+        return {
+          id: 'item-1',
+          work_id: 'work-1',
+          preferred_edition_id: 'edition-1',
+          status: 'reading',
+          created_at: '2026-02-01',
+        };
+      }
+      if (url === '/api/v1/me' && method === 'GET') return { default_progress_unit: 'pages_read' };
+      if (url === '/api/v1/library/items/item-1/read-cycles' && method === 'GET') {
+        return { items: [{ id: 'cycle-1', started_at: '2026-02-08T00:00:00Z' }] };
+      }
+      if (url === '/api/v1/read-cycles/cycle-1/progress-logs' && method === 'GET') {
+        throw new ApiClientErrorMock('sessions err', 'sessions_err', 500);
+      }
+      if (url === '/api/v1/library/items/item-1/notes' && method === 'GET') {
+        throw new ApiClientErrorMock('notes err', 'notes_err', 500);
+      }
+      if (url === '/api/v1/library/items/item-1/highlights' && method === 'GET') {
+        throw new ApiClientErrorMock('highlights err', 'highlights_err', 500);
+      }
+      if (url === '/api/v1/me/reviews' && method === 'GET') return { items: [] };
+      if (url === '/api/v1/library/items/item-1' && method === 'PATCH') {
+        throw new ApiClientErrorMock('status err', 'status_err', 500);
+      }
+      if (url === '/api/v1/works/work-1/enrichment/candidates' && method === 'GET') {
+        return {
+          work_id: 'work-1',
+          edition_target: { id: 'edition-1', label: 'Preferred' },
+          providers: {
+            attempted: ['openlibrary', 'googlebooks'],
+            succeeded: ['openlibrary', 'googlebooks'],
+            failed: [],
+          },
+          fields: [
+            {
+              field_key: 'work.cover_url',
+              scope: 'work',
+              current_value: null,
+              has_conflict: true,
+              candidates: [
+                {
+                  provider: 'openlibrary',
+                  provider_id: '/works/OL1W',
+                  value: 'https://example.com/ol.jpg',
+                  display_value: 'https://example.com/ol.jpg',
+                  source_label: 'Open Library',
+                },
+                {
+                  provider: 'googlebooks',
+                  provider_id: 'g1',
+                  value: 'https://example.com/gb.jpg',
+                  display_value: 'https://example.com/gb.jpg',
+                  source_label: 'Google Books',
+                },
+              ],
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${method} ${url}`);
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const range = wrapper.find('input[type="range"]');
+    expect(range.exists()).toBe(true);
+    await range.setValue('10');
+    const dateInput = wrapper.find('input[type="date"]');
+    expect(dateInput.exists()).toBe(true);
+    await dateInput.setValue('2026-02-07');
+
+    await emitDialogVisible(wrapper, 'Lower progress?', false);
+    await emitDialogVisible(wrapper, 'Add missing totals', false);
+
+    await wrapper.get('[data-test="book-status-open"]').trigger('click');
+    await wrapper.get('[data-test="book-status-select"]').setValue('completed');
+    await flushPromises();
+    expect((wrapper.vm as any).error).toContain('status err');
+
+    await clickButton(wrapper, 'Enrich metadata');
+    await flushPromises();
+    const radios = wrapper.findAll('input[type="radio"]');
+    expect(radios.length).toBeGreaterThanOrEqual(3);
+    await radios[0]!.setValue();
+    await radios[1]!.setValue();
+    await radios[2]!.setValue();
+
+    expect((wrapper.vm as any).sessionsError).toBe('sessions err');
+    expect((wrapper.vm as any).notesError).toBe('notes err');
+    expect((wrapper.vm as any).highlightsError).toBe('highlights err');
   });
 });
