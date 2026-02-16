@@ -33,112 +33,147 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     app.dependency_overrides[get_db_session] = _fake_session
 
     monkeypatch.setattr(
-        "app.routers.sessions.list_reading_sessions",
+        "app.routers.sessions.list_read_cycles",
         lambda *_args, **_kwargs: [{"id": str(uuid.uuid4())}],
     )
     monkeypatch.setattr(
-        "app.routers.sessions.create_reading_session",
+        "app.routers.sessions.create_read_cycle",
         lambda *_args, **_kwargs: SimpleNamespace(id=uuid.uuid4()),
     )
     monkeypatch.setattr(
-        "app.routers.sessions.update_reading_session",
+        "app.routers.sessions.update_read_cycle",
         lambda *_args, **_kwargs: SimpleNamespace(id=uuid.uuid4()),
     )
     monkeypatch.setattr(
-        "app.routers.sessions.delete_reading_session",
+        "app.routers.sessions.delete_read_cycle",
+        lambda *_args, **_kwargs: None,
+    )
+    monkeypatch.setattr(
+        "app.routers.sessions.list_progress_logs",
+        lambda *_args, **_kwargs: [{"id": str(uuid.uuid4())}],
+    )
+    monkeypatch.setattr(
+        "app.routers.sessions.create_progress_log",
+        lambda *_args, **_kwargs: SimpleNamespace(id=uuid.uuid4()),
+    )
+    monkeypatch.setattr(
+        "app.routers.sessions.update_progress_log",
+        lambda *_args, **_kwargs: SimpleNamespace(id=uuid.uuid4()),
+    )
+    monkeypatch.setattr(
+        "app.routers.sessions.delete_progress_log",
         lambda *_args, **_kwargs: None,
     )
 
     yield app
 
 
-def test_list_sessions(app: FastAPI) -> None:
+def test_list_cycles(app: FastAPI) -> None:
     client = TestClient(app)
-    response = client.get(f"/api/v1/library/items/{uuid.uuid4()}/sessions")
+    response = client.get(f"/api/v1/library/items/{uuid.uuid4()}/read-cycles")
     assert response.status_code == 200
     assert isinstance(response.json()["data"]["items"], list)
 
 
-def test_create_session(app: FastAPI) -> None:
+def test_create_cycle(app: FastAPI) -> None:
     client = TestClient(app)
     response = client.post(
-        f"/api/v1/library/items/{uuid.uuid4()}/sessions",
-        json={"started_at": "2026-02-08T00:00:00Z", "pages_read": 10},
+        f"/api/v1/library/items/{uuid.uuid4()}/read-cycles",
+        json={"started_at": "2026-02-08T00:00:00Z", "title": "Read #1"},
     )
     assert response.status_code == 200
     assert "id" in response.json()["data"]
 
 
-def test_patch_session(app: FastAPI) -> None:
+def test_patch_cycle(app: FastAPI) -> None:
     client = TestClient(app)
     response = client.patch(
-        f"/api/v1/sessions/{uuid.uuid4()}",
+        f"/api/v1/read-cycles/{uuid.uuid4()}",
         json={"note": "ok"},
     )
     assert response.status_code == 200
 
 
-def test_delete_session(app: FastAPI) -> None:
+def test_delete_cycle(app: FastAPI) -> None:
     client = TestClient(app)
-    response = client.delete(f"/api/v1/sessions/{uuid.uuid4()}")
+    response = client.delete(f"/api/v1/read-cycles/{uuid.uuid4()}")
     assert response.status_code == 200
     assert response.json()["data"]["deleted"] is True
 
 
-def test_list_sessions_returns_404_on_missing_item(
+def test_list_logs(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.get(f"/api/v1/read-cycles/{uuid.uuid4()}/progress-logs")
+    assert response.status_code == 200
+    assert isinstance(response.json()["data"]["items"], list)
+
+
+def test_create_log(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/read-cycles/{uuid.uuid4()}/progress-logs",
+        json={"unit": "percent_complete", "value": 20},
+    )
+    assert response.status_code == 200
+    assert "id" in response.json()["data"]
+
+
+def test_patch_log(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/progress-logs/{uuid.uuid4()}",
+        json={"note": "ok"},
+    )
+    assert response.status_code == 200
+
+
+def test_delete_log(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.delete(f"/api/v1/progress-logs/{uuid.uuid4()}")
+    assert response.status_code == 200
+    assert response.json()["data"]["deleted"] is True
+
+
+def test_list_cycles_returns_404_on_missing_item(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.routers.sessions.list_reading_sessions",
+        "app.routers.sessions.list_read_cycles",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
             LookupError("library item not found")
         ),
     )
     client = TestClient(app)
-    response = client.get(f"/api/v1/library/items/{uuid.uuid4()}/sessions")
+    response = client.get(f"/api/v1/library/items/{uuid.uuid4()}/read-cycles")
     assert response.status_code == 404
 
 
-def test_patch_session_returns_404_on_missing_session(
+def test_create_log_returns_400_on_invalid_value(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.routers.sessions.update_reading_session",
+        "app.routers.sessions.create_progress_log",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            LookupError("session not found")
-        ),
-    )
-    client = TestClient(app)
-    response = client.patch(f"/api/v1/sessions/{uuid.uuid4()}", json={"note": "x"})
-    assert response.status_code == 404
-
-
-def test_create_session_returns_404_on_missing_item(
-    app: FastAPI, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setattr(
-        "app.routers.sessions.create_reading_session",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            LookupError("library item not found")
+            ValueError("percent_complete must be between 0 and 100")
         ),
     )
     client = TestClient(app)
     response = client.post(
-        f"/api/v1/library/items/{uuid.uuid4()}/sessions",
-        json={"started_at": "2026-02-08T00:00:00Z"},
+        f"/api/v1/read-cycles/{uuid.uuid4()}/progress-logs",
+        json={"unit": "percent_complete", "value": 120},
     )
-    assert response.status_code == 404
+    assert response.status_code == 400
 
 
-def test_delete_session_returns_404_on_missing_session(
+def test_patch_cycle_returns_404_on_missing_cycle(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(
-        "app.routers.sessions.delete_reading_session",
+        "app.routers.sessions.update_read_cycle",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(
-            LookupError("session not found")
+            LookupError("read cycle not found")
         ),
     )
     client = TestClient(app)
-    response = client.delete(f"/api/v1/sessions/{uuid.uuid4()}")
+    response = client.patch(f"/api/v1/read-cycles/{uuid.uuid4()}", json={"note": "x"})
     assert response.status_code == 404

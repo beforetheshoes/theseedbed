@@ -70,6 +70,14 @@ def get_work_detail(session: Session, *, work_id: uuid.UUID) -> dict[str, Any]:
         "description": work.description,
         "first_publish_year": work.first_publish_year,
         "cover_url": cover_url,
+        "total_pages": (
+            selected_edition.total_pages if selected_edition is not None else None
+        ),
+        "total_audio_minutes": (
+            selected_edition.total_audio_minutes
+            if selected_edition is not None
+            else None
+        ),
         "authors": [{"id": str(a.id), "name": a.name} for a in authors],
         "identifiers": {
             "isbn10": selected_edition.isbn10 if selected_edition else None,
@@ -118,6 +126,8 @@ def list_work_editions(
                 "publish_date": (
                     edition.publish_date.isoformat() if edition.publish_date else None
                 ),
+                "total_pages": edition.total_pages,
+                "total_audio_minutes": edition.total_audio_minutes,
                 "cover_url": edition.cover_url,
                 "created_at": edition.created_at.isoformat(),
                 "provider": provider,

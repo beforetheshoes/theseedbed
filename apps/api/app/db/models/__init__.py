@@ -12,6 +12,7 @@ from app.db.models.imports import (
 from app.db.models.platform import ApiAuditLog, ApiClient
 from app.db.models.users import (
     LibraryItem,
+    ReadingProgressLog,
     ReadingSession,
     ReadingStateEvent,
     User,
@@ -28,6 +29,7 @@ __all__ = [
     "Highlight",
     "LibraryItem",
     "Note",
+    "ReadingProgressLog",
     "ReadingSession",
     "ReadingStateEvent",
     "Review",

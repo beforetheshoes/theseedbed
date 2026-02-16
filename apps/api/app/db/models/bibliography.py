@@ -64,6 +64,14 @@ class Work(Base):
 class Edition(Base):
     __tablename__ = "editions"
     __table_args__ = (
+        sa.CheckConstraint(
+            "total_pages IS NULL OR total_pages >= 1",
+            name="ck_editions_total_pages_positive",
+        ),
+        sa.CheckConstraint(
+            "total_audio_minutes IS NULL OR total_audio_minutes >= 1",
+            name="ck_editions_total_audio_minutes_positive",
+        ),
         sa.Index("ix_editions_isbn10", "isbn10"),
         sa.Index("ix_editions_isbn13", "isbn13"),
     )
@@ -84,6 +92,8 @@ class Edition(Base):
     publish_date: Mapped[dt.date | None] = mapped_column(sa.Date)
     language: Mapped[str | None] = mapped_column(sa.String(32))
     format: Mapped[str | None] = mapped_column(sa.String(64))
+    total_pages: Mapped[int | None] = mapped_column(sa.Integer)
+    total_audio_minutes: Mapped[int | None] = mapped_column(sa.Integer)
     cover_url: Mapped[str | None] = mapped_column(sa.Text)
     cover_set_by: Mapped[uuid.UUID | None] = mapped_column(sa.UUID(as_uuid=True))
     cover_set_at: Mapped[dt.datetime | None] = mapped_column(sa.DateTime(timezone=True))
