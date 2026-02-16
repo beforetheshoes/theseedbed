@@ -213,3 +213,4 @@ __marimo__/
 
 # Local worktree helper dirs (should never be committed)
 .worktrees/
+.codex/environments/environment.toml
