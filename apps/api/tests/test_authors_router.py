@@ -26,8 +26,12 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     )
     app.dependency_overrides[get_open_library_client] = lambda: object()
 
+    class _FakeSession:
+        def get(self, _model: object, _key: object) -> object | None:
+            return None
+
     def _fake_session() -> Generator[object, None, None]:
-        yield object()
+        yield _FakeSession()
 
     app.dependency_overrides[get_db_session] = _fake_session
 
@@ -54,14 +58,17 @@ def test_get_author(app: FastAPI) -> None:
     assert response.json()["data"]["name"] == "Author A"
 
 
-def test_get_author_404(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_get_author_missing_returns_empty_profile(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
     async def _missing(*_args: object, **_kwargs: object) -> dict[str, object]:
         raise LookupError("missing")
 
     monkeypatch.setattr("app.routers.authors.get_openlibrary_author_profile", _missing)
     client = TestClient(app)
     response = client.get(f"/api/v1/authors/{uuid.uuid4()}")
-    assert response.status_code == 404
+    assert response.status_code == 200
+    assert response.json()["data"]["works"] == []
 
 
 def test_get_author_502(app: FastAPI, monkeypatch: pytest.MonkeyPatch) -> None:

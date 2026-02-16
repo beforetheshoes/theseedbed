@@ -264,6 +264,43 @@ describe('book discovery section', () => {
     expect(wrapper.text()).toContain('No author books with covers yet.');
   });
 
+  it('skips missing authors and still renders available author works', async () => {
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/works/work-1/related') {
+        return { items: [] };
+      }
+      if (url === '/api/v1/authors/author-1') {
+        throw new ApiClientErrorMock('Not found', 'not_found', 404);
+      }
+      if (url === '/api/v1/authors/author-2') {
+        return {
+          id: 'author-2',
+          name: 'Author B',
+          bio: null,
+          photo_url: null,
+          openlibrary_author_key: '/authors/OL2A',
+          works: [
+            {
+              work_key: '/works/OL2W',
+              title: 'Other Book',
+              cover_url: 'https://example.com/other.jpg',
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request: ${url}`);
+    });
+
+    const wrapper = mountSection([
+      { id: 'author-1', name: 'A' },
+      { id: 'author-2', name: 'B' },
+    ]);
+    await flushPromises();
+
+    expect(wrapper.text()).toContain('Other Book');
+    expect(wrapper.text()).not.toContain('No author books with covers yet.');
+  });
+
   it('shows import errors from api and generic failures', async () => {
     apiRequest.mockImplementation(async (url: string, opts?: any) => {
       const method = (opts?.method || 'GET').toUpperCase();

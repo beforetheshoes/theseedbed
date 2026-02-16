@@ -196,24 +196,38 @@
                   </button>
                 </template>
                 <template #body="slotProps">
-                  <div class="flex flex-col items-center gap-2">
-                    <div class="library-meta-chip" data-test="library-item-status-chip">
-                      <i class="pi pi-bookmark text-xs" aria-hidden="true"></i>
-                      <span>{{ libraryStatusLabel(slotProps.data.status) }}</span>
-                    </div>
-                    <Select
-                      :model-value="slotProps.data.status"
-                      :options="statusEditOptions"
-                      option-label="label"
-                      option-value="value"
-                      size="small"
-                      data-test="library-item-status-edit"
-                      :data-item-id="slotProps.data.id"
-                      class="w-full"
-                      :loading="isItemFieldUpdating(slotProps.data.id, 'status')"
+                  <div class="flex justify-center">
+                    <Inplace
                       :disabled="isItemUpdating(slotProps.data.id)"
-                      @update:model-value="onStatusEdit(slotProps.data, $event)"
-                    />
+                      class="library-inline-editor"
+                    >
+                      <template #display>
+                        <Tag
+                          :value="libraryStatusLabel(slotProps.data.status)"
+                          :pt="statusTagPt(slotProps.data.status)"
+                          icon="pi pi-bookmark"
+                          rounded
+                          data-test="library-item-status-chip"
+                        />
+                      </template>
+                      <template #content="{ closeCallback }">
+                        <Select
+                          :model-value="slotProps.data.status"
+                          :options="statusEditOptions"
+                          option-label="label"
+                          option-value="value"
+                          size="small"
+                          data-test="library-item-status-edit"
+                          :data-item-id="slotProps.data.id"
+                          class="w-[11rem]"
+                          :loading="isItemFieldUpdating(slotProps.data.id, 'status')"
+                          :disabled="isItemUpdating(slotProps.data.id)"
+                          @update:model-value="
+                            onStatusEditAndClose(slotProps.data, $event, closeCallback)
+                          "
+                        />
+                      </template>
+                    </Inplace>
                   </div>
                 </template>
               </Column>
@@ -223,24 +237,38 @@
                   <span class="library-header-label">Visibility</span>
                 </template>
                 <template #body="slotProps">
-                  <div class="flex flex-col items-center gap-2">
-                    <div class="library-meta-chip" data-test="library-item-visibility-chip">
-                      <i class="pi pi-eye text-xs" aria-hidden="true"></i>
-                      <span>{{ libraryVisibilityLabel(slotProps.data.visibility) }}</span>
-                    </div>
-                    <Select
-                      :model-value="slotProps.data.visibility"
-                      :options="visibilityEditOptions"
-                      option-label="label"
-                      option-value="value"
-                      size="small"
-                      data-test="library-item-visibility-edit"
-                      :data-item-id="slotProps.data.id"
-                      class="w-full"
-                      :loading="isItemFieldUpdating(slotProps.data.id, 'visibility')"
+                  <div class="flex justify-center">
+                    <Inplace
                       :disabled="isItemUpdating(slotProps.data.id)"
-                      @update:model-value="onVisibilityEdit(slotProps.data, $event)"
-                    />
+                      class="library-inline-editor"
+                    >
+                      <template #display>
+                        <Tag
+                          :value="libraryVisibilityLabel(slotProps.data.visibility)"
+                          :pt="visibilityTagPt(slotProps.data.visibility)"
+                          :icon="visibilityTagIcon(slotProps.data.visibility)"
+                          rounded
+                          data-test="library-item-visibility-chip"
+                        />
+                      </template>
+                      <template #content="{ closeCallback }">
+                        <Select
+                          :model-value="slotProps.data.visibility"
+                          :options="visibilityEditOptions"
+                          option-label="label"
+                          option-value="value"
+                          size="small"
+                          data-test="library-item-visibility-edit"
+                          :data-item-id="slotProps.data.id"
+                          class="w-[11rem]"
+                          :loading="isItemFieldUpdating(slotProps.data.id, 'visibility')"
+                          :disabled="isItemUpdating(slotProps.data.id)"
+                          @update:model-value="
+                            onVisibilityEditAndClose(slotProps.data, $event, closeCallback)
+                          "
+                        />
+                      </template>
+                    </Inplace>
                   </div>
                 </template>
               </Column>
@@ -428,17 +456,68 @@
                             <div
                               class="mt-auto flex flex-wrap items-center gap-x-5 gap-y-2 border-t border-[var(--p-content-border-color)]/60 pt-2"
                             >
-                              <div class="library-meta-chip" data-test="library-item-status-chip">
-                                <i class="pi pi-bookmark text-xs" aria-hidden="true"></i>
-                                <span>{{ libraryStatusLabel(item.status) }}</span>
-                              </div>
-                              <div
-                                class="library-meta-chip"
-                                data-test="library-item-visibility-chip"
+                              <Inplace
+                                :disabled="isItemUpdating(item.id)"
+                                class="library-inline-editor"
                               >
-                                <i class="pi pi-eye text-xs" aria-hidden="true"></i>
-                                <span>{{ libraryVisibilityLabel(item.visibility) }}</span>
-                              </div>
+                                <template #display>
+                                  <Tag
+                                    :value="libraryStatusLabel(item.status)"
+                                    :pt="statusTagPt(item.status)"
+                                    icon="pi pi-bookmark"
+                                    rounded
+                                    data-test="library-item-status-chip"
+                                  />
+                                </template>
+                                <template #content="{ closeCallback }">
+                                  <Select
+                                    :model-value="item.status"
+                                    :options="statusEditOptions"
+                                    option-label="label"
+                                    option-value="value"
+                                    size="small"
+                                    data-test="library-item-status-edit"
+                                    :data-item-id="item.id"
+                                    class="w-[10.5rem]"
+                                    :loading="isItemFieldUpdating(item.id, 'status')"
+                                    :disabled="isItemUpdating(item.id)"
+                                    @update:model-value="
+                                      onStatusEditAndClose(item, $event, closeCallback)
+                                    "
+                                  />
+                                </template>
+                              </Inplace>
+                              <Inplace
+                                :disabled="isItemUpdating(item.id)"
+                                class="library-inline-editor"
+                              >
+                                <template #display>
+                                  <Tag
+                                    :value="libraryVisibilityLabel(item.visibility)"
+                                    :pt="visibilityTagPt(item.visibility)"
+                                    :icon="visibilityTagIcon(item.visibility)"
+                                    rounded
+                                    data-test="library-item-visibility-chip"
+                                  />
+                                </template>
+                                <template #content="{ closeCallback }">
+                                  <Select
+                                    :model-value="item.visibility"
+                                    :options="visibilityEditOptions"
+                                    option-label="label"
+                                    option-value="value"
+                                    size="small"
+                                    data-test="library-item-visibility-edit"
+                                    :data-item-id="item.id"
+                                    class="w-[10.5rem]"
+                                    :loading="isItemFieldUpdating(item.id, 'visibility')"
+                                    :disabled="isItemUpdating(item.id)"
+                                    @update:model-value="
+                                      onVisibilityEditAndClose(item, $event, closeCallback)
+                                    "
+                                  />
+                                </template>
+                              </Inplace>
                               <div
                                 class="flex min-w-[7rem] flex-col items-center justify-center gap-0.5 text-center text-xs"
                                 data-test="library-item-rating"
@@ -471,34 +550,6 @@
                               </div>
                               <div v-if="remainingTagCount(item.tags, 2)" class="library-meta-chip">
                                 +{{ remainingTagCount(item.tags, 2) }}
-                              </div>
-                              <div class="w-full grid grid-cols-1 gap-2 sm:grid-cols-2">
-                                <Select
-                                  :model-value="item.status"
-                                  :options="statusEditOptions"
-                                  option-label="label"
-                                  option-value="value"
-                                  size="small"
-                                  data-test="library-item-status-edit"
-                                  :data-item-id="item.id"
-                                  class="w-full"
-                                  :loading="isItemFieldUpdating(item.id, 'status')"
-                                  :disabled="isItemUpdating(item.id)"
-                                  @update:model-value="onStatusEdit(item, $event)"
-                                />
-                                <Select
-                                  :model-value="item.visibility"
-                                  :options="visibilityEditOptions"
-                                  option-label="label"
-                                  option-value="value"
-                                  size="small"
-                                  data-test="library-item-visibility-edit"
-                                  :data-item-id="item.id"
-                                  class="w-full"
-                                  :loading="isItemFieldUpdating(item.id, 'visibility')"
-                                  :disabled="isItemUpdating(item.id)"
-                                  @update:model-value="onVisibilityEdit(item, $event)"
-                                />
                               </div>
                             </div>
                           </div>
@@ -571,20 +622,68 @@
                                   @click.stop="openRemoveConfirm(item)"
                                 />
                               </div>
-                              <div
-                                class="library-meta-chip mx-auto justify-center whitespace-nowrap"
-                                data-test="library-item-status-chip"
+                              <Inplace
+                                :disabled="isItemUpdating(item.id)"
+                                class="library-inline-editor mx-auto"
                               >
-                                <i class="pi pi-bookmark text-xs" aria-hidden="true"></i>
-                                <span>{{ libraryStatusLabel(item.status) }}</span>
-                              </div>
-                              <div
-                                class="library-meta-chip mx-auto justify-center whitespace-nowrap"
-                                data-test="library-item-visibility-chip"
+                                <template #display>
+                                  <Tag
+                                    :value="libraryStatusLabel(item.status)"
+                                    :pt="statusTagPt(item.status)"
+                                    icon="pi pi-bookmark"
+                                    rounded
+                                    data-test="library-item-status-chip"
+                                  />
+                                </template>
+                                <template #content="{ closeCallback }">
+                                  <Select
+                                    :model-value="item.status"
+                                    :options="statusEditOptions"
+                                    option-label="label"
+                                    option-value="value"
+                                    size="small"
+                                    data-test="library-item-status-edit"
+                                    :data-item-id="item.id"
+                                    class="w-[10.5rem]"
+                                    :loading="isItemFieldUpdating(item.id, 'status')"
+                                    :disabled="isItemUpdating(item.id)"
+                                    @update:model-value="
+                                      onStatusEditAndClose(item, $event, closeCallback)
+                                    "
+                                  />
+                                </template>
+                              </Inplace>
+                              <Inplace
+                                :disabled="isItemUpdating(item.id)"
+                                class="library-inline-editor mx-auto"
                               >
-                                <i class="pi pi-eye text-xs" aria-hidden="true"></i>
-                                <span>{{ libraryVisibilityLabel(item.visibility) }}</span>
-                              </div>
+                                <template #display>
+                                  <Tag
+                                    :value="libraryVisibilityLabel(item.visibility)"
+                                    :pt="visibilityTagPt(item.visibility)"
+                                    :icon="visibilityTagIcon(item.visibility)"
+                                    rounded
+                                    data-test="library-item-visibility-chip"
+                                  />
+                                </template>
+                                <template #content="{ closeCallback }">
+                                  <Select
+                                    :model-value="item.visibility"
+                                    :options="visibilityEditOptions"
+                                    option-label="label"
+                                    option-value="value"
+                                    size="small"
+                                    data-test="library-item-visibility-edit"
+                                    :data-item-id="item.id"
+                                    class="w-[10.5rem]"
+                                    :loading="isItemFieldUpdating(item.id, 'visibility')"
+                                    :disabled="isItemUpdating(item.id)"
+                                    @update:model-value="
+                                      onVisibilityEditAndClose(item, $event, closeCallback)
+                                    "
+                                  />
+                                </template>
+                              </Inplace>
                               <div
                                 class="mx-auto flex min-w-[7rem] flex-col items-center gap-0.5 text-center text-xs"
                                 data-test="library-item-rating"
@@ -653,34 +752,6 @@
                               +{{ remainingTagCount(item.tags, 2) }}
                             </div>
                           </div>
-                          <div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-                            <Select
-                              :model-value="item.status"
-                              :options="statusEditOptions"
-                              option-label="label"
-                              option-value="value"
-                              size="small"
-                              data-test="library-item-status-edit"
-                              :data-item-id="item.id"
-                              class="w-full"
-                              :loading="isItemFieldUpdating(item.id, 'status')"
-                              :disabled="isItemUpdating(item.id)"
-                              @update:model-value="onStatusEdit(item, $event)"
-                            />
-                            <Select
-                              :model-value="item.visibility"
-                              :options="visibilityEditOptions"
-                              option-label="label"
-                              option-value="value"
-                              size="small"
-                              data-test="library-item-visibility-edit"
-                              :data-item-id="item.id"
-                              class="w-full"
-                              :loading="isItemFieldUpdating(item.id, 'visibility')"
-                              :disabled="isItemUpdating(item.id)"
-                              @update:model-value="onVisibilityEdit(item, $event)"
-                            />
-                          </div>
                         </div>
 
                         <p
@@ -726,6 +797,159 @@
         </div>
       </template>
     </Card>
+
+    <Dialog
+      v-model:visible="readDateDialogOpen"
+      modal
+      :header="readDateDialogHeader"
+      :draggable="false"
+      style="width: 40rem"
+      data-test="library-read-date-dialog"
+    >
+      <div class="flex flex-col gap-4">
+        <p class="text-sm text-[var(--p-text-muted-color)]">
+          {{ readDateDialogBody }}
+        </p>
+        <Message v-if="readDateFormError" severity="error" :closable="false">
+          {{ readDateFormError }}
+        </Message>
+
+        <template v-if="readDateDialogStatus === 'reading'">
+          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <span class="self-center text-sm font-medium">Current read start</span>
+            <DatePicker
+              v-model="readingCurrentStartDate"
+              show-icon
+              fluid
+              :manual-input="false"
+              :max-date="readDateMaxDate"
+              data-test="library-read-current-start"
+            />
+          </div>
+
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium">Previous completed reads</p>
+            <Button
+              label="Add previous read"
+              icon="pi pi-plus"
+              size="small"
+              severity="secondary"
+              variant="outlined"
+              data-test="library-read-date-add-previous"
+              :disabled="readDateSaving"
+              @click.stop.prevent="addPreviousReadEntry"
+            />
+          </div>
+
+          <div v-if="previousReadEntries.length" class="flex flex-col gap-2">
+            <div
+              v-for="(entry, index) in previousReadEntries"
+              :key="entry.key"
+              class="grid grid-cols-1 gap-2 rounded-lg border border-[var(--p-content-border-color)] p-3 sm:grid-cols-[1fr_auto]"
+            >
+              <DatePicker
+                :model-value="readDateRangeModel(entry)"
+                selection-mode="range"
+                show-icon
+                fluid
+                :manual-input="false"
+                :max-date="readDateMaxDate"
+                :data-test="`library-read-previous-range-${index}`"
+                @update:model-value="
+                  entry.startedAt = Array.isArray($event) ? ($event[0] ?? null) : null;
+                  entry.endedAt = Array.isArray($event) ? ($event[1] ?? null) : null;
+                "
+              />
+              <Button
+                icon="pi pi-trash"
+                size="small"
+                severity="secondary"
+                variant="text"
+                class="sm:self-center"
+                :aria-label="`Remove previous read ${index + 1}`"
+                :disabled="readDateSaving"
+                @click="removePreviousReadEntry(entry.key)"
+              />
+            </div>
+          </div>
+        </template>
+
+        <template v-else>
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium">Completed reads</p>
+            <Button
+              label="Add another read"
+              icon="pi pi-plus"
+              size="small"
+              severity="secondary"
+              variant="outlined"
+              data-test="library-read-date-add-completed"
+              :disabled="readDateSaving"
+              @click.stop.prevent="addCompletedReadEntry"
+            />
+          </div>
+
+          <div class="flex flex-col gap-2">
+            <div
+              v-for="(entry, index) in completedReadEntries"
+              :key="entry.key"
+              class="grid grid-cols-1 gap-2 rounded-lg border border-[var(--p-content-border-color)] p-3 sm:grid-cols-[1fr_auto]"
+            >
+              <DatePicker
+                :model-value="readDateRangeModel(entry)"
+                selection-mode="range"
+                show-icon
+                fluid
+                :manual-input="false"
+                :max-date="readDateMaxDate"
+                :data-test="`library-read-completed-range-${index}`"
+                @update:model-value="
+                  entry.startedAt = Array.isArray($event) ? ($event[0] ?? null) : null;
+                  entry.endedAt = Array.isArray($event) ? ($event[1] ?? null) : null;
+                "
+              />
+              <Button
+                v-if="completedReadEntries.length > 1"
+                icon="pi pi-trash"
+                size="small"
+                severity="secondary"
+                variant="text"
+                class="sm:self-center"
+                :aria-label="`Remove completed read ${index + 1}`"
+                :disabled="readDateSaving"
+                @click="removeCompletedReadEntry(entry.key)"
+              />
+            </div>
+          </div>
+        </template>
+        <div class="flex flex-wrap items-center justify-end gap-2">
+          <Button
+            :label="readDateTodayButtonLabel"
+            severity="secondary"
+            variant="outlined"
+            data-test="library-read-date-today"
+            :loading="readDateSaving"
+            :disabled="readDateSaving"
+            @click="saveReadDatePrompt(true)"
+          />
+          <Button
+            label="Skip for now"
+            severity="secondary"
+            variant="text"
+            data-test="library-read-date-skip"
+            :disabled="readDateSaving"
+            @click="closeReadDatePrompt"
+          />
+          <Button
+            :label="readDateSaveButtonLabel"
+            data-test="library-read-date-save"
+            :loading="readDateSaving"
+            :disabled="readDateSaving"
+            @click="saveReadDatePrompt()"
+          />
+        </div>
+      </div>
+    </Dialog>
 
     <Dialog
       v-model:visible="removeConfirmOpen"
@@ -877,6 +1101,18 @@ const pendingRemoveItem = ref<LibraryItem | null>(null);
 const removeConfirmOpen = ref(false);
 const removeConfirmLoading = ref(false);
 const itemFieldUpdates = ref<Record<string, boolean>>({});
+const itemReadDateUpdates = ref<Record<string, boolean>>({});
+const readDateDialogOpen = ref(false);
+const readDateDialogStatus = ref<LibraryItemStatus | null>(null);
+const readDateTargetItem = ref<LibraryItem | null>(null);
+type ReadDateEntry = { key: string; startedAt: Date | null; endedAt: Date | null };
+const readingCurrentStartDate = ref<Date | null>(null);
+const previousReadEntries = ref<ReadDateEntry[]>([]);
+const completedReadEntries = ref<ReadDateEntry[]>([]);
+const readDateFormError = ref('');
+const readDateSaving = ref(false);
+const readDateMaxDate = new Date();
+let readDateEntrySequence = 0;
 
 const viewModeOptions = [
   { label: 'List', value: 'current' },
@@ -1062,6 +1298,72 @@ const ratingLabel = (value?: number | null) => {
 const libraryVisibilityLabel = (value: LibraryItemVisibility) =>
   value === 'public' ? 'Public' : 'Private';
 
+const tagPtBase = {
+  root: {
+    class:
+      'border px-2.5 py-1 font-semibold leading-none shadow-none transition-colors duration-150',
+  },
+  icon: {
+    class: 'text-[0.72rem]',
+  },
+  label: {
+    class: 'leading-none',
+  },
+} as const;
+
+const statusTagPt = (value: LibraryItemStatus) => {
+  if (value === 'reading') {
+    return {
+      ...tagPtBase,
+      root: {
+        class: `${tagPtBase.root.class} border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200`,
+      },
+    };
+  }
+  if (value === 'completed') {
+    return {
+      ...tagPtBase,
+      root: {
+        class: `${tagPtBase.root.class} border-emerald-300 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-200`,
+      },
+    };
+  }
+  if (value === 'abandoned') {
+    return {
+      ...tagPtBase,
+      root: {
+        class: `${tagPtBase.root.class} border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/55 dark:text-amber-200`,
+      },
+    };
+  }
+  return {
+    ...tagPtBase,
+    root: {
+      class: `${tagPtBase.root.class} border-teal-300 bg-teal-50 text-teal-700 dark:border-teal-800 dark:bg-teal-950/55 dark:text-teal-200`,
+    },
+  };
+};
+
+const visibilityTagPt = (value: LibraryItemVisibility) => {
+  if (value === 'public') {
+    return {
+      ...tagPtBase,
+      root: {
+        class: `${tagPtBase.root.class} border-2 border-solid border-sky-300 bg-sky-50 text-sky-700 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200`,
+      },
+    };
+  }
+  return {
+    ...tagPtBase,
+    root: {
+      class: `${tagPtBase.root.class} border-2 border-dashed border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-800 dark:bg-violet-950/50 dark:text-violet-200`,
+    },
+  };
+};
+
+const visibilityTagIcon = (value: LibraryItemVisibility) =>
+  value === 'public' ? 'pi pi-eye' : 'pi pi-lock';
+
 const visibleTags = (tags?: string[], max = 2) => (tags || []).slice(0, max);
 
 const remainingTagCount = (tags?: string[], max = 2) => Math.max(0, (tags || []).length - max);
@@ -1131,6 +1433,28 @@ const pageRangeLabel = computed(() => {
   return `${pageFrom.value}-${pageTo.value} of ${totalCount.value}`;
 });
 
+const readDateDialogHeader = computed(() => {
+  if (readDateDialogStatus.value === 'reading') return 'Add reading start date';
+  return 'Add completion date';
+});
+
+const readDateDialogBody = computed(() => {
+  if (readDateDialogStatus.value === 'reading') {
+    return 'Add a start date for your current read, and optionally log previous completed reads.';
+  }
+  return 'Add one or more completed reads, each with a start and finish date.';
+});
+
+const readDateTodayButtonLabel = computed(() => {
+  if (readDateDialogStatus.value === 'reading') return 'Start today and save';
+  return 'Add today read and save';
+});
+
+const readDateSaveButtonLabel = computed(() => {
+  if (readDateDialogStatus.value === 'reading') return 'Save read history';
+  return 'Save completed reads';
+});
+
 const itemFieldUpdateKey = (
   itemId: string,
   field: 'status' | 'visibility',
@@ -1139,8 +1463,12 @@ const itemFieldUpdateKey = (
 const isItemFieldUpdating = (itemId: string, field: 'status' | 'visibility') =>
   Boolean(itemFieldUpdates.value[itemFieldUpdateKey(itemId, field)]);
 
+const isItemReadDateUpdating = (itemId: string) => Boolean(itemReadDateUpdates.value[itemId]);
+
 const isItemUpdating = (itemId: string) =>
-  isItemFieldUpdating(itemId, 'status') || isItemFieldUpdating(itemId, 'visibility');
+  isItemFieldUpdating(itemId, 'status') ||
+  isItemFieldUpdating(itemId, 'visibility') ||
+  isItemReadDateUpdating(itemId);
 
 const setItemFieldUpdating = (itemId: string, field: 'status' | 'visibility', next: boolean) => {
   const key = itemFieldUpdateKey(itemId, field);
@@ -1153,13 +1481,23 @@ const setItemFieldUpdating = (itemId: string, field: 'status' | 'visibility', ne
   itemFieldUpdates.value = remaining;
 };
 
+const setItemReadDateUpdating = (itemId: string, next: boolean) => {
+  if (next) {
+    itemReadDateUpdates.value = { ...itemReadDateUpdates.value, [itemId]: true };
+    return;
+  }
+  const remaining = { ...itemReadDateUpdates.value };
+  delete remaining[itemId];
+  itemReadDateUpdates.value = remaining;
+};
+
 const updateLibraryItemField = async <TField extends 'status' | 'visibility'>(
   item: LibraryItem,
   field: TField,
   nextValue: LibraryItem[TField],
 ) => {
-  if (item[field] === nextValue) return;
-  if (isItemFieldUpdating(item.id, field)) return;
+  if (item[field] === nextValue) return false;
+  if (isItemFieldUpdating(item.id, field)) return false;
 
   const previousValue = item[field];
   item[field] = nextValue;
@@ -1177,6 +1515,7 @@ const updateLibraryItemField = async <TField extends 'status' | 'visibility'>(
       summary: field === 'status' ? 'Status updated.' : 'Visibility updated.',
       life: 2200,
     });
+    return true;
   } catch (err) {
     item[field] = previousValue;
     if (err instanceof ApiClientError && err.status === 404) {
@@ -1191,21 +1530,243 @@ const updateLibraryItemField = async <TField extends 'status' | 'visibility'>(
         err instanceof ApiClientError ? err.message : 'Unable to update this item right now.';
       toast.add({ severity: 'error', summary: msg, life: 3000 });
     }
+    return false;
   } finally {
     setItemFieldUpdating(item.id, field, false);
   }
 };
 
-const onStatusEdit = (item: LibraryItem, next: unknown) => {
-  if (typeof next !== 'string') return;
-  if (!statusEditOptions.some((option) => option.value === next)) return;
-  void updateLibraryItemField(item, 'status', next as LibraryItemStatus);
+const statusEditValue = (next: unknown): LibraryItemStatus | null => {
+  if (typeof next !== 'string') return null;
+  if (!statusEditOptions.some((option) => option.value === next)) return null;
+  return next as LibraryItemStatus;
 };
 
-const onVisibilityEdit = (item: LibraryItem, next: unknown) => {
-  if (typeof next !== 'string') return;
-  if (!visibilityEditOptions.some((option) => option.value === next)) return;
-  void updateLibraryItemField(item, 'visibility', next as LibraryItemVisibility);
+const visibilityEditValue = (next: unknown): LibraryItemVisibility | null => {
+  if (typeof next !== 'string') return null;
+  if (!visibilityEditOptions.some((option) => option.value === next)) return null;
+  return next as LibraryItemVisibility;
+};
+
+const onStatusEdit = async (item: LibraryItem, next: unknown) => {
+  const value = statusEditValue(next);
+  if (!value) return false;
+  return updateLibraryItemField(item, 'status', value);
+};
+
+const onVisibilityEdit = async (item: LibraryItem, next: unknown) => {
+  const value = visibilityEditValue(next);
+  if (!value) return;
+  await updateLibraryItemField(item, 'visibility', value);
+};
+
+const onStatusEditAndClose = async (
+  item: LibraryItem,
+  next: unknown,
+  closeCallback: () => void,
+) => {
+  const value = statusEditValue(next);
+  if (!value) return;
+  const didUpdate = await onStatusEdit(item, value);
+  closeCallback();
+  if (didUpdate && (value === 'reading' || value === 'completed')) {
+    openReadDatePrompt(item, value);
+  }
+};
+
+const onVisibilityEditAndClose = async (
+  item: LibraryItem,
+  next: unknown,
+  closeCallback: () => void,
+) => {
+  if (!visibilityEditValue(next)) return;
+  await onVisibilityEdit(item, next);
+  closeCallback();
+};
+
+const dateStartIso = (value: Date) =>
+  new Date(value.getFullYear(), value.getMonth(), value.getDate(), 0, 0, 0, 0).toISOString();
+
+const dateEndIso = (value: Date) =>
+  new Date(value.getFullYear(), value.getMonth(), value.getDate(), 23, 59, 59, 999).toISOString();
+
+const readDateRangeModel = (entry: ReadDateEntry): Date[] | null => {
+  const dates = [entry.startedAt, entry.endedAt].filter(
+    (value): value is Date => value instanceof Date,
+  );
+  return dates.length ? dates : null;
+};
+
+const buildReadDateEntry = (): ReadDateEntry => ({
+  key: `entry-${readDateEntrySequence++}`,
+  startedAt: null,
+  endedAt: null,
+});
+
+const addPreviousReadEntry = () => {
+  previousReadEntries.value.push(buildReadDateEntry());
+};
+
+const removePreviousReadEntry = (key: string) => {
+  const index = previousReadEntries.value.findIndex((entry) => entry.key === key);
+  if (index < 0) return;
+  previousReadEntries.value.splice(index, 1);
+};
+
+const addCompletedReadEntry = () => {
+  completedReadEntries.value.push(buildReadDateEntry());
+};
+
+const removeCompletedReadEntry = (key: string) => {
+  if (completedReadEntries.value.length <= 1) return;
+  const index = completedReadEntries.value.findIndex((entry) => entry.key === key);
+  if (index < 0) return;
+  completedReadEntries.value.splice(index, 1);
+};
+
+const openReadDatePrompt = (item: LibraryItem, status: LibraryItemStatus) => {
+  readDateTargetItem.value = item;
+  readDateDialogStatus.value = status;
+  readingCurrentStartDate.value = status === 'reading' ? new Date() : null;
+  previousReadEntries.value = [];
+  completedReadEntries.value =
+    status === 'completed'
+      ? [{ key: buildReadDateEntry().key, startedAt: new Date(), endedAt: new Date() }]
+      : [];
+  readDateFormError.value = '';
+  readDateDialogOpen.value = true;
+};
+
+const closeReadDatePrompt = (force = false) => {
+  if (readDateSaving.value && !force) return;
+  readDateDialogOpen.value = false;
+  readDateDialogStatus.value = null;
+  readDateTargetItem.value = null;
+  readingCurrentStartDate.value = null;
+  previousReadEntries.value = [];
+  completedReadEntries.value = [];
+  readDateFormError.value = '';
+};
+
+const validatedReadDatePayloads = () => {
+  const status = readDateDialogStatus.value;
+  if (!status) return null;
+
+  if (status === 'reading') {
+    if (!readingCurrentStartDate.value) {
+      readDateFormError.value = 'Add a start date for your current read.';
+      return null;
+    }
+    const payloads: Array<{ started_at: string; ended_at?: string }> = [
+      { started_at: dateStartIso(readingCurrentStartDate.value) },
+    ];
+    for (const entry of previousReadEntries.value) {
+      if (!entry.startedAt || !entry.endedAt) {
+        readDateFormError.value = 'Each previous read needs both a start and finish date.';
+        return null;
+      }
+      if (entry.endedAt < entry.startedAt) {
+        readDateFormError.value = 'Finish dates must be the same as or after start dates.';
+        return null;
+      }
+      payloads.push({
+        started_at: dateStartIso(entry.startedAt),
+        ended_at: dateEndIso(entry.endedAt),
+      });
+    }
+    return payloads;
+  }
+
+  if (completedReadEntries.value.length === 0) {
+    readDateFormError.value = 'Add at least one completed read.';
+    return null;
+  }
+  const payloads: Array<{ started_at: string; ended_at?: string }> = [];
+  for (const entry of completedReadEntries.value) {
+    if (!entry.startedAt || !entry.endedAt) {
+      readDateFormError.value = 'Each completed read needs both a start and finish date.';
+      return null;
+    }
+    if (entry.endedAt < entry.startedAt) {
+      readDateFormError.value = 'Finish dates must be the same as or after start dates.';
+      return null;
+    }
+    payloads.push({
+      started_at: dateStartIso(entry.startedAt),
+      ended_at: dateEndIso(entry.endedAt),
+    });
+  }
+  return payloads;
+};
+
+const saveReadDatePrompt = async (quickToday = false) => {
+  if (readDateSaving.value) return;
+  const item = readDateTargetItem.value;
+  const status = readDateDialogStatus.value;
+  if (!item || !status) return;
+  if (isItemReadDateUpdating(item.id)) return;
+
+  if (quickToday) {
+    const today = new Date();
+    if (status === 'reading') {
+      readingCurrentStartDate.value = today;
+    } else if (completedReadEntries.value.length === 0) {
+      completedReadEntries.value = [
+        { key: buildReadDateEntry().key, startedAt: today, endedAt: today },
+      ];
+    } else {
+      completedReadEntries.value = completedReadEntries.value.map((entry, index) =>
+        index === 0 ? { ...entry, startedAt: today, endedAt: today } : entry,
+      );
+    }
+  }
+
+  readDateFormError.value = '';
+  const payloads = validatedReadDatePayloads();
+  if (!payloads) return;
+
+  readDateSaving.value = true;
+  setItemReadDateUpdating(item.id, true);
+  try {
+    await Promise.all(
+      payloads.map((body) =>
+        apiRequest(`/api/v1/library/items/${item.id}/sessions`, {
+          method: 'POST',
+          body,
+        }),
+      ),
+    );
+    const latestStarted = payloads.reduce(
+      (latest, body) => (body.started_at > latest ? body.started_at : latest),
+      payloads[0]?.started_at ?? '',
+    );
+    if (latestStarted) item.last_read_at = latestStarted;
+    toast.add({
+      severity: 'success',
+      summary:
+        status === 'completed'
+          ? `Saved ${payloads.length} completed read${payloads.length === 1 ? '' : 's'}.`
+          : 'Reading dates saved.',
+      life: 2200,
+    });
+    closeReadDatePrompt(true);
+  } catch (err) {
+    if (err instanceof ApiClientError && err.status === 404) {
+      toast.add({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+        life: 3000,
+      });
+      closeReadDatePrompt(true);
+      await fetchPage();
+    } else {
+      const msg = err instanceof ApiClientError ? err.message : 'Unable to save reading date.';
+      toast.add({ severity: 'error', summary: msg, life: 3000 });
+    }
+  } finally {
+    setItemReadDateUpdating(item.id, false);
+    readDateSaving.value = false;
+  }
 };
 
 const fetchPage = async () => {
@@ -1365,19 +1926,6 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-.library-meta-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border-radius: 9999px;
-  border: 1px solid color-mix(in oklab, var(--p-content-border-color) 70%, transparent);
-  background: color-mix(in oklab, var(--p-content-border-color) 20%, transparent);
-  padding: 0.12rem 0.55rem;
-  font-size: 0.78rem;
-  font-weight: 500;
-  color: var(--p-text-muted-color);
-}
-
 .library-table :deep(.p-datatable-thead > tr > th) {
   text-align: center;
   vertical-align: middle;

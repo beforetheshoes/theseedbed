@@ -155,16 +155,44 @@ describe('library page (mocked api)', () => {
     cy.visit('/library', { onBeforeLoad: seedSession });
     cy.wait('@listItems');
 
+    cy.get('[data-test="library-item-status-chip"]').first().click();
     cy.get('[data-test="library-item-status-edit"]').first().click();
     cy.contains('.p-select-option', 'Completed').click();
     cy.wait('@patchItem').its('request.body').should('deep.equal', { status: 'completed' });
+    cy.get('[data-test="library-read-date-skip"]').click();
 
+    cy.get('[data-test="library-item-visibility-chip"]').last().click();
     cy.get('[data-test="library-item-visibility-edit"]').last().click();
     cy.contains('.p-select-option', 'Public').click();
     cy.wait('@patchItem').its('request.body').should('deep.equal', { visibility: 'public' });
 
     cy.contains('[data-test="library-item-status-chip"]', 'Completed').should('be.visible');
     cy.contains('[data-test="library-item-visibility-chip"]', 'Public').should('be.visible');
+  });
+
+  it('adds completed and previous read rows from the read-date dialog', () => {
+    cy.visit('/library', { onBeforeLoad: seedSession });
+    cy.wait('@listItems');
+
+    cy.get('[data-test="library-item-status-chip"]').first().click();
+    cy.get('[data-test="library-item-status-edit"]').first().click();
+    cy.contains('.p-select-option', 'Completed').click();
+    cy.wait('@patchItem').its('request.body').should('deep.equal', { status: 'completed' });
+
+    cy.get('[data-test^="library-read-completed-range-"]').should('have.length', 1);
+    cy.get('[data-test="library-read-date-add-completed"]').click();
+    cy.get('[data-test^="library-read-completed-range-"]').should('have.length', 2);
+    cy.get('[data-test="library-read-date-skip"]').click();
+
+    cy.get('[data-test="library-item-status-chip"]').last().click();
+    cy.get('[data-test="library-item-status-edit"]').last().click();
+    cy.contains('.p-select-option', 'Reading').click();
+    cy.wait('@patchItem').its('request.body').should('deep.equal', { status: 'reading' });
+
+    cy.get('[data-test^="library-read-previous-range-"]').should('have.length', 0);
+    cy.get('[data-test="library-read-date-add-previous"]').click();
+    cy.get('[data-test^="library-read-previous-range-"]').should('have.length', 1);
+    cy.get('[data-test="library-read-date-skip"]').click();
   });
 
   it('deletes an item and shows update error feedback', () => {
@@ -176,6 +204,7 @@ describe('library page (mocked api)', () => {
     cy.visit('/library', { onBeforeLoad: seedSession });
     cy.wait('@listItems');
 
+    cy.get('[data-test="library-item-status-chip"]').last().click();
     cy.get('[data-test="library-item-status-edit"]').last().click();
     cy.contains('.p-select-option', 'Completed').click();
     cy.wait('@patchItemError');

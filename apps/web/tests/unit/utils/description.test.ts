@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { renderDescriptionHtml } from '../../../app/utils/description';
 
@@ -44,6 +44,16 @@ describe('description utils', () => {
     const missingHref = renderDescriptionHtml('<a>no href</a>');
     expect(missingHref).not.toContain('href=');
     expect(missingHref).toContain('target="_blank"');
+
+    const malformedHref = renderDescriptionHtml('<a href="https://[broken">oops</a>');
+    expect(malformedHref).not.toContain('href=');
+
+    const relativeLink = renderDescriptionHtml('<a href="/books/1">relative</a>');
+    expect(relativeLink).toContain('href="/books/1"');
+    const hashLink = renderDescriptionHtml('<a href="#section">hash</a>');
+    expect(hashLink).toContain('href="#section"');
+    const queryLink = renderDescriptionHtml('<a href="?q=test">query</a>');
+    expect(queryLink).toContain('href="?q=test"');
   });
 
   it('returns empty when html input is fully stripped', () => {
@@ -61,5 +71,25 @@ describe('description utils', () => {
     expect(rendered).not.toContain('<ul>');
     expect(rendered).not.toContain('**');
     expect(rendered).not.toMatch(/(^|>)\*($|<)/);
+  });
+
+  it('falls back to escaped plain text when DOMParser is unavailable', () => {
+    const originalDomParser = globalThis.DOMParser;
+    vi.stubGlobal('DOMParser', undefined);
+
+    const rendered = renderDescriptionHtml('<b>Bold</b>\nLine 2');
+    expect(rendered).toContain('&lt;b&gt;Bold&lt;/b&gt;');
+    expect(rendered).toContain('<br>');
+
+    vi.stubGlobal('DOMParser', originalDomParser);
+  });
+
+  it('handles non-element html nodes and cleans artifact-only text to empty', () => {
+    const withComment = renderDescriptionHtml('<!--comment--><b>Bold</b>');
+    expect(withComment).toContain('<b>Bold</b>');
+    expect(withComment).not.toContain('comment');
+
+    const artifactsOnly = renderDescriptionHtml('*\n**\n***');
+    expect(artifactsOnly).toBe('');
   });
 });

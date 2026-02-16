@@ -157,7 +157,7 @@ type AuthorProfile = {
   name: string;
   bio: string | null;
   photo_url: string | null;
-  openlibrary_author_key: string;
+  openlibrary_author_key: string | null;
   works: {
     work_key: string;
     title: string;
@@ -181,6 +181,18 @@ const authorProfilesWithCoverWorks = computed(() =>
     .filter((author) => author.works.length),
 );
 
+const loadAuthorProfile = async (authorId: string): Promise<AuthorProfile | null> => {
+  try {
+    return await apiRequest<AuthorProfile>(`/api/v1/authors/${authorId}`);
+  } catch (err) {
+    // Author rows can be removed while related pages still reference the id.
+    if (err instanceof ApiClientError && err.status === 404) {
+      return null;
+    }
+    return null;
+  }
+};
+
 const load = async () => {
   relatedLoading.value = true;
   try {
@@ -201,11 +213,10 @@ const load = async () => {
 
   authorLoading.value = true;
   try {
-    authorProfiles.value = await Promise.all(
-      props.authors
-        .slice(0, 3)
-        .map((author) => apiRequest<AuthorProfile>(`/api/v1/authors/${author.id}`)),
+    const payloads = await Promise.all(
+      props.authors.slice(0, 3).map((author) => loadAuthorProfile(author.id)),
     );
+    authorProfiles.value = payloads.filter((author): author is AuthorProfile => author !== null);
   } catch {
     authorProfiles.value = [];
   } finally {

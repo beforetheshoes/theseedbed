@@ -86,6 +86,27 @@ const mountPage = () =>
           emits: ['update:visible'],
           template: '<div v-if="visible" v-bind="$attrs"><slot /></div>',
         },
+        Inplace: {
+          props: ['disabled'],
+          data: () => ({ active: false }),
+          methods: {
+            open() {
+              if (this.disabled) return;
+              this.active = true;
+            },
+            close() {
+              this.active = false;
+            },
+          },
+          template: `<div v-bind="$attrs">
+            <div v-if="!active" @click="open"><slot name="display" /></div>
+            <div v-else><slot name="content" :closeCallback="close" /></div>
+          </div>`,
+        },
+        Tag: {
+          props: ['value'],
+          template: '<span v-bind="$attrs">{{ value }}</span>',
+        },
         Select: {
           props: ['modelValue', 'options', 'optionLabel', 'optionValue'],
           emits: ['update:modelValue'],
@@ -106,6 +127,15 @@ const mountPage = () =>
                         : 'public',
               )
             "
+          ></button>`,
+        },
+        DatePicker: {
+          props: ['modelValue'],
+          emits: ['update:modelValue'],
+          template: `<button
+            v-bind="$attrs"
+            data-test="datepicker-stub"
+            @click="$emit('update:modelValue', new Date('2026-02-15T00:00:00.000Z'))"
           ></button>`,
         },
         InputText: {
@@ -1488,6 +1518,67 @@ describe('library page', () => {
     expect(apiRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('resets to the last available page when current page exceeds total pages', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ items: [], next_cursor: null })
+      .mockResolvedValueOnce({
+        items: [],
+        pagination: {
+          page: 2,
+          page_size: 25,
+          total_count: 1,
+          total_pages: 1,
+          from: 0,
+          to: 0,
+          has_prev: true,
+          has_next: false,
+        },
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: [],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 1,
+          total_pages: 1,
+          from: 1,
+          to: 1,
+          has_prev: false,
+          has_next: false,
+        },
+        next_cursor: null,
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).page = 2;
+    await (wrapper.vm as any).fetchPage();
+    await flushPromises();
+
+    expect((wrapper.vm as any).page).toBe(1);
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls).toHaveLength(3);
+    expect(listCalls[2][1]).toEqual(
+      expect.objectContaining({
+        query: expect.objectContaining({ page: 1 }),
+      }),
+    );
+  });
+
   it('patches status inline and updates the local item', async () => {
     apiRequest
       .mockResolvedValueOnce({
@@ -1518,6 +1609,8 @@ describe('library page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
+    await wrapper.get('[data-test="library-item-status-chip"]').trigger('click');
+    await flushPromises();
     await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
     await flushPromises();
 
@@ -1526,9 +1619,622 @@ describe('library page', () => {
       body: { status: 'completed' },
     });
     expect((wrapper.vm as any).items[0].status).toBe('completed');
+    expect(wrapper.find('[data-test="library-read-date-dialog"]').exists()).toBe(true);
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: 'Status updated.' }),
     );
+  });
+
+  it('saves a completion date from the status prompt', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'private',
+        tags: ['Favorites'],
+      })
+      .mockResolvedValueOnce({ id: 'session-1' });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-status-chip"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-date-today"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/library/items/item-1/sessions',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({
+          started_at: expect.any(String),
+          ended_at: expect.any(String),
+        }),
+      }),
+    );
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Saved 1 completed read.' }),
+    );
+  });
+
+  it('allows skipping read date prompt without creating a session', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({
+        id: 'item-1',
+        work_id: 'work-1',
+        work_title: 'Book A',
+        status: 'completed',
+        visibility: 'private',
+        tags: ['Favorites'],
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await wrapper.get('[data-test="library-item-status-chip"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-date-skip"]').trigger('click');
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledTimes(2);
+    expect(wrapper.find('[data-test="library-read-date-dialog"]').exists()).toBe(false);
+  });
+
+  it('supports reading start-date prompt with reading-specific labels and payload', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ id: 'session-1' });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    await flushPromises();
+
+    expect((wrapper.vm as any).readDateDialogHeader).toBe('Add reading start date');
+    expect((wrapper.vm as any).readDateDialogBody).toContain('current read');
+    expect((wrapper.vm as any).readDateTodayButtonLabel).toBe('Start today and save');
+    expect((wrapper.vm as any).readDateSaveButtonLabel).toBe('Save read history');
+    (wrapper.vm as any).readingCurrentStartDate = new Date('2026-02-10T12:00:00.000Z');
+    await (wrapper.vm as any).saveReadDatePrompt();
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/library/items/item-1/sessions',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.objectContaining({ started_at: expect.any(String) }),
+      }),
+    );
+    expect(apiRequest.mock.calls[1]?.[1]?.body?.ended_at).toBeUndefined();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Reading dates saved.' }),
+    );
+  });
+
+  it('saves multiple completed read ranges', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ id: 'session-1' })
+      .mockResolvedValueOnce({ id: 'session-2' });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).addCompletedReadEntry();
+    (wrapper.vm as any).completedReadEntries[0].startedAt = new Date('2026-01-01T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[0].endedAt = new Date('2026-01-10T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[1].startedAt = new Date('2026-02-01T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[1].endedAt = new Date('2026-02-05T00:00:00.000Z');
+    await flushPromises();
+
+    await (wrapper.vm as any).saveReadDatePrompt();
+    await flushPromises();
+
+    const sessionCalls = apiRequest.mock.calls.filter((c) =>
+      String(c[0]).includes('/api/v1/library/items/item-1/sessions'),
+    );
+    expect(sessionCalls).toHaveLength(2);
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Saved 2 completed reads.' }),
+    );
+  });
+
+  it('saves reading start date with optional previous completed reads', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ id: 'session-1' })
+      .mockResolvedValueOnce({ id: 'session-2' });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).readingCurrentStartDate = new Date('2026-02-15T00:00:00.000Z');
+    (wrapper.vm as any).addPreviousReadEntry();
+    (wrapper.vm as any).previousReadEntries[0].startedAt = new Date('2026-01-01T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].endedAt = new Date('2026-01-12T00:00:00.000Z');
+    await flushPromises();
+
+    await (wrapper.vm as any).saveReadDatePrompt();
+    await flushPromises();
+
+    const sessionCalls = apiRequest.mock.calls.filter((c) =>
+      String(c[0]).includes('/api/v1/library/items/item-1/sessions'),
+    );
+    expect(sessionCalls).toHaveLength(2);
+    expect(sessionCalls[0]?.[1]?.body?.ended_at).toBeUndefined();
+    expect(sessionCalls[1]?.[1]?.body?.ended_at).toEqual(expect.any(String));
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'success', summary: 'Reading dates saved.' }),
+    );
+  });
+
+  it('refetches and closes prompt when saving a read date returns 404', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Not found', 'not_found', 404))
+      .mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    await flushPromises();
+
+    await (wrapper.vm as any).saveReadDatePrompt();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({
+        severity: 'info',
+        summary: 'This item was already removed. Refreshing...',
+      }),
+    );
+    expect((wrapper.vm as any).readDateDialogOpen).toBe(false);
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls.length).toBe(2);
+  });
+
+  it('shows a save-date error and keeps prompt open on non-404 failures', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Cannot save date', 'bad_request', 400));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).readDateSaving = true;
+    (wrapper.vm as any).closeReadDatePrompt();
+    expect((wrapper.vm as any).readDateDialogOpen).toBe(true);
+    (wrapper.vm as any).readDateSaving = false;
+    await flushPromises();
+
+    await (wrapper.vm as any).saveReadDatePrompt();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Cannot save date' }),
+    );
+    expect((wrapper.vm as any).readDateDialogOpen).toBe(true);
+  });
+
+  it('validates malformed completed and previous read date ranges', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'to_read',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).completedReadEntries[0].startedAt = null;
+    (wrapper.vm as any).completedReadEntries[0].endedAt = new Date('2026-02-01T00:00:00.000Z');
+    await (wrapper.vm as any).saveReadDatePrompt();
+    expect((wrapper.vm as any).readDateFormError).toContain('completed read needs both');
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).completedReadEntries[0].startedAt = new Date('2026-02-10T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[0].endedAt = new Date('2026-02-01T00:00:00.000Z');
+    await (wrapper.vm as any).saveReadDatePrompt();
+    expect((wrapper.vm as any).readDateFormError).toContain('same as or after');
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).completedReadEntries = [];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).completedReadEntries = [];
+    await (wrapper.vm as any).saveReadDatePrompt();
+    expect((wrapper.vm as any).readDateFormError).toContain('at least one completed read');
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).addPreviousReadEntry();
+    (wrapper.vm as any).readingCurrentStartDate = new Date('2026-02-10T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].startedAt = new Date('2026-01-01T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].endedAt = null;
+    await (wrapper.vm as any).saveReadDatePrompt();
+    expect((wrapper.vm as any).readDateFormError).toContain('previous read needs both');
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).addPreviousReadEntry();
+    (wrapper.vm as any).readingCurrentStartDate = new Date('2026-02-10T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].startedAt = new Date('2026-01-15T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].endedAt = new Date('2026-01-01T00:00:00.000Z');
+    await (wrapper.vm as any).saveReadDatePrompt();
+    expect((wrapper.vm as any).readDateFormError).toContain('same as or after');
+  });
+
+  it('supports quick-today fallback and entry removal helpers', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: [],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ id: 'session-1' });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).completedReadEntries = [];
+    await (wrapper.vm as any).saveReadDatePrompt(true);
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/library/items/item-1/sessions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).saveReadDatePrompt(true);
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/library/items/item-1/sessions',
+      expect.objectContaining({ method: 'POST' }),
+    );
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).addPreviousReadEntry();
+    const key = (wrapper.vm as any).previousReadEntries[0].key;
+    (wrapper.vm as any).removePreviousReadEntry(key);
+    expect((wrapper.vm as any).previousReadEntries).toHaveLength(0);
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    (wrapper.vm as any).addCompletedReadEntry();
+    const removeKey = (wrapper.vm as any).completedReadEntries[1].key;
+    (wrapper.vm as any).removeCompletedReadEntry(removeKey);
+    expect((wrapper.vm as any).completedReadEntries).toHaveLength(1);
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    const onlyKey = (wrapper.vm as any).completedReadEntries[0].key;
+    (wrapper.vm as any).removeCompletedReadEntry(onlyKey);
+    expect((wrapper.vm as any).completedReadEntries).toHaveLength(1);
+  });
+
+  it('covers remaining read-date helper guards and computed labels', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'to_read',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    expect((wrapper.vm as any).readDateDialogBody).toContain('one or more completed reads');
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    (wrapper.vm as any).readingCurrentStartDate = null;
+    await (wrapper.vm as any).saveReadDatePrompt();
+    expect((wrapper.vm as any).readDateFormError).toContain('start date for your current read');
+  });
+
+  it('renders read-date dialog controls and triggers dialog button handlers', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: [],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockResolvedValue({ id: 'session-1' });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-date-add-completed"]').trigger('click');
+    await flushPromises();
+
+    (wrapper.vm as any).completedReadEntries[0].startedAt = new Date('2026-02-01T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[0].endedAt = new Date('2026-02-02T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[1].startedAt = new Date('2026-02-03T00:00:00.000Z');
+    (wrapper.vm as any).completedReadEntries[1].endedAt = new Date('2026-02-04T00:00:00.000Z');
+    await flushPromises();
+
+    await wrapper.get('button[aria-label="Remove completed read 2"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-date-save"]').trigger('click');
+    await flushPromises();
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    await flushPromises();
+    expect(wrapper.find('[data-test="library-read-current-start"]').exists()).toBe(true);
+    await wrapper.get('[data-test="library-read-date-add-previous"]').trigger('click');
+    await flushPromises();
+    (wrapper.vm as any).readingCurrentStartDate = new Date('2026-02-10T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].startedAt = new Date('2026-01-01T00:00:00.000Z');
+    (wrapper.vm as any).previousReadEntries[0].endedAt = new Date('2026-01-02T00:00:00.000Z');
+    await flushPromises();
+    await wrapper.get('button[aria-label="Remove previous read 1"]').trigger('click');
+    await flushPromises();
+  });
+
+  it('maps range DatePicker updates for completed and previous reads', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'to_read',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    const item = (wrapper.vm as any).items[0];
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-completed-range-0"]').trigger('click');
+    await flushPromises();
+    expect((wrapper.vm as any).completedReadEntries[0].startedAt).toBeNull();
+    expect((wrapper.vm as any).completedReadEntries[0].endedAt).toBeNull();
+
+    const completedStart = new Date('2025-08-11T00:00:00.000Z');
+    const completedEnd = new Date('2025-08-20T00:00:00.000Z');
+    wrapper
+      .getComponent('[data-test="library-read-completed-range-0"]')
+      .vm.$emit('update:modelValue', [completedStart, completedEnd]);
+    await flushPromises();
+    expect((wrapper.vm as any).completedReadEntries[0].startedAt).toEqual(completedStart);
+    expect((wrapper.vm as any).completedReadEntries[0].endedAt).toEqual(completedEnd);
+
+    (wrapper.vm as any).openReadDatePrompt(item, 'reading');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-date-add-previous"]').trigger('click');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-previous-range-0"]').trigger('click');
+    await flushPromises();
+    expect((wrapper.vm as any).previousReadEntries[0].startedAt).toBeNull();
+    expect((wrapper.vm as any).previousReadEntries[0].endedAt).toBeNull();
+
+    const previousStart = new Date('2025-08-01T00:00:00.000Z');
+    const previousEnd = new Date('2025-08-08T00:00:00.000Z');
+    wrapper
+      .getComponent('[data-test="library-read-previous-range-0"]')
+      .vm.$emit('update:modelValue', [previousStart, previousEnd]);
+    await flushPromises();
+    expect((wrapper.vm as any).previousReadEntries[0].startedAt).toEqual(previousStart);
+    expect((wrapper.vm as any).previousReadEntries[0].endedAt).toEqual(previousEnd);
+  });
+
+  it('renders abandoned status pills across view modes', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Abandoned Book',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'abandoned',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+    expect(wrapper.text()).toContain('Abandoned');
+
+    (wrapper.vm as any).viewMode = 'table';
+    await flushPromises();
+    expect(wrapper.text()).toContain('Abandoned');
+
+    (wrapper.vm as any).viewMode = 'grid';
+    await flushPromises();
+    expect(wrapper.text()).toContain('Abandoned');
   });
 
   it('patches visibility inline and reverts when update fails', async () => {
@@ -1554,6 +2260,8 @@ describe('library page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
+    await wrapper.get('[data-test="library-item-visibility-chip"]').trigger('click');
+    await flushPromises();
     await wrapper.get('[data-test="library-item-visibility-edit"]').trigger('click');
     await flushPromises();
 
@@ -1594,6 +2302,8 @@ describe('library page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
+    await wrapper.get('[data-test="library-item-status-chip"]').trigger('click');
+    await flushPromises();
     await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
     await flushPromises();
 
@@ -1630,6 +2340,8 @@ describe('library page', () => {
     const wrapper = mountPage();
     await flushPromises();
 
+    await wrapper.get('[data-test="library-item-status-chip"]').trigger('click');
+    await flushPromises();
     await wrapper.get('[data-test="library-item-status-edit"]').trigger('click');
     await flushPromises();
 
@@ -1673,6 +2385,39 @@ describe('library page', () => {
     expect(apiRequest).toHaveBeenCalledTimes(1);
   });
 
+  it('does not close inline editor when edit payload is invalid', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'to_read',
+          visibility: 'private',
+          tags: [],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      next_cursor: null,
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    const closeStatus = vi.fn();
+    const closeVisibility = vi.fn();
+    await (wrapper.vm as any).onStatusEditAndClose(item, 123, closeStatus);
+    await (wrapper.vm as any).onVisibilityEditAndClose(item, 'friends-only', closeVisibility);
+    await flushPromises();
+
+    expect(closeStatus).not.toHaveBeenCalled();
+    expect(closeVisibility).not.toHaveBeenCalled();
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+  });
+
   it('updates via table mode inline controls', async () => {
     apiRequest
       .mockResolvedValueOnce({
@@ -1713,8 +2458,11 @@ describe('library page', () => {
     (wrapper.vm as any).viewMode = 'table';
     await flushPromises();
 
-    const editControls = wrapper.findAll('[data-test="library-item-status-edit"]');
-    await editControls.at(0)!.trigger('click');
+    await wrapper.findAll('[data-test="library-item-status-chip"]').at(0)!.trigger('click');
+    await flushPromises();
+    await wrapper.findAll('[data-test="library-item-status-edit"]').at(0)!.trigger('click');
+    await flushPromises();
+    await wrapper.findAll('[data-test="library-item-visibility-chip"]').at(0)!.trigger('click');
     await flushPromises();
     await wrapper.findAll('[data-test="library-item-visibility-edit"]').at(0)!.trigger('click');
     await flushPromises();
@@ -1769,7 +2517,11 @@ describe('library page', () => {
     (wrapper.vm as any).viewMode = 'grid';
     await flushPromises();
 
+    await wrapper.findAll('[data-test="library-item-status-chip"]').at(0)!.trigger('click');
+    await flushPromises();
     await wrapper.findAll('[data-test="library-item-status-edit"]').at(0)!.trigger('click');
+    await flushPromises();
+    await wrapper.findAll('[data-test="library-item-visibility-chip"]').at(0)!.trigger('click');
     await flushPromises();
     await wrapper.findAll('[data-test="library-item-visibility-edit"]').at(0)!.trigger('click');
     await flushPromises();
@@ -1818,6 +2570,80 @@ describe('library page', () => {
     expect(toastAdd).toHaveBeenCalledWith(
       expect.objectContaining({ severity: 'success', summary: 'Removed from your library.' }),
     );
+  });
+
+  it('decrements page before refetch when removing the last item on a non-first page', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: [],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 2,
+          page_size: 25,
+          total_count: 26,
+          total_pages: 2,
+          from: 26,
+          to: 26,
+          has_prev: true,
+          has_next: false,
+        },
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ deleted: true })
+      .mockResolvedValueOnce({
+        items: [],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 25,
+          total_pages: 1,
+          from: 1,
+          to: 25,
+          has_prev: false,
+          has_next: false,
+        },
+        next_cursor: null,
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).page = 2;
+    await wrapper.get('[data-test="library-item-remove"]').trigger('click');
+    await wrapper.get('[data-test="library-remove-confirm"]').trigger('click');
+    await flushPromises();
+
+    expect((wrapper.vm as any).page).toBe(1);
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls[1][1]).toEqual(
+      expect.objectContaining({
+        query: expect.objectContaining({ page: 1 }),
+      }),
+    );
+  });
+
+  it('does not refetch when paginator emits unchanged page and rows', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], next_cursor: null });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).onPageChange({ page: 0, rows: 25 });
+    await flushPromises();
+
+    const listCalls = apiRequest.mock.calls.filter((c) => c[0] === '/api/v1/library/items');
+    expect(listCalls).toHaveLength(1);
   });
 
   it('handles 404 already-removed by toasting and refreshing', async () => {
@@ -2030,7 +2856,11 @@ describe('library page', () => {
     (wrapper.vm as any).removeConfirmOpen = true;
     await flushPromises();
 
-    const dialog = wrapper.findComponent({ name: 'Dialog' });
+    const dialog = wrapper
+      .findAllComponents({ name: 'Dialog' })
+      .find((candidate) => candidate.props('header') === 'Remove from library');
+    expect(dialog).toBeDefined();
+    if (!dialog) return;
     dialog.vm.$emit('update:visible', false);
     await flushPromises();
 
