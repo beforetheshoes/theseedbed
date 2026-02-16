@@ -1,6 +1,6 @@
 """Reading sessions v2 foundation: read cycles + progress logs.
 
-Revision ID: 0016_reading_sessions_v2_foundation
+Revision ID: 0016_reading_sessions_v2
 Revises: 0015_goodreads_import_jobs
 Create Date: 2026-02-16 00:00:00
 """
@@ -12,7 +12,7 @@ from sqlalchemy.dialects import postgresql
 
 from alembic import op
 
-revision = "0016_reading_sessions_v2_foundation"
+revision = "0016_reading_sessions_v2"
 down_revision = "0015_goodreads_import_jobs"
 branch_labels = None
 depends_on = None
