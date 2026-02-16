@@ -10,6 +10,7 @@ export default defineNuxtConfig({
     'primeicons/primeicons.css',
     '@fontsource/atkinson-hyperlegible/400.css',
     '@fontsource/atkinson-hyperlegible/700.css',
+    '~/assets/css/base.css',
     '~/assets/css/tailwind.css',
   ],
   // Root is auth-gated; redirect immediately at the server/router level to avoid client flicker

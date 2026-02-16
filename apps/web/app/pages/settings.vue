@@ -92,6 +92,115 @@
           </template>
         </Card>
 
+        <Card data-test="settings-theme-card">
+          <template #content>
+            <div class="flex flex-col gap-4">
+              <div>
+                <p class="m-0 text-sm font-medium">Theme</p>
+                <p class="m-0 text-xs text-[var(--p-text-muted-color)]">
+                  Pick primary and accent colors plus your preferred reading font.
+                </p>
+              </div>
+
+              <div class="grid gap-3 md:grid-cols-2">
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-medium" for="settings-theme-primary"
+                    >Primary color</label
+                  >
+                  <div class="flex items-center gap-2">
+                    <input
+                      id="settings-theme-primary"
+                      v-model="themePrimaryColor"
+                      type="color"
+                      data-test="settings-theme-primary-color"
+                      class="h-9 w-12 cursor-pointer rounded border border-[var(--p-content-border-color)] bg-transparent p-1"
+                    />
+                    <InputText
+                      v-model="themePrimaryColorText"
+                      data-test="settings-theme-primary-hex"
+                      placeholder="#6366F1"
+                    />
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="swatch in primarySwatches"
+                      :key="`primary-${swatch}`"
+                      type="button"
+                      class="h-6 w-6 rounded-full border border-[var(--p-content-border-color)]"
+                      :style="{ backgroundColor: swatch }"
+                      :data-test="`settings-theme-primary-swatch-${swatch}`"
+                      @click="themePrimaryColorText = swatch"
+                    />
+                  </div>
+                </div>
+
+                <div class="flex flex-col gap-2">
+                  <label class="text-sm font-medium" for="settings-theme-accent"
+                    >Accent color</label
+                  >
+                  <div class="flex items-center gap-2">
+                    <input
+                      id="settings-theme-accent"
+                      v-model="themeAccentColor"
+                      type="color"
+                      data-test="settings-theme-accent-color"
+                      class="h-9 w-12 cursor-pointer rounded border border-[var(--p-content-border-color)] bg-transparent p-1"
+                    />
+                    <InputText
+                      v-model="themeAccentColorText"
+                      data-test="settings-theme-accent-hex"
+                      placeholder="#14B8A6"
+                    />
+                  </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      v-for="swatch in accentSwatches"
+                      :key="`accent-${swatch}`"
+                      type="button"
+                      class="h-6 w-6 rounded-full border border-[var(--p-content-border-color)]"
+                      :style="{ backgroundColor: swatch }"
+                      :data-test="`settings-theme-accent-swatch-${swatch}`"
+                      @click="themeAccentColorText = swatch"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex flex-col gap-2">
+                <label class="text-sm font-medium" for="settings-theme-font">Font family</label>
+                <select
+                  id="settings-theme-font"
+                  v-model="themeFontFamily"
+                  data-test="settings-theme-font-family"
+                  class="rounded border border-[var(--p-content-border-color)] bg-transparent px-2 py-1 text-sm"
+                >
+                  <option value="atkinson">Atkinson Hyperlegible</option>
+                  <option value="ibm_plex_sans">IBM Plex Sans</option>
+                  <option value="fraunces">Fraunces</option>
+                </select>
+              </div>
+
+              <Message
+                v-if="themeFormatError"
+                severity="error"
+                :closable="false"
+                data-test="settings-theme-format-error"
+              >
+                {{ themeFormatError }}
+              </Message>
+              <Message
+                v-for="warning in themeWarnings"
+                :key="warning.message"
+                severity="warn"
+                :closable="false"
+                data-test="settings-theme-contrast-warning"
+              >
+                {{ warning.message }}
+              </Message>
+            </div>
+          </template>
+        </Card>
+
         <Card class="storygraph-import-card" data-test="storygraph-import-card">
           <template #content>
             <div class="flex flex-col gap-4">
@@ -722,7 +831,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import Badge from 'primevue/badge';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -731,6 +840,13 @@ import Message from 'primevue/message';
 import Panel from 'primevue/panel';
 import Tag from 'primevue/tag';
 import { useToast } from 'primevue/usetoast';
+import {
+  applyUserTheme,
+  getThemeWarnings,
+  isThemeFontFamily,
+  normalizeHexColor,
+  type ThemeFontFamily,
+} from '~/composables/useUserTheme';
 import { ApiClientError, apiRequest } from '~/utils/api';
 
 definePageMeta({ layout: 'app', middleware: 'auth' });
@@ -740,6 +856,9 @@ type MeProfile = {
   display_name: string | null;
   avatar_url: string | null;
   enable_google_books: boolean;
+  theme_primary_color: string | null;
+  theme_accent_color: string | null;
+  theme_font_family: ThemeFontFamily | null;
   default_progress_unit: 'pages_read' | 'percent_complete' | 'minutes_listened';
 };
 
@@ -799,6 +918,38 @@ const enableGoogleBooks = ref(false);
 const defaultProgressUnit = ref<'pages_read' | 'percent_complete' | 'minutes_listened'>(
   'pages_read',
 );
+const themePrimaryColor = ref('#6366F1');
+const themeAccentColor = ref('#14B8A6');
+const themePrimaryColorText = ref('#6366F1');
+const themeAccentColorText = ref('#14B8A6');
+const themeFontFamily = ref<ThemeFontFamily>('ibm_plex_sans');
+const themeFormatError = ref('');
+const primarySwatches = ['#6366F1', '#2563EB', '#0F766E', '#D946EF', '#F97316', '#BE123C'];
+const accentSwatches = ['#14B8A6', '#22C55E', '#F59E0B', '#EC4899', '#8B5CF6', '#0EA5E9'];
+const themeWarnings = computed(() =>
+  getThemeWarnings({
+    theme_primary_color: themePrimaryColorText.value,
+    theme_accent_color: themeAccentColorText.value,
+  }),
+);
+
+watch(themePrimaryColor, (value) => {
+  themePrimaryColorText.value = value.toUpperCase();
+});
+
+watch(themeAccentColor, (value) => {
+  themeAccentColorText.value = value.toUpperCase();
+});
+
+watch(themePrimaryColorText, (value) => {
+  const normalized = normalizeHexColor(value);
+  if (normalized) themePrimaryColor.value = normalized;
+});
+
+watch(themeAccentColorText, (value) => {
+  const normalized = normalizeHexColor(value);
+  if (normalized) themeAccentColor.value = normalized;
+});
 
 const importing = ref(false);
 const importError = ref('');
@@ -916,6 +1067,7 @@ const clearGoodreadsPollTimer = () => {
 const loadProfile = async () => {
   loading.value = true;
   error.value = '';
+  themeFormatError.value = '';
   try {
     const data = await apiRequest<MeProfile>('/api/v1/me');
     handle.value = data.handle;
@@ -923,6 +1075,18 @@ const loadProfile = async () => {
     avatarUrl.value = data.avatar_url ?? '';
     enableGoogleBooks.value = Boolean(data.enable_google_books);
     defaultProgressUnit.value = data.default_progress_unit || 'pages_read';
+    themePrimaryColorText.value = normalizeHexColor(data.theme_primary_color) ?? '#6366F1';
+    themeAccentColorText.value = normalizeHexColor(data.theme_accent_color) ?? '#14B8A6';
+    themePrimaryColor.value = themePrimaryColorText.value;
+    themeAccentColor.value = themeAccentColorText.value;
+    themeFontFamily.value = isThemeFontFamily(data.theme_font_family)
+      ? data.theme_font_family
+      : 'ibm_plex_sans';
+    applyUserTheme({
+      theme_primary_color: themePrimaryColorText.value,
+      theme_accent_color: themeAccentColorText.value,
+      theme_font_family: themeFontFamily.value,
+    });
   } catch (err) {
     error.value = err instanceof ApiClientError ? err.message : 'Unable to load settings.';
   } finally {
@@ -931,9 +1095,21 @@ const loadProfile = async () => {
 };
 
 const save = async () => {
+  const normalizedPrimary = normalizeHexColor(themePrimaryColorText.value);
+  const normalizedAccent = normalizeHexColor(themeAccentColorText.value);
+  if (themePrimaryColorText.value.trim() && !normalizedPrimary) {
+    themeFormatError.value = 'Primary color must be a valid #RRGGBB value.';
+    return;
+  }
+  if (themeAccentColorText.value.trim() && !normalizedAccent) {
+    themeFormatError.value = 'Accent color must be a valid #RRGGBB value.';
+    return;
+  }
+
   saving.value = true;
   saved.value = false;
   error.value = '';
+  themeFormatError.value = '';
   try {
     await apiRequest('/api/v1/me', {
       method: 'PATCH',
@@ -942,10 +1118,18 @@ const save = async () => {
         display_name: displayName.value,
         avatar_url: avatarUrl.value,
         enable_google_books: enableGoogleBooks.value,
+        theme_primary_color: normalizedPrimary,
+        theme_accent_color: normalizedAccent,
+        theme_font_family: themeFontFamily.value,
         default_progress_unit: defaultProgressUnit.value,
       },
     });
     saved.value = true;
+    applyUserTheme({
+      theme_primary_color: normalizedPrimary,
+      theme_accent_color: normalizedAccent,
+      theme_font_family: themeFontFamily.value,
+    });
   } catch (err) {
     error.value = err instanceof ApiClientError ? err.message : 'Unable to save settings.';
   } finally {

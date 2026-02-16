@@ -133,6 +133,9 @@ def test_update_profile_validates_handle() -> None:
             display_name=None,
             avatar_url=None,
             enable_google_books=None,
+            theme_primary_color=None,
+            theme_accent_color=None,
+            theme_font_family=None,
             default_progress_unit=None,
         )
 
@@ -151,6 +154,9 @@ def test_update_profile_rejects_duplicate_handle() -> None:
             display_name=None,
             avatar_url=None,
             enable_google_books=None,
+            theme_primary_color=None,
+            theme_accent_color=None,
+            theme_font_family=None,
             default_progress_unit=None,
         )
 
@@ -168,6 +174,9 @@ def test_update_profile_updates_fields() -> None:
         display_name=" Name ",
         avatar_url=" https://example.com/avatar.png ",
         enable_google_books=True,
+        theme_primary_color="#112233",
+        theme_accent_color="#445566",
+        theme_font_family="ibm_plex_sans",
         default_progress_unit="minutes_listened",
     )
     assert updated is profile
@@ -175,7 +184,64 @@ def test_update_profile_updates_fields() -> None:
     assert updated.display_name == "Name"
     assert updated.avatar_url == "https://example.com/avatar.png"
     assert updated.enable_google_books is True
+    assert updated.theme_primary_color == "#112233"
+    assert updated.theme_accent_color == "#445566"
+    assert updated.theme_font_family == "ibm_plex_sans"
     assert updated.default_progress_unit == "minutes_listened"
+
+
+def test_update_profile_rejects_invalid_theme_colors() -> None:
+    session = FakeSession()
+    user_id = uuid.uuid4()
+    get_or_create_profile(cast(Any, session), user_id=user_id)
+
+    with pytest.raises(ValueError):
+        update_profile(
+            cast(Any, session),
+            user_id=user_id,
+            handle=None,
+            display_name=None,
+            avatar_url=None,
+            enable_google_books=None,
+            theme_primary_color="#12345",
+            theme_accent_color=None,
+            theme_font_family=None,
+            default_progress_unit=None,
+        )
+
+    with pytest.raises(ValueError):
+        update_profile(
+            cast(Any, session),
+            user_id=user_id,
+            handle=None,
+            display_name=None,
+            avatar_url=None,
+            enable_google_books=None,
+            theme_primary_color=None,
+            theme_accent_color="red",
+            theme_font_family=None,
+            default_progress_unit=None,
+        )
+
+
+def test_update_profile_rejects_invalid_theme_font() -> None:
+    session = FakeSession()
+    user_id = uuid.uuid4()
+    get_or_create_profile(cast(Any, session), user_id=user_id)
+
+    with pytest.raises(ValueError):
+        update_profile(
+            cast(Any, session),
+            user_id=user_id,
+            handle=None,
+            display_name=None,
+            avatar_url=None,
+            enable_google_books=None,
+            theme_primary_color=None,
+            theme_accent_color=None,
+            theme_font_family=cast(Any, "comic_sans"),
+            default_progress_unit=None,
+        )
 
 
 def test_create_or_get_library_item_handles_missing_work() -> None:

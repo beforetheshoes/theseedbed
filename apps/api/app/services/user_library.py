@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 import math
+import re
 import uuid
 from typing import Any, Literal, TypeAlias
 
@@ -24,10 +25,10 @@ ProgressUnit: TypeAlias = Literal[
     "percent_complete",
     "minutes_listened",
 ]
-
 DEFAULT_LIBRARY_STATUS: LibraryItemStatus = "to_read"
 DEFAULT_LIBRARY_VISIBILITY: LibraryItemVisibility = "private"
 DEFAULT_PROGRESS_UNIT: ProgressUnit = "pages_read"
+HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
 LibraryItemSortMode: TypeAlias = Literal[
     "newest",
     "oldest",
@@ -57,6 +58,9 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         display_name=None,
         avatar_url=None,
         enable_google_books=False,
+        theme_primary_color=None,
+        theme_accent_color=None,
+        theme_font_family=None,
         default_progress_unit=DEFAULT_PROGRESS_UNIT,
     )
     session.add(profile)
@@ -72,6 +76,9 @@ def update_profile(
     display_name: str | None,
     avatar_url: str | None,
     enable_google_books: bool | None,
+    theme_primary_color: str | None,
+    theme_accent_color: str | None,
+    theme_font_family: str | None,
     default_progress_unit: ProgressUnit | None,
 ) -> User:
     profile = get_or_create_profile(session, user_id=user_id)
@@ -95,6 +102,25 @@ def update_profile(
 
     if enable_google_books is not None:
         profile.enable_google_books = enable_google_books
+
+    if theme_primary_color is not None:
+        normalized = theme_primary_color.strip()
+        if normalized and HEX_COLOR_PATTERN.fullmatch(normalized) is None:
+            raise ValueError("theme_primary_color must be a #RRGGBB hex value")
+        profile.theme_primary_color = normalized or None
+
+    if theme_accent_color is not None:
+        normalized = theme_accent_color.strip()
+        if normalized and HEX_COLOR_PATTERN.fullmatch(normalized) is None:
+            raise ValueError("theme_accent_color must be a #RRGGBB hex value")
+        profile.theme_accent_color = normalized or None
+
+    if theme_font_family is not None:
+        if theme_font_family not in {"atkinson", "ibm_plex_sans", "fraunces"}:
+            raise ValueError(
+                "theme_font_family must be one of: atkinson, ibm_plex_sans, fraunces"
+            )
+        profile.theme_font_family = theme_font_family
 
     if default_progress_unit is not None:
         profile.default_progress_unit = default_progress_unit

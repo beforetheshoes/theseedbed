@@ -1,7 +1,21 @@
-/* Intentionally empty.
- *
- * This file exists for compatibility with Nuxt/preview builds that still
- * reference it in generated CSS entrypoints.
- *
- * PrimeVue provides all component styling; avoid custom CSS overrides here.
- */
+:root {
+  --app-theme-primary: #6366f1;
+  --app-theme-primary-safe-light: #4f46e5;
+  --app-theme-primary-safe-dark: #818cf8;
+  --app-theme-primary-contrast: #ffffff;
+  --app-theme-accent: #14b8a6;
+  --app-theme-accent-safe-light: #0f766e;
+  --app-theme-accent-safe-dark: #2dd4bf;
+  --app-theme-accent-contrast: #111827;
+  --app-font-family: 'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif;
+}
+
+.dark {
+  --app-theme-surface-primary: var(--app-theme-primary-safe-dark);
+  --app-theme-surface-accent: var(--app-theme-accent-safe-dark);
+}
+
+:root:not(.dark) {
+  --app-theme-surface-primary: var(--app-theme-primary-safe-light);
+  --app-theme-surface-accent: var(--app-theme-accent-safe-light);
+}
