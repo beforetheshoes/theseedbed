@@ -16,8 +16,8 @@
     "format:check": "prettier --check .",
     "test:unit": "vitest run --coverage",
     "test:unit:watch": "vitest",
-    "test:e2e": "rm -rf .nuxt .output && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && sh ./scripts/run-e2e.sh run",
-    "test:e2e:open": "rm -rf .nuxt .output && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && sh ./scripts/run-e2e.sh open"
+    "test:e2e": "rm -rf .nuxt .output && pnpm exec nuxt prepare && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && sh ./scripts/run-e2e.sh run",
+    "test:e2e:open": "rm -rf .nuxt .output && pnpm exec nuxt prepare && NUXT_PUBLIC_SUPABASE_URL=http://localhost:54321 NUXT_PUBLIC_SUPABASE_ANON_KEY=test-anon-key pnpm build && sh ./scripts/run-e2e.sh open"
   },
   "dependencies": {
     "@fontsource/atkinson-hyperlegible": "^5.2.8",
