@@ -34,6 +34,9 @@ def test_users_table_schema() -> None:
         "display_name",
         "avatar_url",
         "enable_google_books",
+        "theme_primary_color",
+        "theme_accent_color",
+        "theme_font_family",
         "default_progress_unit",
         "actor_uri",
         "created_at",
@@ -47,6 +50,10 @@ def test_users_table_schema() -> None:
     assert table.columns["display_name"].type.length == 255
     assert isinstance(table.columns["avatar_url"].type, sa.Text)
     assert isinstance(table.columns["enable_google_books"].type, sa.Boolean)
+    assert isinstance(table.columns["theme_primary_color"].type, sa.Text)
+    assert isinstance(table.columns["theme_accent_color"].type, sa.Text)
+    assert isinstance(table.columns["theme_font_family"].type, sa.String)
+    assert table.columns["theme_font_family"].type.length == 32
     assert isinstance(table.columns["default_progress_unit"].type, sa.Enum)
     assert table.columns["default_progress_unit"].type.enums == [
         "pages_read",

@@ -18,6 +18,9 @@ class UpdateProfileRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
     avatar_url: str | None = Field(default=None, max_length=2048)
     enable_google_books: bool | None = None
+    theme_primary_color: str | None = Field(default=None, max_length=7)
+    theme_accent_color: str | None = Field(default=None, max_length=7)
+    theme_font_family: str | None = Field(default=None, max_length=32)
     default_progress_unit: (
         Literal["pages_read", "percent_complete", "minutes_listened"] | None
     ) = None
@@ -43,6 +46,9 @@ def get_me(
             "display_name": profile.display_name,
             "avatar_url": profile.avatar_url,
             "enable_google_books": profile.enable_google_books,
+            "theme_primary_color": profile.theme_primary_color,
+            "theme_accent_color": profile.theme_accent_color,
+            "theme_font_family": profile.theme_font_family,
             "default_progress_unit": profile.default_progress_unit,
         }
     )
@@ -62,6 +68,9 @@ def patch_me(
             display_name=payload.display_name,
             avatar_url=payload.avatar_url,
             enable_google_books=payload.enable_google_books,
+            theme_primary_color=payload.theme_primary_color,
+            theme_accent_color=payload.theme_accent_color,
+            theme_font_family=payload.theme_font_family,
             default_progress_unit=payload.default_progress_unit,
         )
     except ValueError as exc:
@@ -74,6 +83,9 @@ def patch_me(
             "display_name": profile.display_name,
             "avatar_url": profile.avatar_url,
             "enable_google_books": profile.enable_google_books,
+            "theme_primary_color": profile.theme_primary_color,
+            "theme_accent_color": profile.theme_accent_color,
+            "theme_font_family": profile.theme_font_family,
             "default_progress_unit": profile.default_progress_unit,
         }
     )

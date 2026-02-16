@@ -58,6 +58,9 @@ class User(Base):
         nullable=False,
         server_default=sa.text("false"),
     )
+    theme_primary_color: Mapped[str | None] = mapped_column(sa.Text)
+    theme_accent_color: Mapped[str | None] = mapped_column(sa.Text)
+    theme_font_family: Mapped[str | None] = mapped_column(sa.String(32))
     default_progress_unit: Mapped[str] = mapped_column(
         reading_progress_unit_enum,
         nullable=False,

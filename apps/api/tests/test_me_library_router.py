@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import re
 import uuid
 from collections.abc import Generator
 from types import SimpleNamespace
@@ -46,6 +47,9 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             display_name="Seed",
             avatar_url=None,
             enable_google_books=False,
+            theme_primary_color=None,
+            theme_accent_color=None,
+            theme_font_family=None,
             default_progress_unit="pages_read",
         ),
     )
@@ -58,8 +62,27 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         display_name: str | None,
         avatar_url: str | None,
         enable_google_books: bool | None,
+        theme_primary_color: str | None,
+        theme_accent_color: str | None,
+        theme_font_family: str | None,
         default_progress_unit: str | None,
     ) -> SimpleNamespace:
+        if theme_primary_color is not None and not re.fullmatch(
+            r"^#[0-9A-Fa-f]{6}$", theme_primary_color
+        ):
+            raise ValueError("theme_primary_color must be a #RRGGBB hex value")
+        if theme_accent_color is not None and not re.fullmatch(
+            r"^#[0-9A-Fa-f]{6}$", theme_accent_color
+        ):
+            raise ValueError("theme_accent_color must be a #RRGGBB hex value")
+        if theme_font_family is not None and theme_font_family not in {
+            "atkinson",
+            "ibm_plex_sans",
+            "fraunces",
+        }:
+            raise ValueError(
+                "theme_font_family must be one of: atkinson, ibm_plex_sans, fraunces"
+            )
         return SimpleNamespace(
             id=user_id,
             handle=handle or "seed",
@@ -68,6 +91,9 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             enable_google_books=(
                 enable_google_books if isinstance(enable_google_books, bool) else False
             ),
+            theme_primary_color=theme_primary_color,
+            theme_accent_color=theme_accent_color,
+            theme_font_family=theme_font_family,
             default_progress_unit=default_progress_unit or "pages_read",
         )
 
@@ -145,6 +171,9 @@ def test_get_me(app: FastAPI) -> None:
     assert response.status_code == 200
     assert response.json()["data"]["handle"] == "seed"
     assert response.json()["data"]["enable_google_books"] is False
+    assert response.json()["data"]["theme_primary_color"] is None
+    assert response.json()["data"]["theme_accent_color"] is None
+    assert response.json()["data"]["theme_font_family"] is None
     assert response.json()["data"]["default_progress_unit"] == "pages_read"
 
 
@@ -169,6 +198,45 @@ def test_patch_me_updates_default_progress_unit(app: FastAPI) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["default_progress_unit"] == "minutes_listened"
+
+
+def test_patch_me_updates_theme_settings(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        "/api/v1/me",
+        json={
+            "theme_primary_color": "#112233",
+            "theme_accent_color": "#445566",
+            "theme_font_family": "ibm_plex_sans",
+        },
+    )
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["theme_primary_color"] == "#112233"
+    assert data["theme_accent_color"] == "#445566"
+    assert data["theme_font_family"] == "ibm_plex_sans"
+
+
+def test_patch_me_rejects_invalid_theme_font_family(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        "/api/v1/me",
+        json={
+            "theme_font_family": "comic_sans",
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_patch_me_rejects_invalid_theme_colors(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        "/api/v1/me",
+        json={
+            "theme_primary_color": "#12345",
+        },
+    )
+    assert response.status_code == 400
 
 
 def test_patch_me_returns_400_on_validation_error(

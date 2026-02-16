@@ -5,6 +5,7 @@ import PrimeVue from 'primevue/config';
 
 const apiRequest = vi.hoisted(() => vi.fn());
 const toastAdd = vi.hoisted(() => vi.fn());
+const applyUserTheme = vi.hoisted(() => vi.fn());
 const ApiClientErrorMock = vi.hoisted(
   () =>
     class ApiClientError extends Error {
@@ -26,6 +27,18 @@ vi.mock('~/utils/api', () => ({
 
 vi.mock('primevue/usetoast', () => ({
   useToast: () => ({ add: toastAdd }),
+}));
+
+vi.mock('~/composables/useUserTheme', () => ({
+  applyUserTheme,
+  getThemeWarnings: () => [],
+  isThemeFontFamily: (value: string | null | undefined) =>
+    value === 'atkinson' || value === 'ibm_plex_sans' || value === 'fraunces',
+  normalizeHexColor: (value: string | null | undefined) => {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    return /^#[0-9A-Fa-f]{6}$/.test(trimmed) ? trimmed.toUpperCase() : null;
+  },
 }));
 
 import SettingsPage from '../../../app/pages/settings.vue';
@@ -152,6 +165,9 @@ const mockProfile = () => ({
   display_name: 'Seed',
   avatar_url: null,
   enable_google_books: false,
+  theme_primary_color: '#6366F1',
+  theme_accent_color: '#14B8A6',
+  theme_font_family: 'ibm_plex_sans',
   default_progress_unit: 'pages_read',
 });
 
@@ -159,6 +175,7 @@ describe('settings page StoryGraph import UX', () => {
   beforeEach(() => {
     apiRequest.mockReset();
     toastAdd.mockReset();
+    applyUserTheme.mockReset();
   });
 
   it('keeps Start disabled while issues are loading', async () => {
@@ -202,6 +219,9 @@ describe('settings page StoryGraph import UX', () => {
     await wrapper.get('[data-test="settings-avatar-url"]').setValue('https://example.com/new.png');
     await wrapper.get('[data-test="settings-enable-google-books"]').setValue(true);
     await wrapper.get('[data-test="settings-default-progress-unit"]').setValue('minutes_listened');
+    await wrapper.get('[data-test="settings-theme-primary-hex"]').setValue('#112233');
+    await wrapper.get('[data-test="settings-theme-accent-hex"]').setValue('#445566');
+    await wrapper.get('[data-test="settings-theme-font-family"]').setValue('fraunces');
     await wrapper.get('[data-test="settings-save"]').trigger('click');
     await flush(wrapper);
 
@@ -211,8 +231,12 @@ describe('settings page StoryGraph import UX', () => {
       body: expect.objectContaining({
         enable_google_books: true,
         default_progress_unit: 'minutes_listened',
+        theme_primary_color: '#112233',
+        theme_accent_color: '#445566',
+        theme_font_family: 'fraunces',
       }),
     });
+    expect(applyUserTheme).toHaveBeenCalled();
     expect(wrapper.get('[data-test="settings-saved"]').text()).toContain('Settings saved');
   });
 
@@ -222,6 +246,9 @@ describe('settings page StoryGraph import UX', () => {
       display_name: null,
       avatar_url: null,
       enable_google_books: false,
+      theme_primary_color: null,
+      theme_accent_color: null,
+      theme_font_family: null,
       default_progress_unit: 'pages_read',
     });
 
@@ -271,6 +298,40 @@ describe('settings page StoryGraph import UX', () => {
     await wrapper.get('[data-test="settings-save"]').trigger('click');
     await flush(wrapper);
     expect(wrapper.get('[data-test="settings-error"]').text()).toContain('Denied');
+  });
+
+  it('shows a validation error for malformed theme colors', async () => {
+    apiRequest.mockResolvedValueOnce(mockProfile());
+
+    const wrapper = mountPage();
+    await flush(wrapper);
+
+    await wrapper.get('[data-test="settings-theme-primary-hex"]').setValue('not-a-color');
+    await wrapper.get('[data-test="settings-save"]').trigger('click');
+    await flush(wrapper);
+
+    expect(wrapper.get('[data-test="settings-theme-format-error"]').text()).toContain(
+      'Primary color must be a valid #RRGGBB value.',
+    );
+    const patchCall = apiRequest.mock.calls.find((call) => call[0] === '/api/v1/me' && call[1]);
+    expect(patchCall).toBeUndefined();
+  });
+
+  it('shows a validation error for malformed accent color', async () => {
+    apiRequest.mockResolvedValueOnce(mockProfile());
+
+    const wrapper = mountPage();
+    await flush(wrapper);
+
+    await wrapper.get('[data-test="settings-theme-accent-hex"]').setValue('bad-accent');
+    await wrapper.get('[data-test="settings-save"]').trigger('click');
+    await flush(wrapper);
+
+    expect(wrapper.get('[data-test="settings-theme-format-error"]').text()).toContain(
+      'Accent color must be a valid #RRGGBB value.',
+    );
+    const patchCall = apiRequest.mock.calls.find((call) => call[0] === '/api/v1/me' && call[1]);
+    expect(patchCall).toBeUndefined();
   });
 
   it('blocks Start until issues are resolved or skipped', async () => {
@@ -830,6 +891,7 @@ describe('settings page Goodreads import UX', () => {
   beforeEach(() => {
     apiRequest.mockReset();
     toastAdd.mockReset();
+    applyUserTheme.mockReset();
   });
 
   it('keeps Start disabled while issues are loading', async () => {
@@ -889,6 +951,10 @@ describe('settings page Goodreads import UX', () => {
       display_name: null,
       avatar_url: null,
       enable_google_books: false,
+      theme_primary_color: null,
+      theme_accent_color: null,
+      theme_font_family: null,
+      default_progress_unit: 'pages_read',
     });
 
     const wrapper = mountPage();
