@@ -46,6 +46,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             display_name="Seed",
             avatar_url=None,
             enable_google_books=False,
+            default_progress_unit="pages_read",
         ),
     )
 
@@ -57,6 +58,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         display_name: str | None,
         avatar_url: str | None,
         enable_google_books: bool | None,
+        default_progress_unit: str | None,
     ) -> SimpleNamespace:
         return SimpleNamespace(
             id=user_id,
@@ -66,6 +68,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             enable_google_books=(
                 enable_google_books if isinstance(enable_google_books, bool) else False
             ),
+            default_progress_unit=default_progress_unit or "pages_read",
         )
 
     monkeypatch.setattr("app.routers.me.update_profile", _fake_update_profile)
@@ -142,6 +145,7 @@ def test_get_me(app: FastAPI) -> None:
     assert response.status_code == 200
     assert response.json()["data"]["handle"] == "seed"
     assert response.json()["data"]["enable_google_books"] is False
+    assert response.json()["data"]["default_progress_unit"] == "pages_read"
 
 
 def test_patch_me(app: FastAPI) -> None:
@@ -156,6 +160,15 @@ def test_patch_me_updates_google_books_preference(app: FastAPI) -> None:
     response = client.patch("/api/v1/me", json={"enable_google_books": True})
     assert response.status_code == 200
     assert response.json()["data"]["enable_google_books"] is True
+
+
+def test_patch_me_updates_default_progress_unit(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        "/api/v1/me", json={"default_progress_unit": "minutes_listened"}
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["default_progress_unit"] == "minutes_listened"
 
 
 def test_patch_me_returns_400_on_validation_error(

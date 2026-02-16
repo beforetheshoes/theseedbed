@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -18,6 +18,9 @@ class UpdateProfileRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
     avatar_url: str | None = Field(default=None, max_length=2048)
     enable_google_books: bool | None = None
+    default_progress_unit: (
+        Literal["pages_read", "percent_complete", "minutes_listened"] | None
+    ) = None
 
 
 router = APIRouter(
@@ -40,6 +43,7 @@ def get_me(
             "display_name": profile.display_name,
             "avatar_url": profile.avatar_url,
             "enable_google_books": profile.enable_google_books,
+            "default_progress_unit": profile.default_progress_unit,
         }
     )
 
@@ -58,6 +62,7 @@ def patch_me(
             display_name=payload.display_name,
             avatar_url=payload.avatar_url,
             enable_google_books=payload.enable_google_books,
+            default_progress_unit=payload.default_progress_unit,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -69,5 +74,6 @@ def patch_me(
             "display_name": profile.display_name,
             "avatar_url": profile.avatar_url,
             "enable_google_books": profile.enable_google_books,
+            "default_progress_unit": profile.default_progress_unit,
         }
     )

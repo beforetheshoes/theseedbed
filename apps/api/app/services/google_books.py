@@ -321,6 +321,7 @@ class GoogleBooksClient:
         isbn13 = _extract_isbn(identifiers, isbn_type="ISBN_13")
         publisher = volume_info.get("publisher")
         print_type = volume_info.get("printType")
+        page_count = volume_info.get("pageCount")
         info_link = volume_info.get("canonicalVolumeLink")
         if not isinstance(info_link, str) or not info_link.strip():
             info_link = volume_info.get("infoLink")
@@ -344,6 +345,11 @@ class GoogleBooksClient:
                 "format": (
                     print_type.strip().lower()
                     if isinstance(print_type, str) and print_type.strip()
+                    else None
+                ),
+                "total_pages": (
+                    int(page_count)
+                    if isinstance(page_count, int) and page_count > 0
                     else None
                 ),
             }

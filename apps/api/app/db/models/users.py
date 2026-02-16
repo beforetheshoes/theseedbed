@@ -58,6 +58,11 @@ class User(Base):
         nullable=False,
         server_default=sa.text("false"),
     )
+    default_progress_unit: Mapped[str] = mapped_column(
+        reading_progress_unit_enum,
+        nullable=False,
+        server_default=sa.text("'pages_read'::reading_progress_unit"),
+    )
     actor_uri: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),

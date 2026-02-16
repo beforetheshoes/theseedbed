@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Generator
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -54,6 +55,15 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
     monkeypatch.setattr(
         "app.routers.editions.cache_edition_cover_from_source_url", _ok_cache
     )
+    monkeypatch.setattr(
+        "app.routers.editions.update_edition_totals",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            id=uuid.uuid4(),
+            work_id=uuid.uuid4(),
+            total_pages=320,
+            total_audio_minutes=640,
+        ),
+    )
 
     yield app
 
@@ -66,6 +76,17 @@ def test_upload_cover_returns_ok(app: FastAPI) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["cover_url"] == "https://example.com/cover.jpg"
+
+
+def test_patch_totals_returns_ok(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/editions/{uuid.uuid4()}/totals",
+        json={"total_pages": 300},
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["total_pages"] == 320
+    assert response.json()["data"]["total_audio_minutes"] == 640
 
 
 def test_upload_cover_maps_permission_error(
@@ -146,6 +167,26 @@ def test_upload_cover_maps_lookup_error(
     assert response.status_code == 404
 
 
+def test_upload_cover_maps_storage_not_configured(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.storage import StorageNotConfiguredError
+
+    async def _unavailable(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise StorageNotConfiguredError("missing storage")
+
+    monkeypatch.setattr(
+        "app.routers.editions.set_edition_cover_from_upload", _unavailable
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/editions/{uuid.uuid4()}/cover",
+        files={"file": ("cover.jpg", b"img", "image/jpeg")},
+    )
+    assert response.status_code == 503
+
+
 def test_upload_cover_maps_value_error(
     app: FastAPI, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -196,3 +237,68 @@ def test_cache_cover_maps_lookup_error(
         json={"source_url": "https://covers.openlibrary.org/b/id/1-L.jpg"},
     )
     assert response.status_code == 404
+
+
+def test_cache_cover_maps_storage_not_configured(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.services.storage import StorageNotConfiguredError
+
+    async def _unavailable(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        raise StorageNotConfiguredError("missing storage")
+
+    monkeypatch.setattr(
+        "app.routers.editions.cache_edition_cover_from_source_url", _unavailable
+    )
+
+    client = TestClient(app)
+    response = client.post(
+        f"/api/v1/editions/{uuid.uuid4()}/cover/cache",
+        json={"source_url": "https://covers.openlibrary.org/b/id/1-L.jpg"},
+    )
+    assert response.status_code == 503
+
+
+def test_patch_totals_maps_permission_error(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.editions.update_edition_totals",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(PermissionError("no")),
+    )
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/editions/{uuid.uuid4()}/totals",
+        json={"total_pages": 123},
+    )
+    assert response.status_code == 403
+
+
+def test_patch_totals_maps_lookup_error(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.editions.update_edition_totals",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(LookupError("missing")),
+    )
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/editions/{uuid.uuid4()}/totals",
+        json={"total_pages": 123},
+    )
+    assert response.status_code == 404
+
+
+def test_patch_totals_maps_value_error(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.editions.update_edition_totals",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("bad")),
+    )
+    client = TestClient(app)
+    response = client.patch(
+        f"/api/v1/editions/{uuid.uuid4()}/totals",
+        json={"total_pages": 123},
+    )
+    assert response.status_code == 400

@@ -188,6 +188,147 @@ def _parse_iso_publish_date(raw: Any) -> dt.date | None:
         return None
 
 
+def _parse_duration_minutes(raw: Any) -> int | float | None:
+    if isinstance(raw, (int, float)):
+        minutes = round(float(raw))
+        return minutes if minutes > 0 else None
+    if not isinstance(raw, str):
+        return None
+    value = raw.strip().lower()
+    if not value:
+        return None
+
+    hhmmss_match = re.fullmatch(r"(?:(\d+):)?([0-5]?\d):([0-5]\d)", value)
+    if hhmmss_match:
+        hours = int(hhmmss_match.group(1) or "0")
+        minutes = int(hhmmss_match.group(2))
+        seconds = int(hhmmss_match.group(3))
+        total_minutes = (hours * 60) + minutes + (1 if seconds >= 30 else 0)
+        return total_minutes if total_minutes > 0 else None
+
+    parts = value.split()
+    if len(parts) >= 2:
+        amount = _parse_numeric_token(parts[0])
+        if amount is not None and amount > 0:
+            unit = parts[1]
+            if unit.startswith("hour") or unit in {"hr", "hrs", "h"}:
+                return max(1, round(amount * 60))
+            if unit.startswith("min") or unit in {"m", "mins"}:
+                return max(1, round(amount))
+            if unit.startswith("sec") or unit in {"s", "secs"}:
+                return amount / 60.0
+
+    numbers = [int(match) for match in re.findall(r"\d+", value)]
+    if numbers:
+        if "hour" in value or "hr" in value:
+            return max(1, numbers[0] * 60)
+        if "minute" in value or "min" in value:
+            return max(1, numbers[0])
+    return None
+
+
+def _minutes_from_seconds(seconds: int) -> float | None:
+    if seconds <= 0:
+        return None
+    return seconds / 60.0
+
+
+def _parse_numeric_token(value: str) -> float | None:
+    cleaned = value.strip().replace(",", "")
+    if not cleaned:
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def _parse_duration_from_notes(raw_notes: Any) -> float | None:
+    note_strings: list[str] = []
+    if isinstance(raw_notes, str):
+        note_strings.append(raw_notes)
+    elif isinstance(raw_notes, dict):
+        for key in ("value", "notes", "text"):
+            value = raw_notes.get(key)
+            if isinstance(value, str):
+                note_strings.append(value)
+    elif isinstance(raw_notes, list):
+        for item in raw_notes:
+            if isinstance(item, str):
+                note_strings.append(item)
+            elif isinstance(item, dict):
+                for key in ("value", "notes", "text"):
+                    value = item.get(key)
+                    if isinstance(value, str):
+                        note_strings.append(value)
+
+    for text in note_strings:
+        lowered = text.lower()
+        match = re.search(r"duration\s+in\s+seconds\s*[:=]\s*([\d,]+)", lowered)
+        if match:
+            parsed_seconds = _parse_numeric_token(match.group(1))
+            if parsed_seconds is not None:
+                return _minutes_from_seconds(int(parsed_seconds))
+        compact = re.search(r"\b([\d,]+)\s*seconds\b", lowered)
+        if compact:
+            parsed_seconds = _parse_numeric_token(compact.group(1))
+            if parsed_seconds is not None:
+                return _minutes_from_seconds(int(parsed_seconds))
+    return None
+
+
+def _extract_duration_minutes(payload: dict[str, Any]) -> int | float | None:
+    for key in ("duration", "total_audio_minutes"):
+        value = payload.get(key)
+        parsed = _parse_duration_minutes(value)
+        if parsed is not None:
+            return parsed
+
+    for key in ("duration_seconds", "duration_in_seconds"):
+        value = payload.get(key)
+        if isinstance(value, int):
+            parsed = _minutes_from_seconds(value)
+            if parsed is not None:
+                return parsed
+        if isinstance(value, str):
+            parsed_seconds = _parse_numeric_token(value)
+            if parsed_seconds is not None:
+                parsed = _minutes_from_seconds(int(parsed_seconds))
+                if parsed is not None:
+                    return parsed
+
+    notes_parsed = _parse_duration_from_notes(payload.get("notes"))
+    if notes_parsed is not None:
+        return notes_parsed
+
+    return None
+
+
+def _is_audiobook_entry(entry: dict[str, Any]) -> bool:
+    text_fields = [
+        entry.get("physical_format"),
+        entry.get("format"),
+        entry.get("title"),
+        entry.get("subtitle"),
+        entry.get("ocaid"),
+    ]
+    haystack = " ".join(
+        value.lower().strip() for value in text_fields if isinstance(value, str)
+    )
+    if not haystack:
+        return False
+    audio_tokens = (
+        "audio",
+        "audiobook",
+        "sound recording",
+        "cd",
+        "mp3",
+        "cassette",
+        "spoken word",
+    )
+    return any(token in haystack for token in audio_tokens)
+
+
 def _normalize_subject(value: str) -> str:
     return value.strip().replace(" ", "_").lower()
 
@@ -659,6 +800,45 @@ class OpenLibraryClient:
                 edition_cover_ids.append(cid)
 
         return _dedupe(edition_cover_ids)
+
+    async def fetch_work_audiobook_durations(
+        self,
+        *,
+        work_key: str,
+        editions_limit: int = 120,
+    ) -> list[int | float]:
+        normalized_work_key = _normalize_work_key(work_key)
+        editions_payload = await self._request_json(
+            f"{normalized_work_key}/editions.json", params={"limit": editions_limit}
+        )
+        entries = editions_payload.get("entries", [])
+        if not isinstance(entries, list):
+            return []
+
+        durations: list[int | float] = []
+        seen: set[int | float] = set()
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if not _is_audiobook_entry(entry):
+                continue
+            duration_minutes = _extract_duration_minutes(entry)
+            if duration_minutes is None:
+                edition_key = entry.get("key")
+                if isinstance(edition_key, str):
+                    try:
+                        edition_payload = await self._request_json(
+                            f"{_normalize_edition_key(edition_key)}.json"
+                        )
+                    except Exception:
+                        edition_payload = {}
+                    if isinstance(edition_payload, dict):
+                        duration_minutes = _extract_duration_minutes(edition_payload)
+            if duration_minutes is None or duration_minutes in seen:
+                continue
+            seen.add(duration_minutes)
+            durations.append(duration_minutes)
+        return durations
 
     async def fetch_related_works(
         self,

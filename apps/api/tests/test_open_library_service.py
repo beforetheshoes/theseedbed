@@ -8,10 +8,17 @@ import pytest
 
 from app.services.open_library import (
     OpenLibraryClient,
+    _extract_duration_minutes,
     _extract_language_codes,
+    _extract_top_subjects,
+    _is_audiobook_entry,
     _normalize_edition_key,
     _normalize_work_key,
+    _parse_duration_from_notes,
+    _parse_duration_minutes,
+    _parse_numeric_token,
     _parse_publish_year,
+    _TTLCache,
 )
 
 
@@ -121,6 +128,33 @@ def test_search_books_supports_fielded_filters() -> None:
     assert "first_publish_year:[* TO 2005]" in seen_params[0]["q"]
 
 
+def test_ttl_cache_evicts_oldest_and_expires(monkeypatch: pytest.MonkeyPatch) -> None:
+    now = {"value": 1000.0}
+
+    def fake_time() -> float:
+        return now["value"]
+
+    monkeypatch.setattr("app.services.open_library.time.time", fake_time)
+    cache: _TTLCache[int] = _TTLCache(ttl_seconds=1, max_entries=1)
+    cache.set("a", 1)
+    cache.set("b", 2)
+    assert cache.get("a") is None
+    assert cache.get("b") == 2
+    now["value"] = 1002.0
+    assert cache.get("b") is None
+
+
+def test_normalize_key_helpers_raise_on_invalid_values() -> None:
+    with pytest.raises(ValueError):
+        _normalize_work_key("bad-key")
+    with pytest.raises(ValueError):
+        _normalize_edition_key("bad-key")
+
+
+def test_extract_language_codes_uses_code_field() -> None:
+    assert _extract_language_codes([{"code": "EN"}]) == ["en"]
+
+
 def test_fetch_work_bundle_collects_author_and_first_edition() -> None:
     responses = {
         "/works/OL1W.json": {
@@ -214,6 +248,29 @@ def test_fetch_work_bundle_falls_back_to_edition_cover_when_work_missing() -> No
     assert "/books/OL3M.json" in requests
 
 
+def test_fetch_work_bundle_skips_invalid_author_and_edition_entries() -> None:
+    responses = {
+        "/works/OL1W.json": {
+            "title": "Book",
+            "authors": ["bad", {"author": "bad"}, {"author": {"key": "/authors/OL2A"}}],
+            "covers": [],
+        },
+        "/authors/OL2A.json": {"name": "Author A"},
+        "/works/OL1W/editions.json": {"entries": ["bad", {"isbn_10": ["123"]}]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    bundle = asyncio.run(client.fetch_work_bundle(work_key="OL1W"))
+    assert bundle.authors == [{"key": "/authors/OL2A", "name": "Author A"}]
+    assert bundle.edition is None
+
+
 def test_request_retries_on_5xx() -> None:
     calls = {"count": 0}
 
@@ -228,6 +285,15 @@ def test_request_retries_on_5xx() -> None:
 
     assert calls["count"] == 2
     assert result.items == []
+
+
+def test_request_raises_transport_error_after_max_retries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("network down", request=request)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler), max_retries=1)
+    with pytest.raises(httpx.ConnectError):
+        asyncio.run(client.search_books(query="retry"))
 
 
 def test_request_retries_on_429_respects_retry_after_header() -> None:
@@ -673,3 +739,273 @@ def test_fetch_author_profile() -> None:
     assert profile.name == "Author A"
     assert profile.photo_url == "https://covers.openlibrary.org/a/id/12-M.jpg"
     assert profile.top_works[0].work_key == "/works/OL1W"
+
+
+def test_fetch_work_audiobook_durations_filters_audio_entries() -> None:
+    responses = {
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {"physical_format": "Audio CD", "duration": "10:30:00"},
+                {"format": "Hardcover", "duration": "5:00:00"},
+                {"title": "Book (audiobook)", "duration": "8 hours"},
+                {"physical_format": "MP3 CD", "duration": "630 minutes"},
+            ]
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    durations = asyncio.run(client.fetch_work_audiobook_durations(work_key="OL1W"))
+    assert durations == [630, 480]
+
+
+def test_fetch_work_audiobook_durations_handles_missing_entries() -> None:
+    responses = {"/works/OL1W/editions.json": {"entries": "invalid"}}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    durations = asyncio.run(client.fetch_work_audiobook_durations(work_key="OL1W"))
+    assert durations == []
+
+
+def test_fetch_work_audiobook_durations_reads_duration_seconds_from_edition_notes() -> (
+    None
+):
+    responses = {
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {"key": "/books/OLA1M", "physical_format": "Audible eAudiobook"}
+            ]
+        },
+        "/books/OLA1M.json": {"notes": "Edition notes: Duration in seconds: 3723"},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    durations = asyncio.run(client.fetch_work_audiobook_durations(work_key="OL1W"))
+    assert durations == [pytest.approx(62.05)]
+
+
+def test_fetch_work_audiobook_durations_parses_comma_separated_seconds() -> None:
+    responses = {
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {
+                    "physical_format": "Audible eAudiobook",
+                    "duration": "103,284 seconds",
+                }
+            ]
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    durations = asyncio.run(client.fetch_work_audiobook_durations(work_key="OL1W"))
+    assert durations == [pytest.approx(1721.4)]
+
+
+def test_parse_duration_minutes_supports_multiple_formats() -> None:
+    assert _parse_duration_minutes(90) == 90
+    assert _parse_duration_minutes(90.4) == 90
+    assert _parse_duration_minutes("10:30:00") == 630
+    assert _parse_duration_minutes("1:30:30") == 91
+    assert _parse_duration_minutes("8 hours") == 480
+    assert _parse_duration_minutes("630 minutes") == 630
+    assert _parse_duration_minutes("120 seconds") == pytest.approx(2.0)
+    assert _parse_duration_minutes("about 2hr runtime") == 120
+    assert _parse_duration_minutes("approx 45min") == 45
+    assert _parse_duration_minutes("n/a") is None
+
+
+def test_parse_duration_from_notes_handles_string_dict_and_list_shapes() -> None:
+    assert _parse_duration_from_notes("Duration in seconds: 3,723") == pytest.approx(
+        62.05
+    )
+    assert _parse_duration_from_notes(
+        {"value": "Duration in seconds = 3723"}
+    ) == pytest.approx(62.05)
+    assert _parse_duration_from_notes(
+        [{"text": "metadata"}, {"notes": "this recording is 600 seconds"}]
+    ) == pytest.approx(10.0)
+    assert _parse_duration_from_notes({"text": "no duration here"}) is None
+
+
+def test_extract_duration_minutes_prefers_duration_then_seconds_then_notes() -> None:
+    assert _extract_duration_minutes({"duration": "8 hours"}) == 480
+    assert _extract_duration_minutes({"duration_seconds": 3723}) == pytest.approx(62.05)
+    assert _extract_duration_minutes({"duration_in_seconds": "3,723"}) == pytest.approx(
+        62.05
+    )
+    assert _extract_duration_minutes(
+        {"notes": "Edition notes. Duration in seconds: 600"}
+    ) == pytest.approx(10.0)
+    assert _extract_duration_minutes({"notes": "unknown"}) is None
+
+
+def test_is_audiobook_entry_detects_audio_markers() -> None:
+    assert _is_audiobook_entry({"physical_format": "Audible eAudiobook"}) is True
+    assert _is_audiobook_entry({"format": "MP3 CD"}) is True
+    assert _is_audiobook_entry({"title": "Book", "subtitle": "sound recording"}) is True
+    assert _is_audiobook_entry({"format": "Hardcover"}) is False
+    assert _is_audiobook_entry({"format": None}) is False
+
+
+def test_find_work_key_by_isbn_handles_empty_and_unmatched_payloads() -> None:
+    responses = {
+        "/search.json": [
+            {"docs": []},
+            {"docs": ["bad-shape"]},
+            {"docs": [{"key": "/authors/OL1A"}]},
+            {"docs": [{"key": "/works/OL2W"}]},
+        ]
+    }
+    calls = {"count": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path != "/search.json":
+            return httpx.Response(404, json={"error": "missing"})
+        index = calls["count"]
+        calls["count"] += 1
+        return httpx.Response(200, json=responses["/search.json"][index])
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    assert asyncio.run(client.find_work_key_by_isbn(isbn="")) is None
+    assert asyncio.run(client.find_work_key_by_isbn(isbn="978123")) is None
+    assert asyncio.run(client.find_work_key_by_isbn(isbn="978123")) is None
+    assert asyncio.run(client.find_work_key_by_isbn(isbn="978123")) is None
+    assert asyncio.run(client.find_work_key_by_isbn(isbn="978123")) == "/works/OL2W"
+
+
+def test_fetch_work_audiobook_durations_handles_non_dict_entry_and_bad_edition_key() -> (
+    None
+):
+    responses = {
+        "/works/OL1W/editions.json": {
+            "entries": [
+                "bad-entry",
+                {"physical_format": "Audible eAudiobook", "key": "not-a-book-key"},
+                {"physical_format": "Audible eAudiobook", "duration": "60 minutes"},
+            ]
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    durations = asyncio.run(client.fetch_work_audiobook_durations(work_key="OL1W"))
+    assert durations == [60]
+
+
+def test_fetch_cover_ids_for_work_skips_non_list_and_non_int_covers() -> None:
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "covers": ["x", 9, None]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    cover_ids = asyncio.run(client.fetch_cover_ids_for_work(work_key="OL1W"))
+    assert cover_ids == [9]
+
+
+def test_extract_top_subjects_handles_invalid_and_dedupes() -> None:
+    assert _extract_top_subjects({"subjects": "not-a-list"}) == []
+    assert _extract_top_subjects(
+        {"subjects": ["Epic Fantasy", "Epic Fantasy", 3, " Space Opera ", "Horror"]},
+        limit=2,
+    ) == ["epic_fantasy", "space_opera"]
+
+
+def test_parse_numeric_token_handles_empty_and_invalid_values() -> None:
+    assert _parse_numeric_token("") is None
+    assert _parse_numeric_token("  ") is None
+    assert _parse_numeric_token("not-a-number") is None
+    assert _parse_numeric_token("3,723") == pytest.approx(3723.0)
+
+
+def test_parse_duration_minutes_and_extract_duration_edge_branches() -> None:
+    assert _parse_duration_minutes("") is None
+    assert _parse_duration_minutes("0") is None
+    assert _parse_duration_minutes("0 seconds") is None
+    assert _parse_duration_minutes("nonsense 12") is None
+    assert _extract_duration_minutes({"duration_seconds": 0}) is None
+    assert _extract_duration_minutes({"duration_in_seconds": "invalid"}) is None
+
+
+def test_fetch_cover_ids_for_work_falls_back_when_work_covers_invalid() -> None:
+    responses = {
+        "/works/OL1W.json": {"title": "Book", "covers": [None, "x"]},
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {"covers": "invalid"},
+                {"covers": [4, 5, "bad", 5]},
+            ]
+        },
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    cover_ids = asyncio.run(client.fetch_cover_ids_for_work(work_key="OL1W"))
+    assert cover_ids == [4, 5]
+
+
+def test_fetch_work_audiobook_durations_handles_bad_edition_detail_shape() -> None:
+    responses = {
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {
+                    "key": "/books/OLA1M",
+                    "physical_format": "Audible eAudiobook",
+                },
+                {
+                    "key": "/books/OLA2M",
+                    "physical_format": "Audible eAudiobook",
+                },
+            ]
+        },
+        "/books/OLA1M.json": ["unexpected-list-shape"],
+        "/books/OLA2M.json": {"notes": "Duration in seconds: 600"},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    durations = asyncio.run(client.fetch_work_audiobook_durations(work_key="OL1W"))
+    assert durations == [pytest.approx(10.0)]

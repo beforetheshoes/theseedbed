@@ -32,6 +32,7 @@ def test_users_table_schema() -> None:
         "display_name",
         "avatar_url",
         "enable_google_books",
+        "default_progress_unit",
         "actor_uri",
         "created_at",
         "updated_at",
@@ -44,6 +45,12 @@ def test_users_table_schema() -> None:
     assert table.columns["display_name"].type.length == 255
     assert isinstance(table.columns["avatar_url"].type, sa.Text)
     assert isinstance(table.columns["enable_google_books"].type, sa.Boolean)
+    assert isinstance(table.columns["default_progress_unit"].type, sa.Enum)
+    assert table.columns["default_progress_unit"].type.enums == [
+        "pages_read",
+        "percent_complete",
+        "minutes_listened",
+    ]
 
     created_at_type = cast(sa.DateTime, table.columns["created_at"].type)
     updated_at_type = cast(sa.DateTime, table.columns["updated_at"].type)

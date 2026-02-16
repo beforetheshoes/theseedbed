@@ -133,6 +133,7 @@ def test_update_profile_validates_handle() -> None:
             display_name=None,
             avatar_url=None,
             enable_google_books=None,
+            default_progress_unit=None,
         )
 
 
@@ -150,6 +151,7 @@ def test_update_profile_rejects_duplicate_handle() -> None:
             display_name=None,
             avatar_url=None,
             enable_google_books=None,
+            default_progress_unit=None,
         )
 
 
@@ -166,12 +168,14 @@ def test_update_profile_updates_fields() -> None:
         display_name=" Name ",
         avatar_url=" https://example.com/avatar.png ",
         enable_google_books=True,
+        default_progress_unit="minutes_listened",
     )
     assert updated is profile
     assert updated.handle == "fresh"
     assert updated.display_name == "Name"
     assert updated.avatar_url == "https://example.com/avatar.png"
     assert updated.enable_google_books is True
+    assert updated.default_progress_unit == "minutes_listened"
 
 
 def test_create_or_get_library_item_handles_missing_work() -> None:
