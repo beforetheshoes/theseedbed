@@ -1,5 +1,5 @@
-.PHONY: dev dev-api dev-api-bitwarden dev-web dev-up install install-api install-web \
-	supabase-start supabase-env supabase-health ensure-web-env \
+.PHONY: dev dev-api dev-api-bitwarden dev-web dev-up dev-codex codex install install-api install-web \
+	supabase-start supabase-env supabase-health ensure-web-env ensure-dev-db \
 	lint lint-api lint-web format format-api format-web \
 	format-check format-check-api format-check-web \
 	typecheck typecheck-api test test-api test-web test-unit test-e2e \
@@ -10,7 +10,7 @@ API_RUN := $(if $(wildcard $(API_VENV_PY)),$(API_VENV_PY) -m,uv run)
 API_BUILD := $(if $(wildcard $(API_VENV_PY)),$(API_VENV_PY) -m build,uv build)
 
 # Run both API and web in development mode
-dev: ensure-web-env
+dev: ensure-web-env ensure-dev-db
 	@echo "Starting API and web servers..."
 	@make -j2 dev-api dev-web
 
@@ -19,6 +19,38 @@ dev-up:
 	@make install
 	@make supabase-env
 	@make dev
+
+# Kill any listener on 3000, clear web build artifacts, then start dev servers
+dev-codex:
+	@for port in 3000 8000; do \
+		echo "Checking port $$port..."; \
+		pids="$$(lsof -nP -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true)"; \
+		if [ -n "$$pids" ]; then \
+			echo "Stopping process(es) on port $$port: $$pids"; \
+			kill -TERM $$pids || true; \
+			for i in 1 2 3 4 5 6 7 8 9 10; do \
+				sleep 0.5; \
+				remaining="$$(lsof -nP -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true)"; \
+				if [ -z "$$remaining" ]; then \
+					echo "Port $$port released."; \
+					break; \
+				fi; \
+				if [ "$$i" -eq 10 ]; then \
+					echo "Force killing remaining process(es) on $$port: $$remaining"; \
+					kill -KILL $$remaining || true; \
+				fi; \
+			done; \
+		else \
+			echo "Port $$port is already free."; \
+		fi; \
+	done
+	@echo "Cleaning apps/web/.nuxt and apps/web/.output..."
+	@rm -rf "$(CURDIR)/apps/web/.nuxt" "$(CURDIR)/apps/web/.output"
+	@echo "Starting dev servers..."
+	@$(MAKE) dev
+
+# Short alias for dev-codex
+codex: dev-codex
 
 # Run API server
 dev-api:
@@ -40,6 +72,11 @@ ensure-web-env:
 	elif [ ! -f ".env" ]; then \
 		echo "No repo root .env found; run 'make supabase-env' to generate local Supabase env."; \
 	fi
+
+# Ensure local Supabase is running and all API DB migrations are applied.
+ensure-dev-db: supabase-env
+	@echo "Applying API migrations..."
+	cd apps/api && $(API_RUN) alembic upgrade head
 
 # Supabase local dev
 supabase-start:

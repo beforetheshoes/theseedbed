@@ -4,7 +4,7 @@ import datetime as dt
 import uuid
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import ARRAY, ENUM
+from sqlalchemy.dialects.postgresql import ARRAY, ENUM, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -293,6 +293,56 @@ class ReadingStateEvent(Base):
     )
     event_type: Mapped[str] = mapped_column(sa.String(32), nullable=False)
     occurred_at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+
+
+class LibraryItemMergeEvent(Base):
+    __tablename__ = "library_item_merge_events"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "cardinality(source_library_item_ids) >= 1",
+            name="ck_library_item_merge_events_source_nonempty",
+        ),
+        sa.Index("ix_library_item_merge_events_user_id", "user_id"),
+        sa.Index("ix_library_item_merge_events_created_at", "created_at"),
+        sa.Index(
+            "ix_library_item_merge_events_target_library_item_id",
+            "target_library_item_id",
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    target_library_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.UUID(as_uuid=True),
+        sa.ForeignKey("library_items.id", ondelete="SET NULL"),
+    )
+    source_library_item_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(sa.UUID(as_uuid=True)),
+        nullable=False,
+    )
+    field_resolution: Mapped[dict[str, str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+    result_summary: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+        server_default=sa.text("'{}'::jsonb"),
+    )
+    created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
         nullable=False,
         server_default=sa.text("now()"),

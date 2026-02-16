@@ -11,6 +11,7 @@ from app.core.rate_limit import enforce_client_user_rate_limit
 from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
+from app.services.library_merges import apply_library_merge, preview_library_merge
 from app.services.reading_statistics import get_library_item_statistics
 from app.services.user_library import (
     LibraryItemStatus,
@@ -38,6 +39,26 @@ class UpdateLibraryItemRequest(BaseModel):
     visibility: LibraryItemVisibility | None = None
     rating: int | None = Field(default=None, ge=0, le=10)
     tags: list[str] | None = None
+
+
+class MergeFieldResolutionRequest(BaseModel):
+    status: str | None = None
+    visibility: str | None = None
+    rating: str | None = None
+    preferred_edition_id: str | None = None
+    tags: str | None = None
+
+    def as_dict(self) -> dict[str, str]:
+        data = self.model_dump(exclude_none=True)
+        return {key: str(value) for key, value in data.items()}
+
+
+class MergeLibraryItemsRequest(BaseModel):
+    item_ids: list[uuid.UUID] = Field(min_length=2, max_length=20)
+    target_item_id: uuid.UUID
+    field_resolution: MergeFieldResolutionRequest = Field(
+        default_factory=MergeFieldResolutionRequest
+    )
 
 
 class StatisticsWindow(BaseModel):
@@ -255,6 +276,48 @@ def remove_item(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
     return ok({"deleted": True})
+
+
+@router.post("/merge/preview")
+def preview_merge(
+    payload: MergeLibraryItemsRequest,
+    auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    try:
+        result = preview_library_merge(
+            session,
+            user_id=auth.user_id,
+            item_ids=payload.item_ids,
+            target_item_id=payload.target_item_id,
+            field_resolution=payload.field_resolution.as_dict(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ok(result)
+
+
+@router.post("/merge")
+def apply_merge(
+    payload: MergeLibraryItemsRequest,
+    auth: Annotated[AuthContext, Depends(require_auth_context)],
+    session: Annotated[Session, Depends(get_db_session)],
+) -> dict[str, object]:
+    try:
+        result = apply_library_merge(
+            session,
+            user_id=auth.user_id,
+            item_ids=payload.item_ids,
+            target_item_id=payload.target_item_id,
+            field_resolution=payload.field_resolution.as_dict(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return ok(result)
 
 
 @router.get("/by-work/{work_id}")

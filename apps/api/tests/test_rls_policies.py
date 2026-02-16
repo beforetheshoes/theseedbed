@@ -15,6 +15,7 @@ from psycopg.types.json import Json
 USER_SCOPED_TABLES = {
     "users": "id",
     "library_items": "user_id",
+    "library_item_merge_events": "user_id",
     "reading_sessions": "user_id",
     "reading_progress_logs": "user_id",
     "reading_state_events": "user_id",
@@ -803,6 +804,7 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
         "alembic_version",
         "users",
         "library_items",
+        "library_item_merge_events",
         "reading_sessions",
         "reading_progress_logs",
         "reading_state_events",

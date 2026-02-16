@@ -102,10 +102,13 @@ def upsert_review_for_work(
         item.preferred_edition_id = edition_id
 
     model = session.scalar(
-        sa.select(Review).where(
+        sa.select(Review)
+        .where(
             Review.user_id == user_id,
             Review.library_item_id == item.id,
         )
+        .order_by(Review.created_at.desc(), Review.id.desc())
+        .limit(1)
     )
     now = dt.datetime.now(tz=dt.UTC)
     if model is None:

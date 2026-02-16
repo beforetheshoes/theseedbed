@@ -1942,6 +1942,42 @@ describe('library page', () => {
     expect((wrapper.vm as any).readDateDialogOpen).toBe(true);
   });
 
+  it('shows a generic save-date error on unexpected failures', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'to_read',
+            visibility: 'private',
+            tags: ['Favorites'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        next_cursor: null,
+      })
+      .mockRejectedValueOnce(new Error('boom'));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    const item = (wrapper.vm as any).items[0];
+    (wrapper.vm as any).openReadDatePrompt(item, 'completed');
+    await flushPromises();
+
+    await (wrapper.vm as any).saveReadDatePrompt();
+    await flushPromises();
+
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ severity: 'error', summary: 'Unable to save reading date.' }),
+    );
+    expect((wrapper.vm as any).readDateDialogOpen).toBe(true);
+  });
+
   it('validates malformed completed and previous read date ranges', async () => {
     apiRequest.mockResolvedValueOnce({
       items: [
@@ -2911,5 +2947,958 @@ describe('library page', () => {
 
     expect(clearSpy).toHaveBeenCalled();
     vi.useRealTimers();
+  });
+
+  it('opens merge dialog and requests preview for selected items', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'reading',
+            visibility: 'private',
+            rating: 6,
+            tags: ['SciFi'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+          {
+            id: 'item-2',
+            work_id: 'work-2',
+            work_title: 'Book B',
+            author_names: ['Author B'],
+            cover_url: null,
+            status: 'completed',
+            visibility: 'public',
+            rating: 8,
+            tags: ['Award'],
+            created_at: '2026-02-09T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 2,
+          total_pages: 1,
+          from: 1,
+          to: 2,
+          has_prev: false,
+          has_next: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        selection: {
+          target_item_id: 'item-1',
+          source_item_ids: ['item-2'],
+          selected_item_ids: ['item-1', 'item-2'],
+        },
+        fields: {
+          candidates: {
+            status: { 'item-1': 'reading', 'item-2': 'completed' },
+            visibility: { 'item-1': 'private', 'item-2': 'public' },
+            rating: { 'item-1': 6, 'item-2': 8 },
+            preferred_edition_id: { 'item-1': null, 'item-2': null },
+            tags: { 'item-1': ['SciFi'], 'item-2': ['Award'] },
+          },
+          resolution: {
+            status: 'keep:item-1',
+            visibility: 'keep:item-1',
+            rating: 'keep:item-1',
+            preferred_edition_id: 'keep:item-1',
+            tags: 'combine',
+          },
+          defaults: {
+            status: 'keep:item-1',
+            visibility: 'keep:item-1',
+            rating: 'keep:item-1',
+            preferred_edition_id: 'keep:item-1',
+            tags: 'combine',
+          },
+        },
+        dependencies: {
+          by_item: {},
+          totals_for_sources: {
+            read_cycles: 1,
+            progress_logs: 2,
+            notes: 3,
+            highlights: 4,
+            reviews: 5,
+          },
+        },
+        warnings: [],
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).viewMode = 'table';
+    (wrapper.vm as any).selectedMergeItems = (wrapper.vm as any).items;
+    await (wrapper.vm as any).openMergeDialog();
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/merge/preview', {
+      method: 'POST',
+      body: {
+        item_ids: ['item-1', 'item-2'],
+        target_item_id: 'item-1',
+        field_resolution: { tags: 'combine' },
+      },
+    });
+    expect((wrapper.vm as any).mergeDialogOpen).toBe(true);
+  });
+
+  it('applies merge, clears selection, and refreshes page', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'reading',
+            visibility: 'private',
+            rating: 6,
+            tags: ['SciFi'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+          {
+            id: 'item-2',
+            work_id: 'work-2',
+            work_title: 'Book B',
+            author_names: ['Author B'],
+            cover_url: null,
+            status: 'completed',
+            visibility: 'public',
+            rating: 8,
+            tags: ['Award'],
+            created_at: '2026-02-09T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 2,
+          total_pages: 1,
+          from: 1,
+          to: 2,
+          has_prev: false,
+          has_next: false,
+        },
+      })
+      .mockResolvedValueOnce({
+        merge_event_id: 'merge-1',
+        target_item_id: 'item-1',
+        merged_source_item_ids: ['item-2'],
+        moved_counts: {
+          read_cycles: 1,
+          progress_logs: 1,
+          notes: 1,
+          highlights: 1,
+          reviews: 1,
+        },
+        fields: { before: {}, after: {} },
+        message: 'Merged 2 books into 1.',
+      })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'reading',
+            visibility: 'private',
+            rating: 6,
+            tags: ['SciFi', 'Award'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 1,
+          total_pages: 1,
+          from: 1,
+          to: 1,
+          has_prev: false,
+          has_next: false,
+        },
+      });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = (wrapper.vm as any).items;
+    (wrapper.vm as any).mergeTargetItemId = 'item-1';
+    (wrapper.vm as any).mergePreview = {
+      dependencies: {
+        totals_for_sources: {
+          read_cycles: 1,
+          progress_logs: 1,
+          notes: 1,
+          highlights: 1,
+          reviews: 1,
+        },
+      },
+    };
+    await (wrapper.vm as any).applyMerge();
+    await flushPromises();
+
+    expect(apiRequest).toHaveBeenCalledWith('/api/v1/library/items/merge', {
+      method: 'POST',
+      body: {
+        item_ids: ['item-1', 'item-2'],
+        target_item_id: 'item-1',
+        field_resolution: { tags: 'combine' },
+      },
+    });
+    expect((wrapper.vm as any).selectedMergeItems).toEqual([]);
+    expect((wrapper.vm as any).mergeDialogOpen).toBe(false);
+    expect(toastAdd).toHaveBeenCalledWith(expect.objectContaining({ severity: 'success' }));
+  });
+
+  it('handles merge preview load failures', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'reading',
+            visibility: 'private',
+            rating: 6,
+            tags: ['SciFi'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+          {
+            id: 'item-2',
+            work_id: 'work-2',
+            work_title: 'Book B',
+            author_names: ['Author B'],
+            cover_url: null,
+            status: 'completed',
+            visibility: 'public',
+            rating: 8,
+            tags: ['Award'],
+            created_at: '2026-02-09T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 2,
+          total_pages: 1,
+          from: 1,
+          to: 2,
+          has_prev: false,
+          has_next: false,
+        },
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Bad preview', 'bad_preview', 400));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    (wrapper.vm as any).selectedMergeItems = (wrapper.vm as any).items;
+    (wrapper.vm as any).mergeTargetItemId = 'item-1';
+    await (wrapper.vm as any).loadMergePreview();
+    await flushPromises();
+
+    expect((wrapper.vm as any).mergePreview ?? null).toBeNull();
+    expect((wrapper.vm as any).mergeError).toBe('Bad preview');
+  });
+
+  it('handles merge apply failures and early-return guards', async () => {
+    apiRequest
+      .mockResolvedValueOnce({
+        items: [
+          {
+            id: 'item-1',
+            work_id: 'work-1',
+            work_title: 'Book A',
+            author_names: ['Author A'],
+            cover_url: null,
+            status: 'reading',
+            visibility: 'private',
+            rating: 6,
+            tags: ['SciFi'],
+            created_at: '2026-02-08T00:00:00Z',
+          },
+          {
+            id: 'item-2',
+            work_id: 'work-2',
+            work_title: 'Book B',
+            author_names: ['Author B'],
+            cover_url: null,
+            status: 'completed',
+            visibility: 'public',
+            rating: 8,
+            tags: ['Award'],
+            created_at: '2026-02-09T00:00:00Z',
+          },
+        ],
+        pagination: {
+          page: 1,
+          page_size: 25,
+          total_count: 2,
+          total_pages: 1,
+          from: 1,
+          to: 2,
+          has_prev: false,
+          has_next: false,
+        },
+      })
+      .mockRejectedValueOnce(new ApiClientErrorMock('Bad merge', 'bad_merge', 400));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await (wrapper.vm as any).applyMerge();
+    await flushPromises();
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+
+    (wrapper.vm as any).selectedMergeItems = (wrapper.vm as any).items;
+    (wrapper.vm as any).mergeTargetItemId = 'item-1';
+    (wrapper.vm as any).mergePreview = {
+      dependencies: {
+        totals_for_sources: {
+          read_cycles: 1,
+          progress_logs: 1,
+          notes: 1,
+          highlights: 1,
+          reviews: 1,
+        },
+      },
+    };
+    await (wrapper.vm as any).applyMerge();
+    await flushPromises();
+
+    expect((wrapper.vm as any).mergeError).toBe('Bad merge');
+  });
+
+  it('covers merge dialog guard and helper branches', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'reading',
+          visibility: 'private',
+          rating: 6,
+          tags: ['SciFi'],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      pagination: {
+        page: 1,
+        page_size: 25,
+        total_count: 1,
+        total_pages: 1,
+        from: 1,
+        to: 1,
+        has_prev: false,
+        has_next: false,
+      },
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = (wrapper.vm as any).items;
+    await (wrapper.vm as any).openMergeDialog();
+    expect((wrapper.vm as any).mergeDialogOpen).toBe(false);
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    (wrapper.vm as any).mergeApplying = true;
+    (wrapper.vm as any).closeMergeDialog();
+    expect((wrapper.vm as any).mergeDialogOpen).toBe(true);
+
+    (wrapper.vm as any).mergeApplying = false;
+    (wrapper.vm as any).mergePreview = {
+      fields: {
+        candidates: {
+          status: { 'item-1': 'reading' },
+          visibility: { 'item-1': 'private' },
+          rating: { 'item-1': 6 },
+          preferred_edition_id: { 'item-1': null },
+          tags: { 'item-1': ['SciFi'] },
+        },
+        resolution: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-1',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-1',
+          tags: 'combine',
+        },
+      },
+    };
+    (wrapper.vm as any).mergeFieldResolution.status = 'keep:item-keep';
+    (wrapper.vm as any).syncMergeResolutionFromPreview();
+    expect((wrapper.vm as any).mergeFieldResolution.status).toBe('keep:item-keep');
+
+    const tagOptions = (wrapper.vm as any).mergeResolutionOptions('tags');
+    expect(tagOptions[0].value).toBe('combine');
+  });
+
+  it('covers merge payload helpers and preview early exits', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], pagination: undefined });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    await (wrapper.vm as any).loadMergePreview();
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    (wrapper.vm as any).selectedMergeItems = [{ id: 'one', work_title: 'One' }];
+    await (wrapper.vm as any).loadMergePreview();
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: 'one', work_title: 'One' },
+      { id: 'two', work_title: 'Two' },
+    ];
+    (wrapper.vm as any).mergeTargetItemId = '';
+    await (wrapper.vm as any).loadMergePreview();
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+
+    (wrapper.vm as any).mergeFieldResolution = {
+      status: '',
+      visibility: '   ',
+      rating: 'keep:one',
+      preferred_edition_id: '',
+      tags: 'combine',
+    };
+    const payload = (wrapper.vm as any).mergeFieldResolutionPayload();
+    expect(payload).toEqual({ rating: 'keep:one', tags: 'combine' });
+
+    (wrapper.vm as any).mergePreview = {
+      fields: {
+        candidates: {
+          status: { one: 'reading' },
+          visibility: { one: 'private' },
+          rating: { one: 5 },
+          preferred_edition_id: { one: null },
+          tags: { one: ['Memoir'] },
+        },
+        resolution: {
+          status: 'keep:one',
+          visibility: 'keep:one',
+          rating: 'keep:one',
+          preferred_edition_id: 'keep:one',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:one',
+          visibility: 'keep:one',
+          rating: 'keep:one',
+          preferred_edition_id: 'keep:one',
+          tags: 'combine',
+        },
+      },
+      dependencies: {
+        by_item: {},
+        totals_for_sources: {
+          read_cycles: 0,
+          progress_logs: 0,
+          notes: 0,
+          highlights: 0,
+          reviews: 0,
+        },
+      },
+    };
+    (wrapper.vm as any).selectedMergeItems = [{ id: 'one', work_title: 'One' }];
+    expect((wrapper.vm as any).mergeCandidateLabel('tags', 'one')).toBe('Memoir');
+    expect((wrapper.vm as any).mergeCandidateLabel('rating', 'one')).toBe('5/10');
+    expect((wrapper.vm as any).mergeCandidateLabel('preferred_edition_id', 'one')).toBe(
+      'No preferred edition',
+    );
+    expect((wrapper.vm as any).mergeCandidateLabel('status', 'missing-item')).toBe('Unset');
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    (wrapper.vm as any).mergeTargetItemId = 'one';
+    (wrapper.vm as any).closeMergeDialog();
+    expect((wrapper.vm as any).mergeDialogOpen).toBe(false);
+    expect((wrapper.vm as any).mergeTargetItemId).toBe('');
+  });
+
+  it('renders merge field controls and updates v-model selections', async () => {
+    const previewPayload = {
+      selection: {
+        target_item_id: 'item-1',
+        source_item_ids: ['item-2'],
+        selected_item_ids: ['item-1', 'item-2'],
+      },
+      fields: {
+        candidates: {
+          status: { 'item-1': 'reading', 'item-2': 'completed' },
+          visibility: { 'item-1': 'private', 'item-2': 'public' },
+          rating: { 'item-1': 6, 'item-2': 8 },
+          preferred_edition_id: { 'item-1': null, 'item-2': null },
+          tags: { 'item-1': ['SciFi'], 'item-2': ['Memoir'] },
+        },
+        resolution: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-1',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-1',
+          tags: 'combine',
+        },
+      },
+      dependencies: {
+        by_item: {},
+        totals_for_sources: {
+          read_cycles: 0,
+          progress_logs: 0,
+          notes: 0,
+          highlights: 0,
+          reviews: 0,
+        },
+      },
+      warnings: [],
+    };
+
+    apiRequest
+      .mockResolvedValueOnce({ items: [], pagination: undefined })
+      .mockResolvedValueOnce(previewPayload)
+      .mockResolvedValueOnce(previewPayload)
+      .mockResolvedValueOnce(previewPayload);
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: 'item-1', work_title: 'Book A' },
+      { id: 'item-2', work_title: 'Book B' },
+    ];
+    await (wrapper.vm as any).openMergeDialog();
+    await flushPromises();
+
+    expect(wrapper.find('[data-test="library-merge-field-rating"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="library-merge-field-edition"]').exists()).toBe(false);
+    expect(wrapper.find('[data-test="library-merge-field-edition-value"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="library-merge-field-tags"]').exists()).toBe(true);
+
+    await wrapper.get('[data-test="library-merge-target-select"]').trigger('click');
+    await wrapper.get('[data-test="library-merge-field-status"]').trigger('click');
+    await wrapper.get('[data-test="library-merge-field-visibility"]').trigger('click');
+    await wrapper.get('[data-test="library-merge-field-rating"]').trigger('click');
+    await wrapper.get('[data-test="library-merge-field-tags"]').trigger('click');
+    await flushPromises();
+  });
+
+  it('defaults merge visibility to private when any selected item is private', async () => {
+    const previewPayload = {
+      selection: {
+        target_item_id: 'item-2',
+        source_item_ids: ['item-1'],
+        selected_item_ids: ['item-1', 'item-2'],
+      },
+      fields: {
+        candidates: {
+          status: { 'item-1': 'reading', 'item-2': 'completed' },
+          visibility: { 'item-1': 'private', 'item-2': 'public' },
+          rating: { 'item-1': 6, 'item-2': 8 },
+          preferred_edition_id: { 'item-1': null, 'item-2': 'edition-2' },
+          tags: { 'item-1': ['SciFi'], 'item-2': ['Memoir'] },
+        },
+        resolution: {
+          status: 'keep:item-2',
+          visibility: 'keep:item-2',
+          rating: 'keep:item-2',
+          preferred_edition_id: 'keep:item-2',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:item-2',
+          visibility: 'keep:item-2',
+          rating: 'keep:item-2',
+          preferred_edition_id: 'keep:item-2',
+          tags: 'combine',
+        },
+      },
+      dependencies: {
+        by_item: {},
+        totals_for_sources: {
+          read_cycles: 0,
+          progress_logs: 0,
+          notes: 0,
+          highlights: 0,
+          reviews: 0,
+        },
+      },
+      warnings: [],
+    };
+
+    apiRequest
+      .mockResolvedValueOnce({ items: [], pagination: undefined })
+      .mockResolvedValueOnce(previewPayload)
+      .mockResolvedValueOnce(previewPayload);
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: 'item-2', work_title: 'Book B' },
+      { id: 'item-1', work_title: 'Book A' },
+    ];
+    await (wrapper.vm as any).openMergeDialog();
+    await flushPromises();
+
+    expect((wrapper.vm as any).mergeTargetItemId).toBe('item-2');
+    expect((wrapper.vm as any).mergeFieldResolution.visibility).toBe('keep:item-1');
+    expect(wrapper.find('[data-test="library-merge-field-edition"]').exists()).toBe(true);
+  });
+
+  it('renders preferred-edition select when selected items have different editions', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], pagination: undefined });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: 'item-1', work_title: 'Book A' },
+      { id: 'item-2', work_title: 'Book B' },
+    ];
+    (wrapper.vm as any).mergePreview = {
+      fields: {
+        candidates: {
+          status: { 'item-1': 'reading', 'item-2': 'completed' },
+          visibility: { 'item-1': 'private', 'item-2': 'public' },
+          rating: { 'item-1': 6, 'item-2': 8 },
+          preferred_edition_id: { 'item-1': null, 'item-2': 'edition-2' },
+          tags: { 'item-1': ['SciFi'], 'item-2': ['Memoir'] },
+        },
+        resolution: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-2',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-2',
+          tags: 'combine',
+        },
+      },
+      dependencies: {
+        by_item: {},
+        totals_for_sources: {
+          read_cycles: 0,
+          progress_logs: 0,
+          notes: 0,
+          highlights: 0,
+          reviews: 0,
+        },
+      },
+    };
+    await flushPromises();
+
+    expect(wrapper.find('[data-test="library-merge-field-edition"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="library-merge-field-edition-value"]').exists()).toBe(false);
+    const editionSelect = wrapper.findComponent('[data-test="library-merge-field-edition"]');
+    expect(editionSelect.exists()).toBe(true);
+    (editionSelect.vm as any).$emit('update:model-value', 'keep:item-2');
+    await flushPromises();
+    expect((wrapper.vm as any).mergeFieldResolution.preferred_edition_id).toBe('keep:item-2');
+  });
+
+  it('covers merge resolution fallback and preview/open fallback branches', async () => {
+    apiRequest
+      .mockResolvedValueOnce({ items: [], pagination: undefined })
+      .mockRejectedValueOnce(new Error('preview boom'));
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: 'item-1', work_title: 'Book A' },
+      { id: 'item-2', work_title: 'Book B' },
+    ];
+    (wrapper.vm as any).mergePreview = {
+      fields: {
+        candidates: {
+          status: { 'item-1': 'reading', 'item-2': 'completed' },
+          visibility: { 'item-1': 'private', 'item-2': 'public' },
+          rating: {},
+          preferred_edition_id: { 'item-1': null, 'item-2': null },
+          tags: { 'item-1': ['SciFi'], 'item-2': ['Memoir'] },
+        },
+        resolution: {
+          status: 'keep:item-2',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-2',
+          preferred_edition_id: 'keep:item-1',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:item-1',
+          visibility: 'keep:item-1',
+          rating: 'keep:item-1',
+          preferred_edition_id: 'keep:item-1',
+          tags: 'combine',
+        },
+      },
+    };
+    (wrapper.vm as any).mergeFieldResolution = {
+      status: '',
+      visibility: '',
+      rating: '',
+      preferred_edition_id: '',
+      tags: '',
+    };
+    (wrapper.vm as any).syncMergeResolutionFromPreview();
+    expect((wrapper.vm as any).mergeFieldResolution.status).toBe('keep:item-2');
+    expect((wrapper.vm as any).mergeFieldResolution.visibility).toBe('keep:item-1');
+    expect((wrapper.vm as any).mergeFieldResolution.rating).toBe('');
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    (wrapper.vm as any).mergeTargetItemId = 'item-1';
+    await (wrapper.vm as any).loadMergePreview();
+    await flushPromises();
+    expect((wrapper.vm as any).mergeError).toBe('Unable to load merge preview right now.');
+
+    (wrapper.vm as any).mergeDialogOpen = false;
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: '', work_title: 'Missing A' },
+      { id: '', work_title: 'Missing B' },
+    ];
+    await (wrapper.vm as any).openMergeDialog();
+    await flushPromises();
+    expect((wrapper.vm as any).mergeTargetItemId).toBe('');
+  });
+
+  it('covers merge uniform field label fallbacks when no values are available', async () => {
+    apiRequest.mockResolvedValueOnce({ items: [], pagination: undefined });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = [];
+    (wrapper.vm as any).mergePreview = {
+      fields: {
+        candidates: {
+          status: {},
+          visibility: {},
+          rating: {},
+          preferred_edition_id: {},
+          tags: {},
+        },
+      },
+    };
+
+    expect((wrapper.vm as any).mergeUniformFieldLabel('tags')).toBe('No tags');
+    expect((wrapper.vm as any).mergeUniformFieldLabel('rating')).toBe('No rating');
+    expect((wrapper.vm as any).mergeUniformFieldLabel('preferred_edition_id')).toBe(
+      'No preferred edition',
+    );
+    expect((wrapper.vm as any).mergeUniformFieldLabel('status')).toBe('Unset');
+  });
+
+  it('covers v-model update handlers for selection, dialogs, and read-date input', async () => {
+    apiRequest.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'item-1',
+          work_id: 'work-1',
+          work_title: 'Book A',
+          author_names: ['Author A'],
+          cover_url: null,
+          status: 'reading',
+          visibility: 'private',
+          rating: 6,
+          tags: ['SciFi'],
+          created_at: '2026-02-08T00:00:00Z',
+        },
+      ],
+      pagination: {
+        page: 1,
+        page_size: 25,
+        total_count: 1,
+        total_pages: 1,
+        from: 1,
+        to: 1,
+        has_prev: false,
+        has_next: false,
+      },
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).viewMode = 'table';
+    await flushPromises();
+
+    const table = wrapper.findComponent(DataTable);
+    table.vm.$emit('update:selection', [(wrapper.vm as any).items[0]]);
+    await flushPromises();
+    expect((wrapper.vm as any).selectedMergeItems).toHaveLength(1);
+
+    (wrapper.vm as any).openReadDatePrompt((wrapper.vm as any).items[0], 'reading');
+    await flushPromises();
+    await wrapper.get('[data-test="library-read-current-start"]').trigger('click');
+    await flushPromises();
+    expect((wrapper.vm as any).readingCurrentStartDate).toBeInstanceOf(Date);
+
+    const readDialog = wrapper
+      .findAllComponents({ name: 'Dialog' })
+      .find((candidate) => candidate.props('header') === 'Add reading start date');
+    expect(readDialog).toBeDefined();
+    if (readDialog) {
+      readDialog.vm.$emit('update:visible', false);
+      await flushPromises();
+    }
+    expect((wrapper.vm as any).readDateDialogOpen).toBe(false);
+
+    (wrapper.vm as any).mergeDialogOpen = true;
+    await flushPromises();
+    const mergeDialog = wrapper
+      .findAllComponents({ name: 'Dialog' })
+      .find((candidate) => candidate.props('header') === 'Merge books');
+    expect(mergeDialog).toBeDefined();
+    if (mergeDialog) {
+      mergeDialog.vm.$emit('update:visible', false);
+      await flushPromises();
+    }
+    expect((wrapper.vm as any).mergeDialogOpen).toBe(false);
+  });
+
+  it('covers merge target fallback and generic apply branches', async () => {
+    const mergePreviewPayload = {
+      selection: {
+        target_item_id: 'item-2',
+        source_item_ids: ['item-1'],
+        selected_item_ids: ['item-1', 'item-2'],
+      },
+      fields: {
+        candidates: {
+          status: { 'item-1': 'reading', 'item-2': 'completed' },
+          visibility: { 'item-1': 'private', 'item-2': 'public' },
+          rating: { 'item-1': 6, 'item-2': 8 },
+          preferred_edition_id: { 'item-1': null, 'item-2': null },
+          tags: { 'item-1': ['SciFi'], 'item-2': ['Memoir'] },
+        },
+        resolution: {
+          status: 'keep:item-2',
+          visibility: 'keep:item-2',
+          rating: 'keep:item-2',
+          preferred_edition_id: 'keep:item-2',
+          tags: 'combine',
+        },
+        defaults: {
+          status: 'keep:item-2',
+          visibility: 'keep:item-2',
+          rating: 'keep:item-2',
+          preferred_edition_id: 'keep:item-2',
+          tags: 'combine',
+        },
+      },
+      dependencies: {
+        by_item: {},
+        totals_for_sources: {
+          read_cycles: 0,
+          progress_logs: 0,
+          notes: 0,
+          highlights: 0,
+          reviews: 0,
+        },
+      },
+      warnings: [],
+    };
+    let mergeApplyCalls = 0;
+    apiRequest.mockImplementation(async (url: string) => {
+      if (url === '/api/v1/library/items') {
+        return { items: [], pagination: undefined };
+      }
+      if (url === '/api/v1/library/items/merge/preview') {
+        return mergePreviewPayload;
+      }
+      if (url === '/api/v1/library/items/merge') {
+        mergeApplyCalls += 1;
+        if (mergeApplyCalls === 1) {
+          return {
+            merge_event_id: 'merge-2',
+            target_item_id: 'item-2',
+            merged_source_item_ids: ['item-1'],
+            moved_counts: {
+              read_cycles: 0,
+              progress_logs: 0,
+              notes: 0,
+              highlights: 0,
+              reviews: 0,
+            },
+            fields: { before: {}, after: {} },
+            message: '',
+          };
+        }
+        throw new Error('boom');
+      }
+      return { items: [], pagination: undefined };
+    });
+
+    const wrapper = mountPage();
+    await flushPromises();
+
+    (wrapper.vm as any).selectedMergeItems = [
+      { id: '', work_title: 'Missing' },
+      { id: 'item-2', work_title: 'Book B' },
+    ];
+    await (wrapper.vm as any).openMergeDialog();
+    await flushPromises();
+    expect((wrapper.vm as any).mergeTargetItemId).toBe('item-2');
+
+    await (wrapper.vm as any).applyMerge();
+    await flushPromises();
+    expect(toastAdd).toHaveBeenCalledWith(
+      expect.objectContaining({ summary: 'Books merged successfully.' }),
+    );
+
+    (wrapper.vm as any).selectedMergeItems = [{ id: 'item-2', work_title: 'Book B' }];
+    (wrapper.vm as any).mergePreview = {
+      dependencies: {
+        totals_for_sources: {
+          read_cycles: 0,
+          progress_logs: 0,
+          notes: 0,
+          highlights: 0,
+          reviews: 0,
+        },
+      },
+    };
+    (wrapper.vm as any).mergeTargetItemId = 'item-2';
+    await (wrapper.vm as any).applyMerge();
+    await flushPromises();
+    expect((wrapper.vm as any).mergeError).toBe('Unable to merge selected books right now.');
   });
 });

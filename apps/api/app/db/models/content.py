@@ -124,11 +124,6 @@ class Highlight(Base):
 class Review(Base):
     __tablename__ = "reviews"
     __table_args__ = (
-        sa.UniqueConstraint(
-            "user_id",
-            "library_item_id",
-            name="uq_reviews_user_library_item",
-        ),
         sa.CheckConstraint(
             "rating >= 0 AND rating <= 10",
             name="ck_reviews_rating_range",

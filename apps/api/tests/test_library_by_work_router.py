@@ -111,6 +111,49 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             },
         },
     )
+    monkeypatch.setattr(
+        "app.routers.library.preview_library_merge",
+        lambda *_args, **_kwargs: {
+            "selection": {
+                "target_item_id": str(uuid.uuid4()),
+                "source_item_ids": [str(uuid.uuid4())],
+                "selected_item_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+            },
+            "fields": {
+                "candidates": {},
+                "resolution": {"tags": "combine"},
+                "defaults": {"tags": "combine"},
+            },
+            "dependencies": {
+                "by_item": {},
+                "totals_for_sources": {
+                    "read_cycles": 0,
+                    "progress_logs": 0,
+                    "notes": 0,
+                    "highlights": 0,
+                    "reviews": 0,
+                },
+            },
+            "warnings": [],
+        },
+    )
+    monkeypatch.setattr(
+        "app.routers.library.apply_library_merge",
+        lambda *_args, **_kwargs: {
+            "merge_event_id": str(uuid.uuid4()),
+            "target_item_id": str(uuid.uuid4()),
+            "merged_source_item_ids": [str(uuid.uuid4())],
+            "moved_counts": {
+                "read_cycles": 1,
+                "progress_logs": 1,
+                "notes": 1,
+                "highlights": 1,
+                "reviews": 1,
+            },
+            "fields": {"before": {}, "after": {}},
+            "message": "Merged 2 books into 1.",
+        },
+    )
 
     yield app
 
@@ -191,3 +234,71 @@ def test_get_library_item_statistics_returns_400_for_invalid_tz(
         params={"tz": "Mars/OlympusMons"},
     )
     assert response.status_code == 400
+
+
+def test_preview_library_merge(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items/merge/preview",
+        json={
+            "item_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+            "target_item_id": str(uuid.uuid4()),
+            "field_resolution": {"tags": "combine"},
+        },
+    )
+    assert response.status_code == 200
+    assert "selection" in response.json()["data"]
+
+
+def test_apply_library_merge(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items/merge",
+        json={
+            "item_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+            "target_item_id": str(uuid.uuid4()),
+            "field_resolution": {"tags": "combine"},
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()["data"]
+    assert "merge_event_id" in payload
+    assert "message" in payload
+
+
+def test_preview_library_merge_handles_service_errors(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.library.preview_library_merge",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("invalid merge")),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items/merge/preview",
+        json={
+            "item_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+            "target_item_id": str(uuid.uuid4()),
+        },
+    )
+    assert response.status_code == 400
+
+
+def test_apply_library_merge_handles_missing_items(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "app.routers.library.apply_library_merge",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            LookupError("one or more library items were not found")
+        ),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/api/v1/library/items/merge",
+        json={
+            "item_ids": [str(uuid.uuid4()), str(uuid.uuid4())],
+            "target_item_id": str(uuid.uuid4()),
+        },
+    )
+    assert response.status_code == 404
