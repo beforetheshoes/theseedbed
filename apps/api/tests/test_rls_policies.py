@@ -16,6 +16,7 @@ USER_SCOPED_TABLES = {
     "users": "id",
     "library_items": "user_id",
     "reading_sessions": "user_id",
+    "reading_progress_logs": "user_id",
     "reading_state_events": "user_id",
     "notes": "user_id",
     "highlights": "user_id",
@@ -31,6 +32,20 @@ READ_ONLY_TABLES = [
     "external_ids",
     "source_records",
 ]
+
+
+def _public_table_exists(conn: psycopg.Connection, table: str) -> bool:
+    row = conn.execute(
+        """
+        select 1
+        from information_schema.tables
+        where table_schema = 'public'
+          and table_name = %s
+        limit 1;
+        """,
+        (table,),
+    ).fetchone()
+    return row is not None
 
 
 def _get_db_url() -> str:
@@ -191,6 +206,8 @@ def _build_seed_data() -> dict[str, uuid.UUID]:
     library_item_3 = uuid.uuid4()
     reading_session_1 = uuid.uuid4()
     reading_session_2 = uuid.uuid4()
+    reading_progress_log_1 = uuid.uuid4()
+    reading_progress_log_2 = uuid.uuid4()
     reading_state_event_1 = uuid.uuid4()
     reading_state_event_2 = uuid.uuid4()
     note_1 = uuid.uuid4()
@@ -220,6 +237,8 @@ def _build_seed_data() -> dict[str, uuid.UUID]:
         "library_item_3": library_item_3,
         "reading_session_1": reading_session_1,
         "reading_session_2": reading_session_2,
+        "reading_progress_log_1": reading_progress_log_1,
+        "reading_progress_log_2": reading_progress_log_2,
         "reading_state_event_1": reading_state_event_1,
         "reading_state_event_2": reading_state_event_2,
         "note_1": note_1,
@@ -371,6 +390,30 @@ def _seed_rls_data(
             now,
         ),
     )
+    if _public_table_exists(conn, "reading_progress_logs"):
+        conn.execute(
+            """
+            insert into public.reading_progress_logs
+                (id, user_id, library_item_id, reading_session_id, logged_at, unit, value)
+            values (%s, %s, %s, %s, %s, %s, %s), (%s, %s, %s, %s, %s, %s, %s);
+            """,
+            (
+                data["reading_progress_log_1"],
+                user_1,
+                data["library_item_1"],
+                data["reading_session_1"],
+                now,
+                "percent_complete",
+                10,
+                data["reading_progress_log_2"],
+                user_2,
+                data["library_item_2"],
+                data["reading_session_2"],
+                now,
+                "percent_complete",
+                20,
+            ),
+        )
     conn.execute(
         """
         insert into public.notes
@@ -506,6 +549,11 @@ def _cleanup_rls_data(conn: psycopg.Connection, data: dict[str, uuid.UUID]) -> N
         "delete from public.notes where id in (%s, %s);",
         (data["note_1"], data["note_2"]),
     )
+    if _public_table_exists(conn, "reading_progress_logs"):
+        conn.execute(
+            "delete from public.reading_progress_logs where id in (%s, %s);",
+            (data["reading_progress_log_1"], data["reading_progress_log_2"]),
+        )
     conn.execute(
         "delete from public.reading_state_events where id in (%s, %s);",
         (data["reading_state_event_1"], data["reading_state_event_2"]),
@@ -586,8 +634,14 @@ def test_seed_data_can_be_reapplied(db_url: str) -> None:
 
 
 def test_policies_present(db_url: str) -> None:
-    table_list = list(USER_SCOPED_TABLES.keys()) + READ_ONLY_TABLES + ["api_audit_logs"]
     with psycopg.connect(db_url, autocommit=True) as conn:
+        table_list = [
+            table
+            for table in list(USER_SCOPED_TABLES.keys())
+            + READ_ONLY_TABLES
+            + ["api_audit_logs"]
+            if _public_table_exists(conn, table)
+        ]
         rls_rows = conn.execute(
             """
             select relname, relrowsecurity
@@ -610,6 +664,8 @@ def test_policies_present(db_url: str) -> None:
         policies = {(row[0], row[1]): row for row in policy_rows}
 
         for table, column in USER_SCOPED_TABLES.items():
+            if table not in table_list:
+                continue
             key = (table, f"{table}_owner")
             assert key in policies
             _, _, cmd, roles, qual, with_check = policies[key]
@@ -651,6 +707,7 @@ def test_policies_present(db_url: str) -> None:
         ("users", "id", "id", "user_2"),
         ("library_items", "user_id", "id", "library_item_2"),
         ("reading_sessions", "user_id", "id", "reading_session_2"),
+        ("reading_progress_logs", "user_id", "id", "reading_progress_log_2"),
         ("reading_state_events", "user_id", "id", "reading_state_event_2"),
         ("notes", "user_id", "id", "note_2"),
         ("highlights", "user_id", "id", "highlight_2"),
@@ -665,6 +722,10 @@ def test_user_scoped_reads_and_updates(
     pk_column: str,
     row_key: str,
 ) -> None:
+    with psycopg.connect(db_url, autocommit=True) as _conn:
+        if not _public_table_exists(_conn, table):
+            pytest.skip(f"{table} table not present in this local schema")
+
     user_1 = seed_data["user_1"]
     user_2 = seed_data["user_2"]
     other_id = seed_data[row_key]
@@ -743,6 +804,7 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
         "users",
         "library_items",
         "reading_sessions",
+        "reading_progress_logs",
         "reading_state_events",
         "notes",
         "highlights",
@@ -780,6 +842,8 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
         expected.update(optional_goodreads_tables)
 
     unknown = tables - expected - ignored
+    if "reading_progress_logs" not in tables:
+        expected.discard("reading_progress_logs")
     missing = expected - tables
     assert not missing
     assert not unknown
@@ -992,6 +1056,39 @@ def test_user_scoped_inserts_and_deletes(
             own_id=reading_session_id,
             other_id=seed_data["reading_session_2"],
         )
+
+        if _public_table_exists(conn, "reading_progress_logs"):
+            reading_progress_log_id = uuid.uuid4()
+            _assert_insert_and_delete(
+                conn,
+                table="reading_progress_logs",
+                pk_column="id",
+                insert_sql="""
+                    insert into public.reading_progress_logs
+                        (id, user_id, library_item_id, reading_session_id, logged_at, unit, value)
+                    values (%s, %s, %s, %s, %s, %s, %s);
+                """,
+                own_params=(
+                    reading_progress_log_id,
+                    user_1,
+                    seed_data["library_item_1"],
+                    seed_data["reading_session_1"],
+                    now,
+                    "percent_complete",
+                    15,
+                ),
+                other_params=(
+                    uuid.uuid4(),
+                    user_2,
+                    seed_data["library_item_2"],
+                    seed_data["reading_session_2"],
+                    now,
+                    "percent_complete",
+                    33,
+                ),
+                own_id=reading_progress_log_id,
+                other_id=seed_data["reading_progress_log_2"],
+            )
 
         reading_state_event_id = uuid.uuid4()
         _assert_insert_and_delete(

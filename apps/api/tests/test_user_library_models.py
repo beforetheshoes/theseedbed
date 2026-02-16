@@ -3,7 +3,13 @@ from typing import cast
 import sqlalchemy as sa
 
 from app.db.base import Base
-from app.db.models import LibraryItem, ReadingSession, ReadingStateEvent, User
+from app.db.models import (
+    LibraryItem,
+    ReadingProgressLog,
+    ReadingSession,
+    ReadingStateEvent,
+    User,
+)
 
 
 def _get_table(name: str) -> sa.Table:
@@ -14,6 +20,7 @@ def test_user_library_tables_registered() -> None:
     assert User.__tablename__ in Base.metadata.tables
     assert LibraryItem.__tablename__ in Base.metadata.tables
     assert ReadingSession.__tablename__ in Base.metadata.tables
+    assert ReadingProgressLog.__tablename__ in Base.metadata.tables
     assert ReadingStateEvent.__tablename__ in Base.metadata.tables
 
 
@@ -155,8 +162,7 @@ def test_reading_sessions_table_schema() -> None:
         "library_item_id",
         "started_at",
         "ended_at",
-        "pages_read",
-        "progress_percent",
+        "title",
         "note",
         "created_at",
         "updated_at",
@@ -166,8 +172,7 @@ def test_reading_sessions_table_schema() -> None:
     assert isinstance(table.columns["library_item_id"].type, sa.UUID)
     assert isinstance(table.columns["started_at"].type, sa.DateTime)
     assert isinstance(table.columns["ended_at"].type, sa.DateTime)
-    assert isinstance(table.columns["pages_read"].type, sa.Integer)
-    assert isinstance(table.columns["progress_percent"].type, sa.Numeric)
+    assert isinstance(table.columns["title"].type, sa.String)
     assert isinstance(table.columns["note"].type, sa.Text)
 
     started_at_type = table.columns["started_at"].type
@@ -196,13 +201,61 @@ def test_reading_sessions_table_schema() -> None:
         if isinstance(constraint, sa.CheckConstraint)
     ]
     check_names = {constraint.name for constraint in check_constraints}
-    assert "ck_reading_sessions_pages_read_nonnegative" in check_names
-    assert "ck_reading_sessions_progress_percent_range" in check_names
     assert "ck_reading_sessions_ended_after_start" in check_names
 
     index_names = {index.name for index in table.indexes}
     assert "ix_reading_sessions_user_id" in index_names
     assert "ix_reading_sessions_library_item_id" in index_names
+
+
+def test_reading_progress_logs_table_schema() -> None:
+    table = _get_table("reading_progress_logs")
+    assert set(table.columns.keys()) == {
+        "id",
+        "user_id",
+        "library_item_id",
+        "reading_session_id",
+        "logged_at",
+        "unit",
+        "value",
+        "canonical_percent",
+        "note",
+        "created_at",
+        "updated_at",
+    }
+    assert isinstance(table.columns["id"].type, sa.UUID)
+    assert isinstance(table.columns["user_id"].type, sa.UUID)
+    assert isinstance(table.columns["library_item_id"].type, sa.UUID)
+    assert isinstance(table.columns["reading_session_id"].type, sa.UUID)
+    assert isinstance(table.columns["logged_at"].type, sa.DateTime)
+    assert isinstance(table.columns["unit"].type, sa.Enum)
+    assert table.columns["unit"].type.enums == [
+        "pages_read",
+        "percent_complete",
+        "minutes_listened",
+    ]
+    assert isinstance(table.columns["value"].type, sa.Numeric)
+    assert isinstance(table.columns["canonical_percent"].type, sa.Numeric)
+    assert isinstance(table.columns["note"].type, sa.Text)
+
+    fk_targets = {fk.target_fullname for fk in table.foreign_keys}
+    assert "users.id" in fk_targets
+    assert "library_items.id" in fk_targets
+    assert "reading_sessions.id" in fk_targets
+
+    check_constraints = [
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, sa.CheckConstraint)
+    ]
+    check_names = {constraint.name for constraint in check_constraints}
+    assert "ck_reading_progress_logs_value_nonnegative" in check_names
+    assert "ck_reading_progress_logs_canonical_percent_range" in check_names
+
+    index_names = {index.name for index in table.indexes}
+    assert "ix_reading_progress_logs_user_id" in index_names
+    assert "ix_reading_progress_logs_library_item_logged_at" in index_names
+    assert "ix_reading_progress_logs_session_logged_at" in index_names
 
 
 def test_reading_state_events_table_schema() -> None:

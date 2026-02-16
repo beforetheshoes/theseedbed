@@ -59,6 +59,8 @@ def test_edition_table_schema_and_indexes() -> None:
         "publish_date",
         "language",
         "format",
+        "total_pages",
+        "total_audio_minutes",
         "cover_url",
         "cover_set_by",
         "cover_set_at",
@@ -74,6 +76,8 @@ def test_edition_table_schema_and_indexes() -> None:
     assert isinstance(table.columns["publish_date"].type, sa.Date)
     assert isinstance(table.columns["language"].type, sa.String)
     assert isinstance(table.columns["format"].type, sa.String)
+    assert isinstance(table.columns["total_pages"].type, sa.Integer)
+    assert isinstance(table.columns["total_audio_minutes"].type, sa.Integer)
     assert isinstance(table.columns["cover_url"].type, sa.Text)
 
     fk_targets = {fk.column.table.name for fk in table.foreign_keys}
@@ -82,6 +86,14 @@ def test_edition_table_schema_and_indexes() -> None:
     index_names = {index.name for index in table.indexes}
     assert "ix_editions_isbn10" in index_names
     assert "ix_editions_isbn13" in index_names
+    check_constraints = [
+        constraint
+        for constraint in table.constraints
+        if isinstance(constraint, sa.CheckConstraint)
+    ]
+    check_names = {constraint.name for constraint in check_constraints}
+    assert "ck_editions_total_pages_positive" in check_names
+    assert "ck_editions_total_audio_minutes_positive" in check_names
 
 
 def test_work_authors_composite_key() -> None:

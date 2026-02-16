@@ -93,6 +93,8 @@ def test_get_work_detail_uses_edition_cover_when_present() -> None:
 
     detail = get_work_detail(session, work_id=work_id)  # type: ignore[arg-type]
     assert detail["cover_url"] == "https://example.com/edition.jpg"
+    assert detail["total_pages"] is None
+    assert detail["total_audio_minutes"] is None
     assert detail["authors"][0]["name"] == "Author"
     assert detail["identifiers"]["isbn13"] == "9781234567890"
     assert detail["identifiers"]["asin"] == "B00TESTASIN"
@@ -114,6 +116,8 @@ def test_get_work_detail_falls_back_to_work_default_cover() -> None:
 
     detail = get_work_detail(session, work_id=work_id)  # type: ignore[arg-type]
     assert detail["cover_url"] == "https://example.com/default.jpg"
+    assert detail["total_pages"] is None
+    assert detail["total_audio_minutes"] is None
     assert detail["identifiers"]["isbn10"] is None
     assert detail["identifiers"]["isbn13"] is None
 
@@ -157,6 +161,8 @@ def test_list_work_editions_returns_rows() -> None:
     rows = list_work_editions(session, work_id=work_id, limit=20)  # type: ignore[arg-type]
     assert rows[0]["id"] == str(edition.id)
     assert rows[0]["provider"] == "openlibrary"
+    assert rows[0]["total_pages"] is None
+    assert rows[0]["total_audio_minutes"] is None
 
 
 def test_list_work_editions_raises_when_work_missing() -> None:

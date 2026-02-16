@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 from app.db.models.bibliography import Author, Edition, Work, WorkAuthor
 from app.db.models.external_provider import ExternalId
 from app.db.models.imports import StorygraphImportJob, StorygraphImportJobRow
-from app.db.models.users import ReadingSession
 from app.db.session import create_db_session
 from app.services.catalog import import_openlibrary_bundle
 from app.services.open_library import OpenLibraryClient
+from app.services.reading_sessions import get_or_create_import_cycle
 from app.services.reviews import upsert_review_for_work
 from app.services.storygraph_parser import (
     StorygraphCsvError,
@@ -513,26 +513,15 @@ async def process_storygraph_import_job(
                 if session_bounds:
                     started_at, ended_at = session_bounds
                     marker = f"storygraph:{row.identity_hash}"
-                    existing_session = session.scalar(
-                        sa.select(ReadingSession).where(
-                            ReadingSession.user_id == user_id,
-                            ReadingSession.library_item_id == library_item.id,
-                            ReadingSession.note == marker,
-                        )
+                    cycle = get_or_create_import_cycle(
+                        session,
+                        user_id=user_id,
+                        library_item_id=library_item.id,
+                        marker=marker,
+                        started_at=started_at,
+                        ended_at=ended_at,
                     )
-                    if existing_session is None:
-                        model = ReadingSession(
-                            user_id=user_id,
-                            library_item_id=library_item.id,
-                            started_at=started_at,
-                            ended_at=ended_at,
-                            note=marker,
-                        )
-                        session.add(model)
-                        session.flush()
-                        reading_session_id = model.id
-                    else:
-                        reading_session_id = existing_session.id
+                    reading_session_id = cycle.id
 
                 _record_row(
                     session,

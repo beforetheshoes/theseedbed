@@ -23,6 +23,13 @@ library_item_visibility_enum = ENUM(
     name="library_item_visibility",
     create_type=False,
 )
+reading_progress_unit_enum = ENUM(
+    "pages_read",
+    "percent_complete",
+    "minutes_listened",
+    name="reading_progress_unit",
+    create_type=False,
+)
 
 # Minimal auth.users metadata so SQLAlchemy can resolve FK dependency
 # for public.users.id -> auth.users.id during flush ordering.
@@ -151,14 +158,6 @@ class ReadingSession(Base):
     __tablename__ = "reading_sessions"
     __table_args__ = (
         sa.CheckConstraint(
-            "pages_read >= 0",
-            name="ck_reading_sessions_pages_read_nonnegative",
-        ),
-        sa.CheckConstraint(
-            "progress_percent >= 0 AND progress_percent <= 100",
-            name="ck_reading_sessions_progress_percent_range",
-        ),
-        sa.CheckConstraint(
             "ended_at IS NULL OR ended_at >= started_at",
             name="ck_reading_sessions_ended_after_start",
         ),
@@ -186,8 +185,71 @@ class ReadingSession(Base):
         nullable=False,
     )
     ended_at: Mapped[dt.datetime | None] = mapped_column(sa.DateTime(timezone=True))
-    pages_read: Mapped[int | None] = mapped_column(sa.Integer)
-    progress_percent: Mapped[float | None] = mapped_column(sa.Numeric(5, 2))
+    title: Mapped[str | None] = mapped_column(sa.String(255))
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+    updated_at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+        server_default=sa.text("now()"),
+    )
+
+
+class ReadingProgressLog(Base):
+    __tablename__ = "reading_progress_logs"
+    __table_args__ = (
+        sa.CheckConstraint(
+            "value >= 0",
+            name="ck_reading_progress_logs_value_nonnegative",
+        ),
+        sa.CheckConstraint(
+            "canonical_percent IS NULL OR (canonical_percent >= 0 AND canonical_percent <= 100)",
+            name="ck_reading_progress_logs_canonical_percent_range",
+        ),
+        sa.Index("ix_reading_progress_logs_user_id", "user_id"),
+        sa.Index(
+            "ix_reading_progress_logs_library_item_logged_at",
+            "library_item_id",
+            sa.text("logged_at DESC"),
+        ),
+        sa.Index(
+            "ix_reading_progress_logs_session_logged_at",
+            "reading_session_id",
+            sa.text("logged_at DESC"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        primary_key=True,
+        server_default=sa.text("gen_random_uuid()"),
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        sa.ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    library_item_id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        sa.ForeignKey("library_items.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    reading_session_id: Mapped[uuid.UUID] = mapped_column(
+        sa.UUID(as_uuid=True),
+        sa.ForeignKey("reading_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    logged_at: Mapped[dt.datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        nullable=False,
+    )
+    unit: Mapped[str] = mapped_column(reading_progress_unit_enum, nullable=False)
+    value: Mapped[float] = mapped_column(sa.Numeric(10, 2), nullable=False)
+    canonical_percent: Mapped[float | None] = mapped_column(sa.Numeric(6, 3))
     note: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),
