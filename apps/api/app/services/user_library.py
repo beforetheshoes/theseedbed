@@ -132,8 +132,7 @@ def update_profile(
     if theme_font_family is not None:
         if theme_font_family not in _ALLOWED_FONTS:
             raise ValueError(
-                "theme_font_family must be one of: "
-                + ", ".join(sorted(_ALLOWED_FONTS))
+                "theme_font_family must be one of: " + ", ".join(sorted(_ALLOWED_FONTS))
             )
         profile.theme_font_family = theme_font_family
 
