@@ -235,6 +235,16 @@ export default function SettingsPage() {
     !goodreadsIssuesError &&
     goodreadsPending === 0 &&
     !goodreadsImporting;
+  const showStorygraphStartImport =
+    Boolean(storygraphFile) &&
+    storygraphIssuesLoaded &&
+    !storygraphIssuesError &&
+    storygraphPending === 0;
+  const showGoodreadsStartImport =
+    Boolean(goodreadsFile) &&
+    goodreadsIssuesLoaded &&
+    !goodreadsIssuesError &&
+    goodreadsPending === 0;
 
   const toHexFromPicker = (event: ColorPickerChangeEvent): string | null => {
     const raw = String(event.value ?? "").replace(/^#/, "");
@@ -495,7 +505,7 @@ export default function SettingsPage() {
               ...issue,
               value,
               isEditing: true,
-              resolution: value.trim() ? "resolved" : "pending",
+              resolution: "pending",
             }
           : issue,
       ),
@@ -548,19 +558,6 @@ export default function SettingsPage() {
           ? { ...issue, isEditing: false, resolution: "skipped" }
           : issue,
       ),
-    );
-  };
-
-  const undoIssueSkipped = (
-    setter: React.Dispatch<React.SetStateAction<ImportIssue[]>>,
-    issueKey: string,
-  ) => {
-    setter((current) =>
-      current.map((issue) => {
-        if (issue.issueKey !== issueKey) return issue;
-        const resolution = issue.value.trim() ? "resolved" : "pending";
-        return { ...issue, resolution, isEditing: !issue.value.trim() };
-      }),
     );
   };
 
@@ -783,12 +780,34 @@ export default function SettingsPage() {
         <div className="grid gap-3" data-test={`${prefix}-import-issues`}>
           {issues.map((issue) => (
             <Card key={issue.issueKey}>
-              <p className="text-sm font-medium">{issueDescription(issue)}</p>
-              {suggestionConfidenceText(issue) ? (
-                <p className="text-xs text-[var(--p-text-muted-color)]">
-                  {suggestionConfidenceText(issue)}
-                </p>
-              ) : null}
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium">
+                    {issueDescription(issue)}
+                  </p>
+                  {suggestionConfidenceText(issue) ? (
+                    <p className="text-xs text-[var(--p-text-muted-color)]">
+                      {suggestionConfidenceText(issue)}
+                    </p>
+                  ) : null}
+                </div>
+                <Tag
+                  value={
+                    issue.resolution === "resolved"
+                      ? "Resolved"
+                      : issue.resolution === "skipped"
+                        ? "Skipped"
+                        : "Pending"
+                  }
+                  severity={
+                    issue.resolution === "resolved"
+                      ? "success"
+                      : issue.resolution === "skipped"
+                        ? "warning"
+                        : "secondary"
+                  }
+                />
+              </div>
 
               {issue.isEditing ? (
                 <InputText
@@ -812,47 +831,46 @@ export default function SettingsPage() {
                 </p>
               )}
 
-              <div className="mt-2 flex flex-wrap gap-2">
-                {issue.suggested_value ? (
-                  <Button
-                    size="small"
-                    outlined
-                    severity="secondary"
-                    data-test={`${prefix}-import-issue-use-suggestion`}
-                    onClick={() =>
-                      applySuggestionToIssue(setIssues, issue.issueKey)
-                    }
-                  >
-                    Use suggestion
-                  </Button>
-                ) : null}
-                {!issue.isEditing && issue.resolution !== "resolved" ? (
-                  <Button
-                    size="small"
-                    outlined
-                    severity="secondary"
-                    data-test={`${prefix}-import-issue-modify`}
-                    onClick={() => {
-                      updateIssueEditing(setIssues, issue.issueKey, true);
-                    }}
-                  >
-                    Modify
-                  </Button>
-                ) : null}
-                {issue.isEditing ? (
-                  <Button
-                    size="small"
-                    outlined
-                    severity="secondary"
-                    data-test={`${prefix}-import-issue-done`}
-                    onClick={() => {
-                      updateIssueEditing(setIssues, issue.issueKey, false);
-                    }}
-                  >
-                    Done
-                  </Button>
-                ) : null}
-                {issue.resolution !== "skipped" ? (
+              {issue.resolution === "pending" ? (
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {issue.suggested_value ? (
+                    <Button
+                      size="small"
+                      outlined
+                      severity="secondary"
+                      data-test={`${prefix}-import-issue-use-suggestion`}
+                      onClick={() =>
+                        applySuggestionToIssue(setIssues, issue.issueKey)
+                      }
+                    >
+                      Use suggestion
+                    </Button>
+                  ) : null}
+                  {!issue.isEditing ? (
+                    <Button
+                      size="small"
+                      outlined
+                      severity="secondary"
+                      data-test={`${prefix}-import-issue-modify`}
+                      onClick={() => {
+                        updateIssueEditing(setIssues, issue.issueKey, true);
+                      }}
+                    >
+                      Modify
+                    </Button>
+                  ) : (
+                    <Button
+                      size="small"
+                      outlined
+                      severity="secondary"
+                      data-test={`${prefix}-import-issue-done`}
+                      onClick={() => {
+                        updateIssueEditing(setIssues, issue.issueKey, false);
+                      }}
+                    >
+                      Done
+                    </Button>
+                  )}
                   <Button
                     size="small"
                     outlined
@@ -862,36 +880,8 @@ export default function SettingsPage() {
                   >
                     Mark skip
                   </Button>
-                ) : (
-                  <Button
-                    size="small"
-                    outlined
-                    severity="secondary"
-                    data-test={`${prefix}-import-issue-undo-skip`}
-                    onClick={() => undoIssueSkipped(setIssues, issue.issueKey)}
-                  >
-                    Undo skip
-                  </Button>
-                )}
-              </div>
-              <div className="mt-2">
-                <Tag
-                  value={
-                    issue.resolution === "resolved"
-                      ? "Resolved"
-                      : issue.resolution === "skipped"
-                        ? "Skipped"
-                        : "Pending"
-                  }
-                  severity={
-                    issue.resolution === "resolved"
-                      ? "success"
-                      : issue.resolution === "skipped"
-                        ? "warning"
-                        : "secondary"
-                  }
-                />
-              </div>
+                </div>
+              ) : null}
             </Card>
           ))}
         </div>
@@ -901,9 +891,19 @@ export default function SettingsPage() {
 
   return (
     <Card className="rounded-xl" data-test="settings-card">
-      <h1 className="font-heading text-xl font-semibold tracking-tight">
-        Profile and settings
-      </h1>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <h1 className="font-heading text-xl font-semibold tracking-tight">
+          Profile and settings
+        </h1>
+        <Button
+          data-test="settings-save"
+          onClick={() => void save()}
+          disabled={saving || loading}
+          loading={saving}
+        >
+          Save settings
+        </Button>
+      </div>
 
       {loading ? (
         <p className="mt-3 text-sm text-[var(--p-text-muted-color)]">
@@ -1164,14 +1164,29 @@ export default function SettingsPage() {
           className="mt-2 flex flex-wrap gap-2 text-xs"
           data-test="storygraph-import-steps"
         >
-          <Tag value="Step 1: Select CSV" severity="secondary" />
+          <Tag
+            value="Step 1: Select CSV"
+            style={{
+              backgroundColor: "#2563EB",
+              borderColor: "#2563EB",
+              color: "#FFFFFF",
+            }}
+          />
           <Tag
             value="Step 2: Resolve or skip issues"
-            severity={storygraphPending > 0 ? "warning" : "success"}
+            style={{
+              backgroundColor: "#0D9488",
+              borderColor: "#0D9488",
+              color: "#FFFFFF",
+            }}
           />
           <Tag
             value="Step 3: Start import"
-            severity={canStartStorygraphImport ? "success" : "secondary"}
+            style={{
+              backgroundColor: "#16A34A",
+              borderColor: "#16A34A",
+              color: "#FFFFFF",
+            }}
           />
         </div>
         <div ref={storygraphUploaderRootRef} className="hidden">
@@ -1219,14 +1234,6 @@ export default function SettingsPage() {
             }}
           >
             Clear
-          </Button>
-          <Button
-            data-test="storygraph-import-start"
-            disabled={!canStartStorygraphImport}
-            loading={storygraphImporting}
-            onClick={() => void startStorygraphImport()}
-          >
-            Start import
           </Button>
         </div>
         {storygraphFile ? (
@@ -1287,6 +1294,18 @@ export default function SettingsPage() {
         {storygraphIssues.length
           ? renderIssues(storygraphIssues, "storygraph", setStorygraphIssues)
           : null}
+        {showStorygraphStartImport ? (
+          <div className="pt-3">
+            <Button
+              data-test="storygraph-import-start"
+              disabled={!canStartStorygraphImport}
+              loading={storygraphImporting}
+              onClick={() => void startStorygraphImport()}
+            >
+              Start import
+            </Button>
+          </div>
+        ) : null}
         {storygraphImportError ? (
           <Message
             className="mt-2"
@@ -1351,14 +1370,29 @@ export default function SettingsPage() {
           className="mt-2 flex flex-wrap gap-2 text-xs"
           data-test="goodreads-import-steps"
         >
-          <Tag value="Step 1: Select CSV" severity="secondary" />
+          <Tag
+            value="Step 1: Select CSV"
+            style={{
+              backgroundColor: "#2563EB",
+              borderColor: "#2563EB",
+              color: "#FFFFFF",
+            }}
+          />
           <Tag
             value="Step 2: Resolve or skip issues"
-            severity={goodreadsPending > 0 ? "warning" : "success"}
+            style={{
+              backgroundColor: "#0D9488",
+              borderColor: "#0D9488",
+              color: "#FFFFFF",
+            }}
           />
           <Tag
             value="Step 3: Start import"
-            severity={canStartGoodreadsImport ? "success" : "secondary"}
+            style={{
+              backgroundColor: "#16A34A",
+              borderColor: "#16A34A",
+              color: "#FFFFFF",
+            }}
           />
         </div>
         <div ref={goodreadsUploaderRootRef} className="hidden">
@@ -1406,14 +1440,6 @@ export default function SettingsPage() {
             }}
           >
             Clear
-          </Button>
-          <Button
-            data-test="goodreads-import-start"
-            disabled={!canStartGoodreadsImport}
-            loading={goodreadsImporting}
-            onClick={() => void startGoodreadsImport()}
-          >
-            Start import
           </Button>
         </div>
         {goodreadsFile ? (
@@ -1474,6 +1500,18 @@ export default function SettingsPage() {
         {goodreadsIssues.length
           ? renderIssues(goodreadsIssues, "goodreads", setGoodreadsIssues)
           : null}
+        {showGoodreadsStartImport ? (
+          <div className="pt-3">
+            <Button
+              data-test="goodreads-import-start"
+              disabled={!canStartGoodreadsImport}
+              loading={goodreadsImporting}
+              onClick={() => void startGoodreadsImport()}
+            >
+              Start import
+            </Button>
+          </div>
+        ) : null}
         {goodreadsImportError ? (
           <Message
             className="mt-2"
@@ -1526,16 +1564,6 @@ export default function SettingsPage() {
           </div>
         ) : null}
       </Panel>
-
-      <Button
-        className="mt-6"
-        data-test="settings-save"
-        onClick={() => void save()}
-        disabled={saving || loading}
-        loading={saving}
-      >
-        Save settings
-      </Button>
     </Card>
   );
 }
