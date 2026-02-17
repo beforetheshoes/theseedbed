@@ -25,6 +25,13 @@ _REQUIRED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("highlights", "ap_uri"),
     ("reviews", "ap_uri"),
     ("users", "actor_uri"),
+    # User settings fields used directly by GET/PATCH /api/v1/me.
+    ("users", "enable_google_books"),
+    ("users", "theme_primary_color"),
+    ("users", "theme_accent_color"),
+    ("users", "theme_font_family"),
+    ("users", "theme_heading_font_family"),
+    ("users", "default_progress_unit"),
     # Cover provenance columns: if these aren't present, basic work fetches can 500.
     ("editions", "cover_set_by"),
     ("editions", "cover_set_at"),

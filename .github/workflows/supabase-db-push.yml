@@ -28,6 +28,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify migration files stay in sync
+        run: |
+          ./scripts/check-migration-sync.sh \
+            "${{ github.event.before }}" \
+            "${{ github.sha }}"
 
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v1
@@ -105,6 +113,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify migration files stay in sync
+        run: |
+          ./scripts/check-migration-sync.sh \
+            "${{ github.event.before }}" \
+            "${{ github.sha }}"
 
       - name: Set up Supabase CLI
         uses: supabase/setup-cli@v1
