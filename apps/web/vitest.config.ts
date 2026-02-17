@@ -1,26 +1,21 @@
-import vue from '@vitejs/plugin-vue';
-import { URL, fileURLToPath } from 'node:url';
-import { defineConfig } from 'vitest/config';
+import { defineConfig } from "vitest/config";
+import { fileURLToPath, URL } from "node:url";
 
 export default defineConfig({
-  plugins: [vue()],
   resolve: {
     alias: {
-      '#imports': fileURLToPath(new URL('./tests/nuxt-imports.ts', import.meta.url)),
-      '~': fileURLToPath(new URL('./app', import.meta.url)),
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
   test: {
-    environment: 'jsdom',
-    include: ['tests/unit/**/*.test.ts'],
-    setupFiles: ['tests/setup.ts'],
-    // Coverage + Vue SFC transforms can be expensive; cap workers to avoid local thrash.
-    maxWorkers: 4,
+    environment: "jsdom",
+    setupFiles: ["./src/tests/setup/vitest.setup.ts"],
+    include: ["src/tests/unit/**/*.test.ts"],
     coverage: {
-      provider: 'v8',
-      reporter: ['text', 'html'],
-      include: ['app/**/*.{ts,vue}', 'components/**/*.{ts,vue}', 'utils/**/*.{ts,vue}'],
-      exclude: ['**/*.d.ts', 'cypress/**', 'tests/**', 'node_modules/**'],
+      provider: "v8",
+      reporter: ["text", "html"],
+      include: ["src/lib/**/*.ts"],
+      exclude: ["src/lib/supabase/**/*.ts"],
       thresholds: {
         lines: 95,
         statements: 95,

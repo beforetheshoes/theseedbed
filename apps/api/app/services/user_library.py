@@ -61,6 +61,7 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         theme_primary_color=None,
         theme_accent_color=None,
         theme_font_family=None,
+        theme_heading_font_family=None,
         default_progress_unit=DEFAULT_PROGRESS_UNIT,
     )
     session.add(profile)
@@ -79,6 +80,7 @@ def update_profile(
     theme_primary_color: str | None,
     theme_accent_color: str | None,
     theme_font_family: str | None,
+    theme_heading_font_family: str | None,
     default_progress_unit: ProgressUnit | None,
 ) -> User:
     profile = get_or_create_profile(session, user_id=user_id)
@@ -115,12 +117,33 @@ def update_profile(
             raise ValueError("theme_accent_color must be a #RRGGBB hex value")
         profile.theme_accent_color = normalized or None
 
+    _ALLOWED_FONTS = {
+        "atkinson",
+        "ibm_plex_sans",
+        "fraunces",
+        "inter",
+        "averia_libre",
+        "dongle",
+        "nunito_sans",
+        "lora",
+        "libre_baskerville",
+    }
+
     if theme_font_family is not None:
-        if theme_font_family not in {"atkinson", "ibm_plex_sans", "fraunces"}:
+        if theme_font_family not in _ALLOWED_FONTS:
             raise ValueError(
-                "theme_font_family must be one of: atkinson, ibm_plex_sans, fraunces"
+                "theme_font_family must be one of: "
+                + ", ".join(sorted(_ALLOWED_FONTS))
             )
         profile.theme_font_family = theme_font_family
+
+    if theme_heading_font_family is not None:
+        if theme_heading_font_family not in _ALLOWED_FONTS:
+            raise ValueError(
+                "theme_heading_font_family must be one of: "
+                + ", ".join(sorted(_ALLOWED_FONTS))
+            )
+        profile.theme_heading_font_family = theme_heading_font_family
 
     if default_progress_unit is not None:
         profile.default_progress_unit = default_progress_unit

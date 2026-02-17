@@ -1,0 +1,287 @@
+@import "tailwindcss";
+@import "primeicons/primeicons.css";
+@import "@fontsource/atkinson-hyperlegible/400.css";
+@import "@fontsource/atkinson-hyperlegible/700.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-sans/700.css";
+@import "@fontsource/fraunces/400.css";
+@import "@fontsource/fraunces/600.css";
+@import "@fontsource/fraunces/700.css";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/inter/700.css";
+@import "@fontsource/averia-libre/400.css";
+@import "@fontsource/averia-libre/700.css";
+@import "@fontsource/dongle/400.css";
+@import "@fontsource/dongle/700.css";
+@import "@fontsource/nunito-sans/400.css";
+@import "@fontsource/nunito-sans/600.css";
+@import "@fontsource/nunito-sans/700.css";
+@import "@fontsource/lora/400.css";
+@import "@fontsource/lora/600.css";
+@import "@fontsource/lora/700.css";
+@import "@fontsource/libre-baskerville/400.css";
+@import "@fontsource/libre-baskerville/700.css";
+
+@theme {
+  --font-sans: var(--app-font-family), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--app-heading-font-family), ui-sans-serif, system-ui, sans-serif;
+}
+
+:root {
+  --background: #f7f5f0;
+  --foreground: #1e232f;
+  --app-theme-primary: #6366f1;
+  --app-theme-primary-safe-light: #4f46e5;
+  --app-theme-primary-safe-dark: #818cf8;
+  --app-theme-primary-contrast: #ffffff;
+  --app-theme-accent: #14b8a6;
+  --app-theme-accent-safe-light: #0f766e;
+  --app-theme-accent-safe-dark: #2dd4bf;
+  --app-theme-accent-contrast: #111827;
+  --app-font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --app-heading-font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --app-theme-surface-primary: var(--app-theme-primary-safe-light);
+  --app-theme-surface-accent: var(--app-theme-accent-safe-light);
+  --p-primary-color: var(--app-theme-primary);
+  --p-primary-contrast-color: var(--app-theme-primary-contrast);
+  --p-surface-0: #ffffff;
+  --p-surface-50: #f8fafc;
+  --p-surface-100: #f1f5f9;
+  --p-surface-200: #e2e8f0;
+  --p-surface-300: #cbd5e1;
+  --p-surface-400: #94a3b8;
+  --p-surface-500: #64748b;
+  --p-surface-600: #475569;
+  --p-surface-700: #334155;
+  --p-surface-800: #1e293b;
+  --p-surface-900: #0f172a;
+  --surface-a: #ffffff;
+  --surface-b: #f8fafc;
+  --surface-c: #f1f5f9;
+  --surface-d: #dbe4ef;
+  --surface-e: #ffffff;
+  --surface-f: #ffffff;
+  --text-color: #334155;
+  --text-color-secondary: #64748b;
+  --surface-ground: #f8fafc;
+  --surface-section: #ffffff;
+  --surface-card: #ffffff;
+  --surface-overlay: #ffffff;
+  --surface-border: #dbe4ef;
+  --surface-hover: #f1f5f9;
+  --focus-ring: 0 0 0 0.2rem #c7d2fe;
+  --highlight-bg: #eef2ff;
+  --highlight-text-color: #4338ca;
+  --maskbg: rgba(2, 6, 23, 0.45);
+  color-scheme: light;
+}
+
+html.dark {
+  --background: #0b121d;
+  --foreground: #eef4ff;
+  --app-theme-surface-primary: var(--app-theme-primary-safe-dark);
+  --app-theme-surface-accent: var(--app-theme-accent-safe-dark);
+  --p-surface-0: #0b121d;
+  --p-surface-50: #111a28;
+  --p-surface-100: #162131;
+  --p-surface-200: #1d2a3d;
+  --p-surface-300: #273549;
+  --p-surface-400: #42566f;
+  --p-surface-500: #61758d;
+  --p-surface-600: #93a9c3;
+  --p-surface-700: #b9c9dd;
+  --p-surface-800: #d7e2ef;
+  --p-surface-900: #eef4ff;
+  --surface-a: #0f172a;
+  --surface-b: #111b2d;
+  --surface-c: #172235;
+  --surface-d: #233247;
+  --surface-e: #0f172a;
+  --surface-f: #0b121d;
+  --text-color: #e2e8f0;
+  --text-color-secondary: #9fb0c7;
+  --surface-ground: #060f1d;
+  --surface-section: #0b1628;
+  --surface-card: #0f1b2f;
+  --surface-overlay: #0f1b2f;
+  --surface-border: #233247;
+  --surface-hover: #18263a;
+  --focus-ring: 0 0 0 0.2rem #818cf866;
+  --highlight-bg: #312e81;
+  --highlight-text-color: #e0e7ff;
+  --maskbg: rgba(2, 6, 23, 0.7);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--app-font-family);
+}
+
+.p-component {
+  font-family: var(--app-font-family);
+}
+
+/* ─── Compact sizing for PrimeReact components ─── */
+
+.p-inputtext {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.p-button {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.p-button.p-button-sm {
+  padding: 0.375rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.p-button.p-button-icon-only {
+  padding: 0.5rem;
+}
+
+.p-button.p-button-icon-only.p-button-sm {
+  padding: 0.375rem;
+}
+
+.p-dropdown {
+  font-size: 0.875rem;
+}
+
+.p-dropdown .p-dropdown-label {
+  padding: 0.5rem 0.75rem;
+}
+
+.p-multiselect .p-multiselect-label {
+  padding: 0.5rem 0.75rem;
+}
+
+.p-selectbutton .p-button {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8125rem;
+}
+
+.p-paginator .p-paginator-element {
+  min-width: 2rem;
+  height: 2rem;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* ─── Library table ─── */
+
+.library-table .p-datatable-thead > tr > th {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.library-table .p-datatable-thead > tr > th .p-column-header-content {
+  align-items: center;
+  justify-content: center;
+}
+
+.library-table .p-datatable-thead > tr > th .p-datatable-column-header-content {
+  align-items: center;
+  justify-content: center;
+}
+
+.library-table tbody > tr > td {
+  vertical-align: middle;
+}
+
+.library-sort-trigger {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-family: var(--app-font-family);
+  font-size: inherit;
+  font-style: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+}
+
+.library-header-label {
+  display: inline-flex;
+  width: 100%;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--app-font-family);
+  font-size: inherit;
+  font-style: inherit;
+  letter-spacing: inherit;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.library-meta-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 9999px;
+  border: 1px solid var(--p-content-border-color, var(--surface-border));
+  padding: 0.2rem 0.5rem;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--p-text-muted-color, var(--text-color-secondary));
+}
+
+.library-description strong {
+  color: var(--text-color);
+  font-weight: 600;
+}
+
+.library-description a {
+  color: inherit;
+  text-decoration: none;
+  border-bottom: 1px dotted currentColor;
+}
+
+.library-description a:hover,
+.library-description a:focus-visible {
+  border-bottom-style: solid;
+}
+
+.library-description code {
+  border-radius: 0.25rem;
+  padding: 0.05rem 0.3rem;
+  background: color-mix(in oklab, var(--p-content-border-color, var(--surface-border)) 35%, transparent);
+  font-size: 0.92em;
+}
+
+.merge-field-value {
+  display: flex;
+  min-height: 2.75rem;
+  align-items: center;
+  border-radius: 0.5rem;
+  border: 1px solid var(--p-content-border-color, var(--surface-border));
+  background: var(--surface-card);
+  padding: 0.5rem 0.75rem;
+  color: var(--text-color);
+}
