@@ -21,11 +21,13 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Verify automated migration workflow is present
+        with:
+          fetch-depth: 0
+      - name: Verify migration files stay in sync
         run: |
-          test -f .github/workflows/supabase-db-push.yml
-          grep -q "supabase db push" .github/workflows/supabase-db-push.yml
-          echo "staging-migration-guard: OK (migrations will be applied automatically on merge)."
+          ./scripts/check-migration-sync.sh \
+            "${{ github.event.pull_request.base.sha }}" \
+            "${{ github.sha }}"
 
   api:
     runs-on: ubuntu-latest

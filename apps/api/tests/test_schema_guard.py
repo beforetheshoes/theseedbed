@@ -66,6 +66,7 @@ def test_schema_guard_raises_with_actionable_message(
     assert "Missing requirements" in message
     assert "content_visibility" in message
     assert "public.notes.ap_uri" in message
+    assert "public.users.default_progress_unit" in message
     assert "public.works.default_cover_set_by" in message
     assert "public.library_items.cover_override_url" in message
 

@@ -16,3 +16,10 @@ Common commands (run from `apps/api`):
 uv run alembic revision --autogenerate -m "add new table"
 uv run alembic upgrade head
 ```
+
+## Hosted migration source of truth
+
+Hosted staging/prod database updates are applied from `supabase/migrations` via
+`supabase db push` in CI. If you add a new Alembic revision under
+`apps/api/alembic/versions`, add the matching SQL migration under
+`supabase/migrations` in the same PR.
