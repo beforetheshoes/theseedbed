@@ -136,6 +136,7 @@ def test_update_profile_validates_handle() -> None:
             theme_primary_color=None,
             theme_accent_color=None,
             theme_font_family=None,
+            theme_heading_font_family=None,
             default_progress_unit=None,
         )
 
@@ -157,6 +158,7 @@ def test_update_profile_rejects_duplicate_handle() -> None:
             theme_primary_color=None,
             theme_accent_color=None,
             theme_font_family=None,
+            theme_heading_font_family=None,
             default_progress_unit=None,
         )
 
@@ -177,6 +179,7 @@ def test_update_profile_updates_fields() -> None:
         theme_primary_color="#112233",
         theme_accent_color="#445566",
         theme_font_family="ibm_plex_sans",
+        theme_heading_font_family=None,
         default_progress_unit="minutes_listened",
     )
     assert updated is profile
@@ -206,6 +209,7 @@ def test_update_profile_rejects_invalid_theme_colors() -> None:
             theme_primary_color="#12345",
             theme_accent_color=None,
             theme_font_family=None,
+            theme_heading_font_family=None,
             default_progress_unit=None,
         )
 
@@ -220,6 +224,7 @@ def test_update_profile_rejects_invalid_theme_colors() -> None:
             theme_primary_color=None,
             theme_accent_color="red",
             theme_font_family=None,
+            theme_heading_font_family=None,
             default_progress_unit=None,
         )
 
@@ -240,6 +245,7 @@ def test_update_profile_rejects_invalid_theme_font() -> None:
             theme_primary_color=None,
             theme_accent_color=None,
             theme_font_family=cast(Any, "comic_sans"),
+            theme_heading_font_family=None,
             default_progress_unit=None,
         )
 
