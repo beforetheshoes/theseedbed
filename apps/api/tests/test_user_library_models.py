@@ -37,6 +37,7 @@ def test_users_table_schema() -> None:
         "theme_primary_color",
         "theme_accent_color",
         "theme_font_family",
+        "theme_heading_font_family",
         "default_progress_unit",
         "actor_uri",
         "created_at",
