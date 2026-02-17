@@ -146,7 +146,10 @@ export function AppTopBar() {
           <div className="flex items-center gap-1 md:gap-2">
             {userEmail ? <AppTopBarBookSearch /> : null}
 
-            <div className="hidden items-center gap-1 sm:flex" aria-label="Color mode">
+            <div
+              className="hidden items-center gap-1 sm:flex"
+              aria-label="Color mode"
+            >
               <Button
                 icon="pi pi-desktop"
                 outlined={mode === "system"}
@@ -201,7 +204,11 @@ export function AppTopBar() {
                 onClick={(event) => accountMenuRef.current?.toggle(event)}
               />
             ) : (
-              <Button text data-test="account-signin" onClick={() => router.push("/login")}>
+              <Button
+                text
+                data-test="account-signin"
+                onClick={() => router.push("/login")}
+              >
                 Sign in
               </Button>
             )}

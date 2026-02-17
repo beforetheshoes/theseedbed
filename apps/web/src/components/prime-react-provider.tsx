@@ -15,4 +15,3 @@ export function PrimeProvider({ children }: { children: React.ReactNode }) {
     </PrimeReactProvider>
   );
 }
-

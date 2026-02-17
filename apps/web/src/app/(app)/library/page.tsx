@@ -257,7 +257,10 @@ const STATUS_COLORS: Record<LibraryItemStatus, TagColorSet> = {
   },
 };
 
-const VISIBILITY_COLORS: Record<LibraryItemVisibility, TagColorSet & { borderStyle: string }> = {
+const VISIBILITY_COLORS: Record<
+  LibraryItemVisibility,
+  TagColorSet & { borderStyle: string }
+> = {
   public: {
     bg: "#f0f9ff",
     color: "#0369a1",
@@ -345,14 +348,21 @@ function HalfStarRating({
           <span
             key={i}
             className={`relative inline-block text-sm leading-none ${interactive ? "transition-transform hover:scale-110" : ""}`}
-            onClick={interactive ? (e: React.MouseEvent<HTMLSpanElement>) => {
-              const rect = e.currentTarget.getBoundingClientRect();
-              const isLeftHalf = (e.clientX - rect.left) < rect.width / 2;
-              const newValue = isLeftHalf ? i + 0.5 : i + 1;
-              onChange(newValue === value ? 0 : newValue);
-            } : undefined}
+            onClick={
+              interactive
+                ? (e: React.MouseEvent<HTMLSpanElement>) => {
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const isLeftHalf = e.clientX - rect.left < rect.width / 2;
+                    const newValue = isLeftHalf ? i + 0.5 : i + 1;
+                    onChange(newValue === value ? 0 : newValue);
+                  }
+                : undefined
+            }
           >
-            <i className="pi pi-star" style={{ color: "var(--p-text-muted-color)", opacity: 0.3 }} />
+            <i
+              className="pi pi-star"
+              style={{ color: "var(--p-text-muted-color)", opacity: 0.3 }}
+            />
             {fill > 0 && (
               <i
                 className="pi pi-star-fill absolute inset-0"
@@ -698,10 +708,8 @@ export default function LibraryPage() {
 
   /* ─── Item field update tracking ─── */
 
-  const itemFieldUpdateKey = (
-    itemId: string,
-    field: "status" | "visibility",
-  ) => `${itemId}:${field}`;
+  const itemFieldUpdateKey = (itemId: string, field: "status" | "visibility") =>
+    `${itemId}:${field}`;
 
   const isItemFieldUpdating = (
     itemId: string,
@@ -828,7 +836,9 @@ export default function LibraryPage() {
         { method: "PATCH", body: { [field]: next } },
       );
       setItems((current) =>
-        current.map((entry) => (entry.id === item.id ? { ...entry, ...payload } : entry)),
+        current.map((entry) =>
+          entry.id === item.id ? { ...entry, ...payload } : entry,
+        ),
       );
       toast.show({
         severity: "success",
@@ -889,7 +899,9 @@ export default function LibraryPage() {
         { method: "PATCH", body: { rating: newRating } },
       );
       setItems((current) =>
-        current.map((entry) => (entry.id === item.id ? { ...entry, ...payload } : entry)),
+        current.map((entry) =>
+          entry.id === item.id ? { ...entry, ...payload } : entry,
+        ),
       );
       toast.show({
         severity: "success",
@@ -982,9 +994,7 @@ export default function LibraryPage() {
       999,
     ).toISOString();
 
-  const readDateRangeModel = (
-    entry: ReadDateEntry,
-  ): (Date | null)[] | null => {
+  const readDateRangeModel = (entry: ReadDateEntry): (Date | null)[] | null => {
     const dates = [entry.startedAt, entry.endedAt].filter(
       (v): v is Date => v instanceof Date,
     );
@@ -1067,7 +1077,9 @@ export default function LibraryPage() {
       } else {
         setCompletedReadEntries((entries) =>
           entries.map((entry, index) =>
-            index === 0 ? { ...entry, startedAt: today, endedAt: today } : entry,
+            index === 0
+              ? { ...entry, startedAt: today, endedAt: today }
+              : entry,
           ),
         );
       }
@@ -1081,11 +1093,10 @@ export default function LibraryPage() {
     try {
       await Promise.all(
         payloads.map((body) =>
-          apiRequest(
-            supabase,
-            `/api/v1/library/items/${item.id}/sessions`,
-            { method: "POST", body },
-          ),
+          apiRequest(supabase, `/api/v1/library/items/${item.id}/sessions`, {
+            method: "POST",
+            body,
+          }),
         ),
       );
       toast.show({
@@ -1135,8 +1146,7 @@ export default function LibraryPage() {
     const itemIds = selectedMergeItems
       .map((item) => item.id)
       .filter(
-        (id) =>
-          mergeCandidateRawValue(mergePreview, field, id) !== undefined,
+        (id) => mergeCandidateRawValue(mergePreview, field, id) !== undefined,
       );
     if (itemIds.length < 2) return false;
     const first = mergeCandidateNormalizedValue(
@@ -1145,8 +1155,7 @@ export default function LibraryPage() {
       itemIds[0],
     );
     return itemIds.some(
-      (id) =>
-        mergeCandidateNormalizedValue(mergePreview, field, id) !== first,
+      (id) => mergeCandidateNormalizedValue(mergePreview, field, id) !== first,
     );
   };
 
@@ -1154,8 +1163,7 @@ export default function LibraryPage() {
     const itemIds = selectedMergeItems
       .map((item) => item.id)
       .filter(
-        (id) =>
-          mergeCandidateRawValue(mergePreview, field, id) !== undefined,
+        (id) => mergeCandidateRawValue(mergePreview, field, id) !== undefined,
       );
     const itemId = itemIds[0];
     if (!itemId) {
@@ -1547,7 +1555,12 @@ export default function LibraryPage() {
       </Card>
 
       {error ? (
-        <Message className="mt-3" severity="error" data-test="library-error" text={error} />
+        <Message
+          className="mt-3"
+          severity="error"
+          data-test="library-error"
+          text={error}
+        />
       ) : null}
 
       {/* Skeleton loading */}
@@ -1648,16 +1661,11 @@ export default function LibraryPage() {
                           type="button"
                           className="library-sort-trigger"
                           data-test="library-table-sort-title"
-                          onClick={() =>
-                            toggleSort("title_asc", "title_desc")
-                          }
+                          onClick={() => toggleSort("title_asc", "title_desc")}
                         >
                           Title
                           <i
-                            className={getSortIcon(
-                              "title_asc",
-                              "title_desc",
-                            )}
+                            className={getSortIcon("title_asc", "title_desc")}
                             aria-hidden="true"
                           />
                         </button>
@@ -1689,10 +1697,7 @@ export default function LibraryPage() {
                         >
                           Author
                           <i
-                            className={getSortIcon(
-                              "author_asc",
-                              "author_desc",
-                            )}
+                            className={getSortIcon("author_asc", "author_desc")}
                             aria-hidden="true"
                           />
                         </button>
@@ -1719,10 +1724,7 @@ export default function LibraryPage() {
                         >
                           Status
                           <i
-                            className={getSortIcon(
-                              "status_asc",
-                              "status_desc",
-                            )}
+                            className={getSortIcon("status_asc", "status_desc")}
                             aria-hidden="true"
                           />
                         </button>
@@ -1795,7 +1797,11 @@ export default function LibraryPage() {
                           className="flex justify-center"
                           data-test="library-item-rating"
                         >
-                          <HalfStarRating value={ratingValue(item.rating)} className="text-xs" onChange={(v) => updateRating(item, v)} />
+                          <HalfStarRating
+                            value={ratingValue(item.rating)}
+                            className="text-xs"
+                            onChange={(v) => updateRating(item, v)}
+                          />
                         </div>
                       )}
                     />
@@ -1973,7 +1979,11 @@ export default function LibraryPage() {
                               className="flex min-w-[7rem] flex-col items-center justify-center gap-0.5 text-center text-xs"
                               data-test="library-item-rating"
                             >
-                              <HalfStarRating value={ratingValue(item.rating)} className="text-xs" onChange={(v) => updateRating(item, v)} />
+                              <HalfStarRating
+                                value={ratingValue(item.rating)}
+                                className="text-xs"
+                                onChange={(v) => updateRating(item, v)}
+                              />
                               <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--p-text-muted-color)]">
                                 Rating
                               </span>
@@ -2045,8 +2055,14 @@ export default function LibraryPage() {
                     }}
                   >
                     <div className="flex h-full flex-col gap-1 pt-1">
-                      <div className="grid" style={{ gridTemplateColumns: "57% 1fr" }}>
-                        <div className="overflow-hidden rounded-md transition-transform duration-200 group-hover:scale-[1.02]" style={{ aspectRatio: "2/3" }}>
+                      <div
+                        className="grid"
+                        style={{ gridTemplateColumns: "57% 1fr" }}
+                      >
+                        <div
+                          className="overflow-hidden rounded-md transition-transform duration-200 group-hover:scale-[1.02]"
+                          style={{ aspectRatio: "2/3" }}
+                        >
                           {item.cover_url ? (
                             <Image
                               src={item.cover_url}
@@ -2077,17 +2093,17 @@ export default function LibraryPage() {
                                 onClick={() => setPendingRemoveItem(item)}
                               />
                             </div>
-                            <div>
-                              {renderStatusInplace(item)}
-                            </div>
-                            <div>
-                              {renderVisibilityInplace(item)}
-                            </div>
+                            <div>{renderStatusInplace(item)}</div>
+                            <div>{renderVisibilityInplace(item)}</div>
                             <div
                               className="flex flex-col items-center gap-0.5 text-center"
                               data-test="library-item-rating"
                             >
-                              <HalfStarRating value={ratingValue(item.rating)} className="text-xs" onChange={(v) => updateRating(item, v)} />
+                              <HalfStarRating
+                                value={ratingValue(item.rating)}
+                                className="text-xs"
+                                onChange={(v) => updateRating(item, v)}
+                              />
                               <span className="text-[10px] font-semibold uppercase tracking-[0.08em] text-[var(--p-text-muted-color)]">
                                 Rating
                               </span>
@@ -2242,9 +2258,7 @@ export default function LibraryPage() {
                 />
               </div>
               <div className="flex items-center justify-between">
-                <p className="text-sm font-medium">
-                  Previous completed reads
-                </p>
+                <p className="text-sm font-medium">Previous completed reads</p>
                 <Button
                   label="Add previous read"
                   icon="pi pi-plus"
@@ -2434,10 +2448,11 @@ export default function LibraryPage() {
         data-test="library-merge-dialog"
       >
         <div className="flex flex-col gap-4">
-          <Message severity="warn" text="This merge is irreversible. Source items will be removed after consolidation." />
-          {mergeError ? (
-            <Message severity="error" text={mergeError} />
-          ) : null}
+          <Message
+            severity="warn"
+            text="This merge is irreversible. Source items will be removed after consolidation."
+          />
+          {mergeError ? <Message severity="error" text={mergeError} /> : null}
 
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-[12rem_1fr] sm:items-center">
             <span className="text-sm font-medium">Merge into</span>
@@ -2488,14 +2503,14 @@ export default function LibraryPage() {
                 </p>
                 <p className="text-[var(--p-text-muted-color)]">
                   Read cycles:{" "}
-                  {mergePreview.dependencies?.totals_for_sources
-                    ?.read_cycles ?? 0}{" "}
+                  {mergePreview.dependencies?.totals_for_sources?.read_cycles ??
+                    0}{" "}
                   | Progress logs:{" "}
                   {mergePreview.dependencies?.totals_for_sources
                     ?.progress_logs ?? 0}{" "}
                   | Notes:{" "}
-                  {mergePreview.dependencies?.totals_for_sources?.notes ?? 0}{" "}
-                  | Highlights:{" "}
+                  {mergePreview.dependencies?.totals_for_sources?.notes ?? 0} |
+                  Highlights:{" "}
                   {mergePreview.dependencies?.totals_for_sources?.highlights ??
                     0}{" "}
                   | Reviews:{" "}

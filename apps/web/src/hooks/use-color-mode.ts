@@ -28,9 +28,12 @@ export function useColorMode() {
     setResolved(next);
     document.documentElement.classList.toggle("dark", next === "dark");
 
-    const link = document.getElementById("primereact-theme") as HTMLLinkElement | null;
+    const link = document.getElementById(
+      "primereact-theme",
+    ) as HTMLLinkElement | null;
     if (link) {
-      const themeName = next === "dark" ? "lara-dark-indigo" : "lara-light-indigo";
+      const themeName =
+        next === "dark" ? "lara-dark-indigo" : "lara-light-indigo";
       link.href = `/themes/${themeName}/theme.css`;
       // Re-apply user's primary color to the new theme CSS.
       reapplyThemeRecolor();

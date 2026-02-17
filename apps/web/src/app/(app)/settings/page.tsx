@@ -5,7 +5,10 @@ import { Badge } from "primereact/badge";
 import { Button } from "primereact/button";
 import { Card } from "primereact/card";
 import { Checkbox } from "primereact/checkbox";
-import { ColorPicker, type ColorPickerChangeEvent } from "primereact/colorpicker";
+import {
+  ColorPicker,
+  type ColorPickerChangeEvent,
+} from "primereact/colorpicker";
 import { Dropdown } from "primereact/dropdown";
 import { FileUpload, type FileUploadSelectEvent } from "primereact/fileupload";
 import { InputText } from "primereact/inputtext";
@@ -768,9 +771,7 @@ export default function SettingsPage() {
             value={String(issues.length)}
             data-test={`${prefix}-issue-total-badge`}
           />
-          <span className="sr-only">
-            {issues.length}
-          </span>
+          <span className="sr-only">{issues.length}</span>
         </div>
         <p
           className="mb-3 text-xs text-[var(--p-text-muted-color)]"
@@ -877,10 +878,10 @@ export default function SettingsPage() {
                 <Tag
                   value={
                     issue.resolution === "resolved"
-                        ? "Resolved"
-                        : issue.resolution === "skipped"
-                          ? "Skipped"
-                          : "Pending"
+                      ? "Resolved"
+                      : issue.resolution === "skipped"
+                        ? "Skipped"
+                        : "Pending"
                   }
                   severity={
                     issue.resolution === "resolved"
@@ -900,16 +901,30 @@ export default function SettingsPage() {
 
   return (
     <Card className="rounded-xl" data-test="settings-card">
-      <h1 className="font-heading text-xl font-semibold tracking-tight">Profile and settings</h1>
+      <h1 className="font-heading text-xl font-semibold tracking-tight">
+        Profile and settings
+      </h1>
 
       {loading ? (
-        <p className="mt-3 text-sm text-[var(--p-text-muted-color)]">Loading settings...</p>
+        <p className="mt-3 text-sm text-[var(--p-text-muted-color)]">
+          Loading settings...
+        </p>
       ) : null}
       {error ? (
-        <Message className="mt-3" severity="error" text={error} data-test="settings-error" />
+        <Message
+          className="mt-3"
+          severity="error"
+          text={error}
+          data-test="settings-error"
+        />
       ) : null}
       {saved ? (
-        <Message className="mt-3" severity="success" text="Settings saved." data-test="settings-saved" />
+        <Message
+          className="mt-3"
+          severity="success"
+          text="Settings saved."
+          data-test="settings-saved"
+        />
       ) : null}
 
       <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -1081,7 +1096,12 @@ export default function SettingsPage() {
               optionLabel="label"
               optionValue="value"
               itemTemplate={(option) => (
-                <span style={{ fontFamily: FONT_FAMILY_STACKS[option.value as ThemeFontFamily] }}>
+                <span
+                  style={{
+                    fontFamily:
+                      FONT_FAMILY_STACKS[option.value as ThemeFontFamily],
+                  }}
+                >
                   {option.label}
                 </span>
               )}
@@ -1099,7 +1119,12 @@ export default function SettingsPage() {
               optionLabel="label"
               optionValue="value"
               itemTemplate={(option) => (
-                <span style={{ fontFamily: FONT_FAMILY_STACKS[option.value as ThemeFontFamily] }}>
+                <span
+                  style={{
+                    fontFamily:
+                      FONT_FAMILY_STACKS[option.value as ThemeFontFamily],
+                  }}
+                >
                   {option.label}
                 </span>
               )}
@@ -1129,7 +1154,9 @@ export default function SettingsPage() {
       </Card>
 
       <Panel className="mt-6" data-test="storygraph-import-card">
-        <p className="text-xl font-semibold tracking-tight">Import StoryGraph export</p>
+        <p className="text-xl font-semibold tracking-tight">
+          Import StoryGraph export
+        </p>
         <p className="mt-1 text-xs text-[var(--p-text-muted-color)]">
           Upload CSV, resolve required fields, then import.
         </p>
@@ -1142,7 +1169,10 @@ export default function SettingsPage() {
             value="Step 2: Resolve or skip issues"
             severity={storygraphPending > 0 ? "warning" : "success"}
           />
-          <Tag value="Step 3: Start import" severity={canStartStorygraphImport ? "success" : "secondary"} />
+          <Tag
+            value="Step 3: Start import"
+            severity={canStartStorygraphImport ? "success" : "secondary"}
+          />
         </div>
         <div ref={storygraphUploaderRootRef} className="hidden">
           <FileUpload
@@ -1168,9 +1198,10 @@ export default function SettingsPage() {
             severity="secondary"
             data-test="storygraph-file-choose"
             onClick={() => {
-              const input = storygraphUploaderRootRef.current?.querySelector<HTMLInputElement>(
-                'input[type="file"]',
-              );
+              const input =
+                storygraphUploaderRootRef.current?.querySelector<HTMLInputElement>(
+                  'input[type="file"]',
+                );
               input?.click();
             }}
           >
@@ -1257,7 +1288,12 @@ export default function SettingsPage() {
           ? renderIssues(storygraphIssues, "storygraph", setStorygraphIssues)
           : null}
         {storygraphImportError ? (
-          <Message className="mt-2" severity="error" text={storygraphImportError} data-test="storygraph-import-error" />
+          <Message
+            className="mt-2"
+            severity="error"
+            text={storygraphImportError}
+            data-test="storygraph-import-error"
+          />
         ) : null}
         {storygraphImportJob ? (
           <div className="mt-3 rounded border border-slate-300/60 p-3">
@@ -1305,7 +1341,9 @@ export default function SettingsPage() {
       </Panel>
 
       <Panel className="mt-6" data-test="goodreads-import-card">
-        <p className="text-xl font-semibold tracking-tight">Import Goodreads export</p>
+        <p className="text-xl font-semibold tracking-tight">
+          Import Goodreads export
+        </p>
         <p className="mt-1 text-xs text-[var(--p-text-muted-color)]">
           Upload CSV, resolve required fields, then import.
         </p>
@@ -1318,7 +1356,10 @@ export default function SettingsPage() {
             value="Step 2: Resolve or skip issues"
             severity={goodreadsPending > 0 ? "warning" : "success"}
           />
-          <Tag value="Step 3: Start import" severity={canStartGoodreadsImport ? "success" : "secondary"} />
+          <Tag
+            value="Step 3: Start import"
+            severity={canStartGoodreadsImport ? "success" : "secondary"}
+          />
         </div>
         <div ref={goodreadsUploaderRootRef} className="hidden">
           <FileUpload
@@ -1344,9 +1385,10 @@ export default function SettingsPage() {
             severity="secondary"
             data-test="goodreads-file-choose"
             onClick={() => {
-              const input = goodreadsUploaderRootRef.current?.querySelector<HTMLInputElement>(
-                'input[type="file"]',
-              );
+              const input =
+                goodreadsUploaderRootRef.current?.querySelector<HTMLInputElement>(
+                  'input[type="file"]',
+                );
               input?.click();
             }}
           >
@@ -1433,7 +1475,12 @@ export default function SettingsPage() {
           ? renderIssues(goodreadsIssues, "goodreads", setGoodreadsIssues)
           : null}
         {goodreadsImportError ? (
-          <Message className="mt-2" severity="error" text={goodreadsImportError} data-test="goodreads-import-error" />
+          <Message
+            className="mt-2"
+            severity="error"
+            text={goodreadsImportError}
+            data-test="goodreads-import-error"
+          />
         ) : null}
         {goodreadsImportJob ? (
           <div className="mt-3 rounded border border-slate-300/60 p-3">

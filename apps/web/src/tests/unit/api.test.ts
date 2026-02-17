@@ -151,10 +151,7 @@ describe("api helpers", () => {
     } as unknown as SupabaseClient;
 
     fetchMock.mockResolvedValue(
-      mockResponse(
-        { data: null, error: null },
-        { ok: false, status: 503 },
-      ),
+      mockResponse({ data: null, error: null }, { ok: false, status: 503 }),
     );
 
     await expect(apiRequest(supabase, "/api/v1/me")).rejects.toEqual(
@@ -200,9 +197,7 @@ describe("api helpers", () => {
       },
     } as unknown as SupabaseClient;
 
-    fetchMock.mockResolvedValue(
-      mockResponse({ data: null, error: null }),
-    );
+    fetchMock.mockResolvedValue(mockResponse({ data: null, error: null }));
 
     const result = await apiRequest(supabase, "/api/v1/me");
     expect(result).toBeUndefined();
@@ -217,9 +212,7 @@ describe("api helpers", () => {
       },
     } as unknown as SupabaseClient;
 
-    fetchMock.mockResolvedValue(
-      mockResponse(null, { ok: true, status: 204 }),
-    );
+    fetchMock.mockResolvedValue(mockResponse(null, { ok: true, status: 204 }));
 
     const result = await apiRequest(supabase, "/api/v1/resource");
     expect(result).toBeUndefined();

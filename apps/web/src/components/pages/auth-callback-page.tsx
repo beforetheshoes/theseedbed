@@ -43,7 +43,8 @@ export function AuthCallbackPageClient({
         return;
       }
 
-      const returnTo = returnToFromQuery || resolveStoredReturnTo() || "/library";
+      const returnTo =
+        returnToFromQuery || resolveStoredReturnTo() || "/library";
       const authCode = new URLSearchParams(window.location.search).get("code");
       let exchangeErrorMessage = "";
       if (authCode) {
@@ -76,7 +77,9 @@ export function AuthCallbackPageClient({
       );
 
       timeoutId = setTimeout(() => {
-        setError(exchangeErrorMessage || "Session not found. Try signing in again.");
+        setError(
+          exchangeErrorMessage || "Session not found. Try signing in again.",
+        );
         authListener.subscription.unsubscribe();
       }, 6000);
     };

@@ -100,8 +100,12 @@ export function LoginPageClient({ returnTo }: { returnTo: string }) {
 
   return (
     <Card className="rounded-xl shadow-sm" data-test="login-card">
-      <h1 className="font-heading text-2xl font-semibold tracking-tight">Welcome back</h1>
-      <p className="mt-1 text-sm text-[var(--p-text-muted-color)]">Sign in to The Seedbed</p>
+      <h1 className="font-heading text-2xl font-semibold tracking-tight">
+        Welcome back
+      </h1>
+      <p className="mt-1 text-sm text-[var(--p-text-muted-color)]">
+        Sign in to The Seedbed
+      </p>
 
       <div className="mt-5 flex flex-col gap-3">
         <Button
@@ -154,7 +158,12 @@ export function LoginPageClient({ returnTo }: { returnTo: string }) {
         <Message className="mt-3" severity="info" text={status} />
       ) : null}
       {error ? (
-        <Message className="mt-3" severity="error" data-test="login-error" text={error} />
+        <Message
+          className="mt-3"
+          severity="error"
+          data-test="login-error"
+          text={error}
+        />
       ) : null}
     </Card>
   );

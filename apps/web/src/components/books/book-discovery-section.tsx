@@ -202,7 +202,10 @@ export function BookDiscoverySection({
           ) : authorProfilesWithCoverWorks.length ? (
             <div className="mt-2 grid gap-3">
               {authorProfilesWithCoverWorks.map((author) => (
-                <Card key={author.id} className="rounded border border-slate-200 p-3">
+                <Card
+                  key={author.id}
+                  className="rounded border border-slate-200 p-3"
+                >
                   <p className="text-sm font-medium">{author.name}</p>
                   {author.bio ? (
                     <p className="line-clamp-1 text-xs text-slate-500">

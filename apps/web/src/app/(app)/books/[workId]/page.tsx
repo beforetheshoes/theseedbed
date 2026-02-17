@@ -250,9 +250,14 @@ export default function BookDetailPage({
   const [pendingTargetUnit, setPendingTargetUnit] =
     useState<ProgressUnit | null>(null);
   const [showMissingTotalsForm, setShowMissingTotalsForm] = useState(false);
-  const [loadingTotalsSuggestions, setLoadingTotalsSuggestions] = useState(false);
-  const [totalPageSuggestions, setTotalPageSuggestions] = useState<number[]>([]);
-  const [totalTimeSuggestions, setTotalTimeSuggestions] = useState<number[]>([]);
+  const [loadingTotalsSuggestions, setLoadingTotalsSuggestions] =
+    useState(false);
+  const [totalPageSuggestions, setTotalPageSuggestions] = useState<number[]>(
+    [],
+  );
+  const [totalTimeSuggestions, setTotalTimeSuggestions] = useState<number[]>(
+    [],
+  );
   const [pendingTotalPages, setPendingTotalPages] = useState("");
   const [pendingTotalAudio, setPendingTotalAudio] = useState("");
   const [savingTotals, setSavingTotals] = useState(false);
@@ -287,7 +292,11 @@ export default function BookDetailPage({
       return Math.max(progressTotals.total_pages ?? 1000, 1);
     }
     return Math.max(progressTotals.total_audio_minutes ?? 1440, 1);
-  }, [progressTotals.total_audio_minutes, progressTotals.total_pages, sessionUnit]);
+  }, [
+    progressTotals.total_audio_minutes,
+    progressTotals.total_pages,
+    sessionUnit,
+  ]);
   const progressUnitOptions = useMemo(
     () =>
       [
@@ -342,10 +351,19 @@ export default function BookDetailPage({
     if (typeof session.canonical_percent === "number") {
       return Math.max(0, Math.min(100, Math.round(session.canonical_percent)));
     }
-    const canonical = toCanonicalPercent(session.unit, session.value, progressTotals);
-    return canonical === null ? 0 : Math.max(0, Math.min(100, Math.round(canonical)));
+    const canonical = toCanonicalPercent(
+      session.unit,
+      session.value,
+      progressTotals,
+    );
+    return canonical === null
+      ? 0
+      : Math.max(0, Math.min(100, Math.round(canonical)));
   };
-  const valueInUnitFromLog = (session: ReadingSession, unit: ProgressUnit): number => {
+  const valueInUnitFromLog = (
+    session: ReadingSession,
+    unit: ProgressUnit,
+  ): number => {
     if (session.unit === unit) return session.value;
     const canonical =
       typeof session.canonical_percent === "number"
@@ -367,9 +385,16 @@ export default function BookDetailPage({
     if (!Number.isFinite(parsed) || parsed < 0) return latestSessionValueInUnit;
     return parsed;
   })();
-  const knobDisplayValue = formatProgressValue(sessionUnit, currentSessionNumeric);
+  const knobDisplayValue = formatProgressValue(
+    sessionUnit,
+    currentSessionNumeric,
+  );
   const currentCanonicalPercent = (() => {
-    const canonical = toCanonicalPercent(sessionUnit, currentSessionNumeric, progressTotals);
+    const canonical = toCanonicalPercent(
+      sessionUnit,
+      currentSessionNumeric,
+      progressTotals,
+    );
     if (canonical !== null) return Math.round(canonical);
     return sessions[0] ? resolveCanonicalFromLog(sessions[0]) : 0;
   })();
@@ -384,7 +409,9 @@ export default function BookDetailPage({
     if (sessionUnit === "pages_read") return Math.round(numeric);
     const canonical = toCanonicalPercent(sessionUnit, numeric, progressTotals);
     if (canonical === null) return 0;
-    return Math.round(fromCanonicalPercent("pages_read", canonical, progressTotals) ?? 0);
+    return Math.round(
+      fromCanonicalPercent("pages_read", canonical, progressTotals) ?? 0,
+    );
   })();
   const displayPercentValue = (() => {
     if (bookStatistics?.current?.canonical_percent != null) {
@@ -407,7 +434,9 @@ export default function BookDetailPage({
       fromCanonicalPercent("minutes_listened", canonical, progressTotals) ?? 0,
     );
   })();
-  const totalsTimeDisplay = formatDuration(progressTotals.total_audio_minutes ?? 0);
+  const totalsTimeDisplay = formatDuration(
+    progressTotals.total_audio_minutes ?? 0,
+  );
   const streakDays = (() => {
     if (bookStatistics?.streak?.non_zero_days != null) {
       return bookStatistics.streak.non_zero_days;
@@ -433,15 +462,19 @@ export default function BookDetailPage({
     }
     const chronological = [...sessions].sort(
       (left, right) =>
-        new Date(left.logged_at).getTime() - new Date(right.logged_at).getTime(),
+        new Date(left.logged_at).getTime() -
+        new Date(right.logged_at).getTime(),
     );
     let previousCanonical = 0;
     return chronological
       .map((session) => {
         const endCanonical = resolveCanonicalFromLog(session);
         const startCanonical = previousCanonical;
-        const startValue = fromCanonicalPercent(session.unit, startCanonical, progressTotals) ?? 0;
-        const endValue = session.unit === "percent_complete" ? endCanonical : session.value;
+        const startValue =
+          fromCanonicalPercent(session.unit, startCanonical, progressTotals) ??
+          0;
+        const endValue =
+          session.unit === "percent_complete" ? endCanonical : session.value;
         previousCanonical = endCanonical;
         return {
           id: session.id,
@@ -450,12 +483,16 @@ export default function BookDetailPage({
           sessionDelta: endValue - startValue,
           startDisplay: formatProgressValue(session.unit, startValue),
           endDisplay: formatProgressValue(session.unit, endValue),
-          sessionDisplay: formatProgressDelta(session.unit, endValue - startValue),
+          sessionDisplay: formatProgressDelta(
+            session.unit,
+            endValue - startValue,
+          ),
         };
       })
       .sort(
         (left, right) =>
-          new Date(right.loggedAt).getTime() - new Date(left.loggedAt).getTime(),
+          new Date(right.loggedAt).getTime() -
+          new Date(left.loggedAt).getTime(),
       );
   })();
   const progressChartPoints = (() => {
@@ -463,14 +500,19 @@ export default function BookDetailPage({
     const chronological = [...sessions]
       .sort(
         (left, right) =>
-          new Date(left.logged_at).getTime() - new Date(right.logged_at).getTime(),
+          new Date(left.logged_at).getTime() -
+          new Date(right.logged_at).getTime(),
       )
       .map((session) => {
         const canonical = resolveCanonicalFromLog(session);
         const value =
           progressChartUnit === "percent_complete"
             ? canonical
-            : (fromCanonicalPercent(progressChartUnit, canonical, progressTotals) ?? 0);
+            : (fromCanonicalPercent(
+                progressChartUnit,
+                canonical,
+                progressTotals,
+              ) ?? 0);
         return {
           dateLabel: formatDateOnly(session.logged_at),
           value,
@@ -498,8 +540,7 @@ export default function BookDetailPage({
       labels: progressChartPoints.map((point) => point.dateLabel),
       datasets: [
         {
-          label:
-            progressChartMode === "daily" ? "Daily progress" : "Progress",
+          label: progressChartMode === "daily" ? "Daily progress" : "Progress",
           data: progressChartPoints.map((point) => point.value),
           borderColor: "#3b82f6",
           backgroundColor:
@@ -550,10 +591,14 @@ export default function BookDetailPage({
           ? 0
           : sessionUnit === "percent_complete"
             ? canonical
-            : (fromCanonicalPercent(sessionUnit, canonical, totals) ??
-              0);
+            : (fromCanonicalPercent(sessionUnit, canonical, totals) ?? 0);
     setSessionValue(String(Math.max(0, Math.round(initial))));
-  }, [sessionUnit, sessions, progressTotals.total_audio_minutes, progressTotals.total_pages]);
+  }, [
+    sessionUnit,
+    sessions,
+    progressTotals.total_audio_minutes,
+    progressTotals.total_pages,
+  ]);
 
   const requestUnitConversion = (targetUnit: ProgressUnit): boolean => {
     if (targetUnit === sessionUnit) {
@@ -606,7 +651,10 @@ export default function BookDetailPage({
   };
 
   const collectSuggestionValues = (
-    fields: Array<{ field_key: string; candidates?: Array<{ value?: unknown }> }>,
+    fields: Array<{
+      field_key: string;
+      candidates?: Array<{ value?: unknown }>;
+    }>,
     fieldKey: string,
   ): number[] => {
     const field = fields.find((entry) => entry.field_key === fieldKey);
@@ -614,7 +662,9 @@ export default function BookDetailPage({
     const values = field.candidates
       .map((candidate) => candidate.value)
       .map((value) => (typeof value === "number" ? value : Number(value)))
-      .map((value) => (fieldKey === "edition.total_pages" ? Math.round(value) : value))
+      .map((value) =>
+        fieldKey === "edition.total_pages" ? Math.round(value) : value,
+      )
       .filter((value) => Number.isFinite(value) && value > 0) as number[];
     return [...new Set(values)];
   };
@@ -624,9 +674,15 @@ export default function BookDetailPage({
     setLoadingTotalsSuggestions(true);
     try {
       const payload = await apiRequest<{
-        fields: Array<{ field_key: string; candidates?: Array<{ value?: unknown }> }>;
+        fields: Array<{
+          field_key: string;
+          candidates?: Array<{ value?: unknown }>;
+        }>;
       }>(supabase, `/api/v1/works/${workId}/enrichment/candidates`);
-      const pageSuggestions = collectSuggestionValues(payload.fields, "edition.total_pages");
+      const pageSuggestions = collectSuggestionValues(
+        payload.fields,
+        "edition.total_pages",
+      );
       const timeSuggestions = collectSuggestionValues(
         payload.fields,
         "edition.total_audio_minutes",
@@ -955,7 +1011,11 @@ export default function BookDetailPage({
       setLibraryItem((current) =>
         current ? { ...current, status: nextStatus } : current,
       );
-      toast.show({ severity: "success", summary: "Status updated.", life: 2200 });
+      toast.show({
+        severity: "success",
+        summary: "Status updated.",
+        life: 2200,
+      });
     } catch (err) {
       const msg =
         err instanceof ApiClientError
@@ -1651,13 +1711,17 @@ export default function BookDetailPage({
       data-test="book-detail-card"
     >
       <div className="mb-4 flex items-center justify-between gap-3">
-        <h1 className="font-heading text-2xl font-semibold tracking-tight">Book details</h1>
+        <h1 className="font-heading text-2xl font-semibold tracking-tight">
+          Book details
+        </h1>
         <Link href="/library" className="rounded border px-3 py-2 text-sm">
           Back to library
         </Link>
       </div>
 
-      {loading ? <p className="text-sm text-[var(--p-text-muted-color)]">Loading...</p> : null}
+      {loading ? (
+        <p className="text-sm text-[var(--p-text-muted-color)]">Loading...</p>
+      ) : null}
       {error ? (
         <p
           className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700"
@@ -1690,11 +1754,15 @@ export default function BookDetailPage({
             </div>
 
             <div>
-              <p className="font-heading text-xl font-semibold tracking-tight">{work.title}</p>
+              <p className="font-heading text-xl font-semibold tracking-tight">
+                {work.title}
+              </p>
               <p className="mt-1 text-sm text-[var(--p-text-muted-color)]">
                 {authorLabel || "Unknown author"}
               </p>
-              <p className="mt-1 text-xs text-[var(--p-text-muted-color)]">Work ID: {workId}</p>
+              <p className="mt-1 text-xs text-[var(--p-text-muted-color)]">
+                Work ID: {workId}
+              </p>
               {work.description ? (
                 <div
                   className="library-description mt-4 text-sm text-[var(--p-text-color)]"
@@ -1846,8 +1914,14 @@ export default function BookDetailPage({
               <Card className="mt-8">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <Avatar icon="pi pi-clock" shape="circle" aria-hidden="true" />
-                    <p className="font-heading text-lg font-semibold tracking-tight">Reading sessions</p>
+                    <Avatar
+                      icon="pi pi-clock"
+                      shape="circle"
+                      aria-hidden="true"
+                    />
+                    <p className="font-heading text-lg font-semibold tracking-tight">
+                      Reading sessions
+                    </p>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button
@@ -1906,10 +1980,21 @@ export default function BookDetailPage({
                 ) : sessionsLoading ? (
                   <div className="mt-4 flex flex-col gap-2">
                     {Array.from({ length: 3 }).map((_, index) => (
-                      <div key={`session-skeleton-${index}`} className="flex items-center gap-3">
-                        <Skeleton shape="circle" size="0.75rem" className="shrink-0" />
+                      <div
+                        key={`session-skeleton-${index}`}
+                        className="flex items-center gap-3"
+                      >
+                        <Skeleton
+                          shape="circle"
+                          size="0.75rem"
+                          className="shrink-0"
+                        />
                         <div className="flex-1">
-                          <Skeleton width="33%" height="1rem" className="mb-1" />
+                          <Skeleton
+                            width="33%"
+                            height="1rem"
+                            className="mb-1"
+                          />
                           <Skeleton width="50%" height="0.75rem" />
                         </div>
                       </div>
@@ -1921,115 +2006,135 @@ export default function BookDetailPage({
                     data-test="progress-summary"
                   >
                     <div className="mx-auto flex w-[300px] max-w-full flex-col items-center gap-4">
-                    <div className="relative h-[210px] w-[210px]">
-                      <Knob
-                        value={Math.max(0, Math.min(100, currentCanonicalPercent))}
-                        min={0}
-                        max={100}
-                        readOnly
-                        size={210}
-                        showValue={false}
-                        strokeWidth={14}
-                      />
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        {editingKnobValue ? (
-                          <InputText
-                            className="w-[84px] text-center"
-                            data-test="knob-value-input"
-                            value={knobEditValue}
-                            onChange={(event) => setKnobEditValue(event.target.value)}
-                            onBlur={() => {
-                              const parsed = Number(knobEditValue.trim());
-                              if (Number.isFinite(parsed) && parsed >= 0) {
-                                setSessionValue(String(Math.max(0, Math.round(parsed))));
+                      <div className="relative h-[210px] w-[210px]">
+                        <Knob
+                          value={Math.max(
+                            0,
+                            Math.min(100, currentCanonicalPercent),
+                          )}
+                          min={0}
+                          max={100}
+                          readOnly
+                          size={210}
+                          showValue={false}
+                          strokeWidth={14}
+                        />
+                        <div className="absolute inset-0 flex items-center justify-center">
+                          {editingKnobValue ? (
+                            <InputText
+                              className="w-[84px] text-center"
+                              data-test="knob-value-input"
+                              value={knobEditValue}
+                              onChange={(event) =>
+                                setKnobEditValue(event.target.value)
                               }
-                              setEditingKnobValue(false);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
+                              onBlur={() => {
                                 const parsed = Number(knobEditValue.trim());
                                 if (Number.isFinite(parsed) && parsed >= 0) {
-                                  setSessionValue(String(Math.max(0, Math.round(parsed))));
+                                  setSessionValue(
+                                    String(Math.max(0, Math.round(parsed))),
+                                  );
                                 }
                                 setEditingKnobValue(false);
-                              }
-                              if (event.key === "Escape") {
-                                setEditingKnobValue(false);
-                                setKnobEditValue(String(currentSessionNumeric));
-                              }
-                            }}
-                          />
-                        ) : (
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            className="min-w-[84px] cursor-text px-2 py-1 text-center text-xl font-semibold"
-                            data-test="knob-value-display"
-                            onClick={() => {
-                              setKnobEditValue(String(currentSessionNumeric));
-                              setEditingKnobValue(true);
-                            }}
-                            onKeyDown={(event) => {
-                              if (event.key === "Enter") {
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  const parsed = Number(knobEditValue.trim());
+                                  if (Number.isFinite(parsed) && parsed >= 0) {
+                                    setSessionValue(
+                                      String(Math.max(0, Math.round(parsed))),
+                                    );
+                                  }
+                                  setEditingKnobValue(false);
+                                }
+                                if (event.key === "Escape") {
+                                  setEditingKnobValue(false);
+                                  setKnobEditValue(
+                                    String(currentSessionNumeric),
+                                  );
+                                }
+                              }}
+                            />
+                          ) : (
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              className="min-w-[84px] cursor-text px-2 py-1 text-center text-xl font-semibold"
+                              data-test="knob-value-display"
+                              onClick={() => {
                                 setKnobEditValue(String(currentSessionNumeric));
                                 setEditingKnobValue(true);
-                              }
-                            }}
-                          >
-                            {knobDisplayValue}
-                          </span>
-                        )}
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") {
+                                  setKnobEditValue(
+                                    String(currentSessionNumeric),
+                                  );
+                                  setEditingKnobValue(true);
+                                }
+                              }}
+                            >
+                              {knobDisplayValue}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                    <Slider
-                      className="w-full"
-                      min={0}
-                      max={sessionSliderMax}
-                      step={1}
-                      data-test="session-progress-slider"
-                      value={Math.max(0, Math.round(currentSessionNumeric))}
-                      onChange={(event) =>
-                        setSessionValue(String((event.value as number) ?? 0))
-                      }
-                    />
-                    <p
-                      className="text-xs text-[var(--p-text-muted-color)]"
-                      data-test="progress-cross-units"
-                    >
-                      Pages: {displayPagesValue} • Percentage: {displayPercentValue}% • Time:{" "}
-                      {formatDuration(displayMinutesValue)}
-                    </p>
-                    <Tag value={`${streakDays}-day streak`} severity="info" />
-                    <div className="flex flex-col items-center gap-1">
-                      <label className="text-xs font-medium">Log date</label>
-                      <Calendar
-                        data-test="session-date"
-                        value={sessionDate ? new Date(`${sessionDate}T00:00:00`) : null}
-                        maxDate={new Date()}
-                        showIcon
-                        dateFormat="mm/dd/yy"
-                        onChange={(event) => {
-                          if (event.value instanceof Date) {
-                            setSessionDate(event.value.toISOString().slice(0, 10));
-                          }
-                        }}
+                      <Slider
+                        className="w-full"
+                        min={0}
+                        max={sessionSliderMax}
+                        step={1}
+                        data-test="session-progress-slider"
+                        value={Math.max(0, Math.round(currentSessionNumeric))}
+                        onChange={(event) =>
+                          setSessionValue(String((event.value as number) ?? 0))
+                        }
                       />
-                    </div>
-                    <InputTextarea
-                      className="w-full max-w-[500px]"
-                      value={sessionNote}
-                      onChange={(event) => setSessionNote(event.target.value)}
-                      placeholder="Session note"
-                      rows={5}
-                      autoResize
-                    />
-                    <Button
-                      data-test="log-session"
-                      loading={savingSession}
-                      onClick={() => void logSession()}
-                    >
-                      Log session
-                    </Button>
+                      <p
+                        className="text-xs text-[var(--p-text-muted-color)]"
+                        data-test="progress-cross-units"
+                      >
+                        Pages: {displayPagesValue} • Percentage:{" "}
+                        {displayPercentValue}% • Time:{" "}
+                        {formatDuration(displayMinutesValue)}
+                      </p>
+                      <Tag value={`${streakDays}-day streak`} severity="info" />
+                      <div className="flex flex-col items-center gap-1">
+                        <label className="text-xs font-medium">Log date</label>
+                        <Calendar
+                          data-test="session-date"
+                          value={
+                            sessionDate
+                              ? new Date(`${sessionDate}T00:00:00`)
+                              : null
+                          }
+                          maxDate={new Date()}
+                          showIcon
+                          dateFormat="mm/dd/yy"
+                          onChange={(event) => {
+                            if (event.value instanceof Date) {
+                              setSessionDate(
+                                event.value.toISOString().slice(0, 10),
+                              );
+                            }
+                          }}
+                        />
+                      </div>
+                      <InputTextarea
+                        className="w-full max-w-[500px]"
+                        value={sessionNote}
+                        onChange={(event) => setSessionNote(event.target.value)}
+                        placeholder="Session note"
+                        rows={5}
+                        autoResize
+                      />
+                      <Button
+                        data-test="log-session"
+                        loading={savingSession}
+                        onClick={() => void logSession()}
+                      >
+                        Log session
+                      </Button>
                     </div>
                   </div>
                 ) : null}
@@ -2040,7 +2145,8 @@ export default function BookDetailPage({
                 >
                   <p className="m-0 font-medium">Totals</p>
                   <p className="m-0 text-xs text-[var(--p-text-muted-color)]">
-                    Pages: {progressTotals.total_pages ?? 0} • Time: {totalsTimeDisplay}
+                    Pages: {progressTotals.total_pages ?? 0} • Time:{" "}
+                    {totalsTimeDisplay}
                   </p>
                   {(conversionMissing.length > 0 ||
                     bookStatistics?.data_quality?.has_missing_totals ||
@@ -2052,7 +2158,10 @@ export default function BookDetailPage({
                       data-test="missing-totals-warning"
                       onClick={() => {
                         if (conversionMissing.length === 0) {
-                          setConversionMissing(["total_pages", "total_audio_minutes"]);
+                          setConversionMissing([
+                            "total_pages",
+                            "total_audio_minutes",
+                          ]);
                         }
                       }}
                     >
@@ -2092,22 +2201,33 @@ export default function BookDetailPage({
                           data-test="progress-chart-mode"
                           value={progressChartMode}
                           options={[
-                            { label: "Progress over time", value: "cumulative" },
+                            {
+                              label: "Progress over time",
+                              value: "cumulative",
+                            },
                             { label: "Daily gain", value: "daily" },
                           ]}
                           optionLabel="label"
                           optionValue="value"
                           onChange={(event) =>
-                            setProgressChartMode(event.value as "daily" | "cumulative")
+                            setProgressChartMode(
+                              event.value as "daily" | "cumulative",
+                            )
                           }
                         />
                       </div>
                     </div>
                     <div className="h-[220px]" data-test="progress-chart">
                       {progressChartPoints.length ? (
-                        <Chart type="line" data={progressChartData} options={progressChartOptions} />
+                        <Chart
+                          type="line"
+                          data={progressChartData}
+                          options={progressChartOptions}
+                        />
                       ) : (
-                        <p className="p-3 text-sm text-[var(--p-text-muted-color)]">No sessions yet.</p>
+                        <p className="p-3 text-sm text-[var(--p-text-muted-color)]">
+                          No sessions yet.
+                        </p>
                       )}
                     </div>
                   </div>
@@ -2118,13 +2238,29 @@ export default function BookDetailPage({
                     value={timelineSessions}
                     align="left"
                     className="mt-4"
-                    marker={() => <Avatar shape="circle" size="normal" className="h-5 w-5" aria-hidden="true" />}
+                    marker={() => (
+                      <Avatar
+                        shape="circle"
+                        size="normal"
+                        className="h-5 w-5"
+                        aria-hidden="true"
+                      />
+                    )}
                     content={(item) => (
                       <div>
-                        <p className="text-sm font-medium">{formatDateOnly(item.loggedAt)}</p>
+                        <p className="text-sm font-medium">
+                          {formatDateOnly(item.loggedAt)}
+                        </p>
                         <p className="text-xs text-[var(--p-text-muted-color)]">
-                          Start: <span className="font-medium text-[var(--p-text-muted-color)]">{item.startDisplay}</span> • End:{" "}
-                          <span className="font-semibold text-sky-700">{item.endDisplay}</span> • This session:{" "}
+                          Start:{" "}
+                          <span className="font-medium text-[var(--p-text-muted-color)]">
+                            {item.startDisplay}
+                          </span>{" "}
+                          • End:{" "}
+                          <span className="font-semibold text-sky-700">
+                            {item.endDisplay}
+                          </span>{" "}
+                          • This session:{" "}
                           <span
                             className={
                               item.sessionDelta > 0
@@ -2138,13 +2274,17 @@ export default function BookDetailPage({
                           </span>
                         </p>
                         {item.note ? (
-                          <p className="text-xs text-[var(--p-text-muted-color)]">{item.note}</p>
+                          <p className="text-xs text-[var(--p-text-muted-color)]">
+                            {item.note}
+                          </p>
                         ) : null}
                       </div>
                     )}
                   />
                 ) : !sessionsLoading && !sessionsError ? (
-                  <p className="mt-3 text-sm text-[var(--p-text-muted-color)]">No sessions yet.</p>
+                  <p className="mt-3 text-sm text-[var(--p-text-muted-color)]">
+                    No sessions yet.
+                  </p>
                 ) : null}
               </Card>
 
@@ -2190,26 +2330,34 @@ export default function BookDetailPage({
                     data-test="missing-totals-dialog-content"
                   >
                     <p className="text-sm text-[var(--p-text-muted-color)]">
-                      Some conversions require missing totals before they can be selected.
+                      Some conversions require missing totals before they can be
+                      selected.
                     </p>
                     {loadingTotalsSuggestions ? (
                       <div
                         className="flex items-center gap-2 text-xs text-[var(--p-text-muted-color)]"
                         data-test="missing-totals-suggestions-loading"
                       >
-                        <i className="pi pi-spin pi-spinner" aria-hidden="true"></i>
+                        <i
+                          className="pi pi-spin pi-spinner"
+                          aria-hidden="true"
+                        ></i>
                         <span>Loading suggestions...</span>
                       </div>
                     ) : null}
                     <div className="grid gap-3">
                       {conversionMissing.includes("total_pages") ? (
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium">Total pages</label>
+                          <label className="text-xs font-medium">
+                            Total pages
+                          </label>
                           <InputText
                             value={pendingTotalPages}
                             placeholder="Enter pages"
                             data-test="pending-total-pages"
-                            onChange={(event) => setPendingTotalPages(event.target.value)}
+                            onChange={(event) =>
+                              setPendingTotalPages(event.target.value)
+                            }
                           />
                           {totalPageSuggestions.length ? (
                             <p className="text-xs text-[var(--p-text-muted-color)]">
@@ -2220,16 +2368,21 @@ export default function BookDetailPage({
                       ) : null}
                       {conversionMissing.includes("total_audio_minutes") ? (
                         <div className="flex flex-col gap-1">
-                          <label className="text-xs font-medium">Total time (hh:mm:ss)</label>
+                          <label className="text-xs font-medium">
+                            Total time (hh:mm:ss)
+                          </label>
                           <InputText
                             value={pendingTotalAudio}
                             placeholder="Enter time"
                             data-test="pending-total-audio-minutes"
-                            onChange={(event) => setPendingTotalAudio(event.target.value)}
+                            onChange={(event) =>
+                              setPendingTotalAudio(event.target.value)
+                            }
                           />
                           {totalTimeSuggestions.length ? (
                             <p className="text-xs text-[var(--p-text-muted-color)]">
-                              Suggestion: {minutesToHms(totalTimeSuggestions[0])}
+                              Suggestion:{" "}
+                              {minutesToHms(totalTimeSuggestions[0])}
                             </p>
                           ) : null}
                         </div>
@@ -2251,7 +2404,9 @@ export default function BookDetailPage({
 
               <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="font-heading text-lg font-semibold tracking-tight">Notes</p>
+                  <p className="font-heading text-lg font-semibold tracking-tight">
+                    Notes
+                  </p>
                   <Button
                     size="small"
                     outlined
@@ -2289,9 +2444,7 @@ export default function BookDetailPage({
                     optionLabel="label"
                     optionValue="value"
                     onChange={(event) =>
-                      setNewNoteVisibility(
-                        event.value as "private" | "public",
-                      )
+                      setNewNoteVisibility(event.value as "private" | "public")
                     }
                   />
                   <Button
@@ -2346,7 +2499,9 @@ export default function BookDetailPage({
 
               <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="font-heading text-lg font-semibold tracking-tight">Highlights</p>
+                  <p className="font-heading text-lg font-semibold tracking-tight">
+                    Highlights
+                  </p>
                   <Button
                     size="small"
                     outlined
@@ -2579,7 +2734,9 @@ export default function BookDetailPage({
 
               <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="font-heading text-lg font-semibold tracking-tight">Your review</p>
+                  <p className="font-heading text-lg font-semibold tracking-tight">
+                    Your review
+                  </p>
                   <Button
                     size="small"
                     outlined
@@ -2846,7 +3003,9 @@ export default function BookDetailPage({
                         auto={false}
                         customUpload
                         onSelect={(event: FileUploadSelectEvent) =>
-                          setCoverFile((event.files as File[] | undefined)?.[0] ?? null)
+                          setCoverFile(
+                            (event.files as File[] | undefined)?.[0] ?? null,
+                          )
                         }
                       />
                       <Button

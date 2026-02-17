@@ -424,13 +424,21 @@ export default function BookSearchPage() {
       </div>
 
       {hint ? (
-        <p className="mt-4 text-sm text-[var(--p-text-muted-color)]" data-test="search-hint">
+        <p
+          className="mt-4 text-sm text-[var(--p-text-muted-color)]"
+          data-test="search-hint"
+        >
           {hint}
         </p>
       ) : null}
 
       {error ? (
-        <Message className="mt-3" severity="error" data-test="search-error" text={error} />
+        <Message
+          className="mt-3"
+          severity="error"
+          data-test="search-error"
+          text={error}
+        />
       ) : null}
 
       {loading ? (
@@ -465,83 +473,83 @@ export default function BookSearchPage() {
             return (
               <Card key={book.work_key}>
                 <article className="flex gap-4">
-                <div
-                  className="h-[120px] w-[80px] shrink-0 overflow-hidden rounded border border-slate-300/60 bg-slate-100"
-                  data-test="search-item-thumb"
-                >
-                  {coverVisible(book, brokenCoverKeys) ? (
-                    <Image
-                      src={book.cover_url ?? ""}
-                      alt=""
-                      width={80}
-                      height={120}
-                      unoptimized
-                      className="h-full w-full object-cover"
-                      data-test="search-item-cover"
-                      onError={() => {
-                        setBrokenCoverKeys((current) => {
-                          const next = new Set(current);
-                          next.add(book.work_key);
-                          return next;
-                        });
-                      }}
-                    />
-                  ) : (
-                    <div
-                      className="flex h-full w-full items-center justify-center text-xs text-[var(--p-text-muted-color)]"
-                      data-test="search-item-cover-placeholder"
-                    >
-                      No cover
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <p className="font-semibold">{book.title}</p>
-                  <p className="truncate text-sm text-[var(--p-text-muted-color)]">
-                    {book.author_names.join(", ") || "Unknown author"}
-                  </p>
-                  <p className="text-xs text-[var(--p-text-muted-color)]">
-                    Source:{" "}
-                    {book.source === "googlebooks"
-                      ? "Google Books"
-                      : "Open Library"}
-                  </p>
-                  {book.attribution?.text ? (
-                    <p className="text-xs text-[var(--p-text-muted-color)]">
-                      {book.attribution.text}
-                    </p>
-                  ) : null}
-                  {book.first_publish_year ? (
-                    <p className="text-xs text-[var(--p-text-muted-color)]">
-                      First published: {book.first_publish_year}
-                    </p>
-                  ) : null}
-                  <p className="text-xs text-[var(--p-text-muted-color)]">
-                    {book.edition_count !== null
-                      ? `Editions: ${book.edition_count}`
-                      : ""}
-                    {book.languages.length
-                      ? `${book.edition_count !== null ? " | " : ""}Languages: ${book.languages.join(", ")}`
-                      : ""}
-                    {`${book.edition_count !== null || book.languages.length ? " | " : ""}${book.readable ? "Readable online" : "Metadata only"}`}
-                  </p>
-
-                  <Button
-                    className="mt-3"
-                    outlined
-                    severity="secondary"
-                    data-test={`search-add-${index}`}
-                    disabled={
-                      Boolean(addStatus) || importingWorkKey === book.work_key
-                    }
-                    loading={importingWorkKey === book.work_key}
-                    onClick={() => {
-                      void importAndAdd(book);
-                    }}
+                  <div
+                    className="h-[120px] w-[80px] shrink-0 overflow-hidden rounded border border-slate-300/60 bg-slate-100"
+                    data-test="search-item-thumb"
                   >
-                    {buttonLabel}
-                  </Button>
-                </div>
+                    {coverVisible(book, brokenCoverKeys) ? (
+                      <Image
+                        src={book.cover_url ?? ""}
+                        alt=""
+                        width={80}
+                        height={120}
+                        unoptimized
+                        className="h-full w-full object-cover"
+                        data-test="search-item-cover"
+                        onError={() => {
+                          setBrokenCoverKeys((current) => {
+                            const next = new Set(current);
+                            next.add(book.work_key);
+                            return next;
+                          });
+                        }}
+                      />
+                    ) : (
+                      <div
+                        className="flex h-full w-full items-center justify-center text-xs text-[var(--p-text-muted-color)]"
+                        data-test="search-item-cover-placeholder"
+                      >
+                        No cover
+                      </div>
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">{book.title}</p>
+                    <p className="truncate text-sm text-[var(--p-text-muted-color)]">
+                      {book.author_names.join(", ") || "Unknown author"}
+                    </p>
+                    <p className="text-xs text-[var(--p-text-muted-color)]">
+                      Source:{" "}
+                      {book.source === "googlebooks"
+                        ? "Google Books"
+                        : "Open Library"}
+                    </p>
+                    {book.attribution?.text ? (
+                      <p className="text-xs text-[var(--p-text-muted-color)]">
+                        {book.attribution.text}
+                      </p>
+                    ) : null}
+                    {book.first_publish_year ? (
+                      <p className="text-xs text-[var(--p-text-muted-color)]">
+                        First published: {book.first_publish_year}
+                      </p>
+                    ) : null}
+                    <p className="text-xs text-[var(--p-text-muted-color)]">
+                      {book.edition_count !== null
+                        ? `Editions: ${book.edition_count}`
+                        : ""}
+                      {book.languages.length
+                        ? `${book.edition_count !== null ? " | " : ""}Languages: ${book.languages.join(", ")}`
+                        : ""}
+                      {`${book.edition_count !== null || book.languages.length ? " | " : ""}${book.readable ? "Readable online" : "Metadata only"}`}
+                    </p>
+
+                    <Button
+                      className="mt-3"
+                      outlined
+                      severity="secondary"
+                      data-test={`search-add-${index}`}
+                      disabled={
+                        Boolean(addStatus) || importingWorkKey === book.work_key
+                      }
+                      loading={importingWorkKey === book.work_key}
+                      onClick={() => {
+                        void importAndAdd(book);
+                      }}
+                    >
+                      {buttonLabel}
+                    </Button>
+                  </div>
                 </article>
               </Card>
             );
