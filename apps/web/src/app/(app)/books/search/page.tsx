@@ -474,7 +474,7 @@ export default function BookSearchPage() {
               <Card key={book.work_key}>
                 <article className="flex gap-4">
                   <div
-                    className="h-[120px] w-[80px] shrink-0 overflow-hidden rounded border border-slate-300/60 bg-slate-100"
+                    className="h-[120px] w-[80px] shrink-0 overflow-hidden rounded border border-[var(--p-content-border-color)] bg-[var(--surface-hover)]"
                     data-test="search-item-thumb"
                   >
                     {coverVisible(book, brokenCoverKeys) ? (

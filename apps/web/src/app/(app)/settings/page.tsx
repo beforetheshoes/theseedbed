@@ -1315,7 +1315,7 @@ export default function SettingsPage() {
           />
         ) : null}
         {storygraphImportJob ? (
-          <div className="mt-3 rounded border border-slate-300/60 p-3">
+          <div className="mt-3 rounded border border-[var(--p-content-border-color)] p-3">
             <p
               className="text-sm font-medium"
               data-test="storygraph-import-status"
@@ -1521,7 +1521,7 @@ export default function SettingsPage() {
           />
         ) : null}
         {goodreadsImportJob ? (
-          <div className="mt-3 rounded border border-slate-300/60 p-3">
+          <div className="mt-3 rounded border border-[var(--p-content-border-color)] p-3">
             <p
               className="text-sm font-medium"
               data-test="goodreads-import-status"

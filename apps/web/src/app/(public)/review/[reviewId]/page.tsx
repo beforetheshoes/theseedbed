@@ -7,7 +7,7 @@ export default async function PublicReviewPage({
 
   return (
     <section
-      className="rounded-xl border border-slate-300/60 bg-white/80 p-6"
+      className="rounded-xl border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-6"
       data-test="public-review-card"
     >
       <h1
@@ -16,7 +16,7 @@ export default async function PublicReviewPage({
       >
         Public review
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-[var(--p-text-muted-color)]">
         Reserved canonical URL for public reviews.
       </p>
       <p className="mt-3 text-sm">
