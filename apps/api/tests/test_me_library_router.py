@@ -50,6 +50,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             theme_primary_color=None,
             theme_accent_color=None,
             theme_font_family=None,
+            theme_heading_font_family=None,
             default_progress_unit="pages_read",
         ),
     )
@@ -65,6 +66,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         theme_primary_color: str | None,
         theme_accent_color: str | None,
         theme_font_family: str | None,
+        theme_heading_font_family: str | None,
         default_progress_unit: str | None,
     ) -> SimpleNamespace:
         if theme_primary_color is not None and not re.fullmatch(
@@ -75,13 +77,27 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             r"^#[0-9A-Fa-f]{6}$", theme_accent_color
         ):
             raise ValueError("theme_accent_color must be a #RRGGBB hex value")
-        if theme_font_family is not None and theme_font_family not in {
+        _valid_fonts = {
             "atkinson",
             "ibm_plex_sans",
             "fraunces",
-        }:
+            "inter",
+            "averia_libre",
+            "dongle",
+            "nunito_sans",
+            "lora",
+            "libre_baskerville",
+        }
+        if theme_font_family is not None and theme_font_family not in _valid_fonts:
             raise ValueError(
-                "theme_font_family must be one of: atkinson, ibm_plex_sans, fraunces"
+                f"theme_font_family must be one of: {', '.join(sorted(_valid_fonts))}"
+            )
+        if (
+            theme_heading_font_family is not None
+            and theme_heading_font_family not in _valid_fonts
+        ):
+            raise ValueError(
+                f"theme_heading_font_family must be one of: {', '.join(sorted(_valid_fonts))}"
             )
         return SimpleNamespace(
             id=user_id,
@@ -94,6 +110,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             theme_primary_color=theme_primary_color,
             theme_accent_color=theme_accent_color,
             theme_font_family=theme_font_family,
+            theme_heading_font_family=theme_heading_font_family,
             default_progress_unit=default_progress_unit or "pages_read",
         )
 
@@ -174,6 +191,7 @@ def test_get_me(app: FastAPI) -> None:
     assert response.json()["data"]["theme_primary_color"] is None
     assert response.json()["data"]["theme_accent_color"] is None
     assert response.json()["data"]["theme_font_family"] is None
+    assert response.json()["data"]["theme_heading_font_family"] is None
     assert response.json()["data"]["default_progress_unit"] == "pages_read"
 
 

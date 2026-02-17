@@ -21,6 +21,7 @@ class UpdateProfileRequest(BaseModel):
     theme_primary_color: str | None = Field(default=None, max_length=7)
     theme_accent_color: str | None = Field(default=None, max_length=7)
     theme_font_family: str | None = Field(default=None, max_length=32)
+    theme_heading_font_family: str | None = Field(default=None, max_length=32)
     default_progress_unit: (
         Literal["pages_read", "percent_complete", "minutes_listened"] | None
     ) = None
@@ -49,6 +50,7 @@ def get_me(
             "theme_primary_color": profile.theme_primary_color,
             "theme_accent_color": profile.theme_accent_color,
             "theme_font_family": profile.theme_font_family,
+            "theme_heading_font_family": profile.theme_heading_font_family,
             "default_progress_unit": profile.default_progress_unit,
         }
     )
@@ -71,6 +73,7 @@ def patch_me(
             theme_primary_color=payload.theme_primary_color,
             theme_accent_color=payload.theme_accent_color,
             theme_font_family=payload.theme_font_family,
+            theme_heading_font_family=payload.theme_heading_font_family,
             default_progress_unit=payload.default_progress_unit,
         )
     except ValueError as exc:
@@ -86,6 +89,7 @@ def patch_me(
             "theme_primary_color": profile.theme_primary_color,
             "theme_accent_color": profile.theme_accent_color,
             "theme_font_family": profile.theme_font_family,
+            "theme_heading_font_family": profile.theme_heading_font_family,
             "default_progress_unit": profile.default_progress_unit,
         }
     )
