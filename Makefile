@@ -44,8 +44,8 @@ dev-codex:
 			echo "Port $$port is already free."; \
 		fi; \
 	done
-	@echo "Cleaning apps/web/.nuxt and apps/web/.output..."
-	@rm -rf "$(CURDIR)/apps/web/.nuxt" "$(CURDIR)/apps/web/.output"
+	@echo "Cleaning apps/web/.next..."
+	@rm -rf "$(CURDIR)/apps/web/.next"
 	@echo "Starting dev servers..."
 	@$(MAKE) dev
 
@@ -64,11 +64,11 @@ dev-api-bitwarden:
 dev-web:
 	cd apps/web && pnpm dev
 
-# Link repo root .env for Nuxt runtime config when available
+# Link repo root .env for Next.js runtime config when available
 ensure-web-env:
-	@if [ -f ".env" ] && [ ! -e "apps/web/.env" ]; then \
-		ln -sf "$(CURDIR)/.env" apps/web/.env; \
-		echo "Linked .env to apps/web/.env"; \
+	@if [ -f ".env" ]; then \
+		ln -sfn "$(CURDIR)/.env" apps/web/.env.local; \
+		echo "Linked .env to apps/web/.env.local"; \
 	elif [ ! -f ".env" ]; then \
 		echo "No repo root .env found; run 'make supabase-env' to generate local Supabase env."; \
 	fi
@@ -88,12 +88,12 @@ supabase-env: supabase-start
 			API_URL=*) \
 				value="$${line#API_URL=}"; \
 				echo "SUPABASE_URL=$$value"; \
-				echo "NUXT_PUBLIC_SUPABASE_URL=$$value"; \
+				echo "NEXT_PUBLIC_SUPABASE_URL=$$value"; \
 				;; \
 			ANON_KEY=*) \
 				value="$${line#ANON_KEY=}"; \
 				echo "SUPABASE_ANON_KEY=$$value"; \
-				echo "NUXT_PUBLIC_SUPABASE_ANON_KEY=$$value"; \
+				echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=$$value"; \
 				;; \
 			DB_URL=*) \
 				value="$${line#DB_URL=}"; \
