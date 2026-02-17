@@ -186,7 +186,7 @@ describe("PrimeReact theme recoloring", () => {
   });
 
   it("uses cached CSS on second call with same URL", async () => {
-    const link = addThemeLink();
+    addThemeLink();
     fetchMock.mockResolvedValue({
       ok: true,
       text: () => Promise.resolve("body { color: #6366f1; }"),
