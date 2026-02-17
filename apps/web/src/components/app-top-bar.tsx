@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { Button } from "primereact/button";
 import { Menu } from "primereact/menu";
 import type { MenuItem } from "primereact/menuitem";
@@ -23,6 +29,12 @@ export function AppTopBar() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const accountMenuRef = useRef<Menu>(null);
   const colorMenuRef = useRef<Menu>(null);
+  const colorModeHydrated = useSyncExternalStore(
+    () => () => undefined,
+    () => true,
+    () => false,
+  );
+  const colorModeForButtons = colorModeHydrated ? mode : "system";
 
   useEffect(() => {
     let active = true;
@@ -152,8 +164,8 @@ export function AppTopBar() {
             >
               <Button
                 icon="pi pi-desktop"
-                outlined={mode === "system"}
-                text={mode !== "system"}
+                outlined={colorModeForButtons === "system"}
+                text={colorModeForButtons !== "system"}
                 severity="secondary"
                 size="small"
                 aria-label="System theme"
@@ -162,8 +174,8 @@ export function AppTopBar() {
               />
               <Button
                 icon="pi pi-sun"
-                outlined={mode === "light"}
-                text={mode !== "light"}
+                outlined={colorModeForButtons === "light"}
+                text={colorModeForButtons !== "light"}
                 severity="secondary"
                 size="small"
                 aria-label="Light theme"
@@ -172,8 +184,8 @@ export function AppTopBar() {
               />
               <Button
                 icon="pi pi-moon"
-                outlined={mode === "dark"}
-                text={mode !== "dark"}
+                outlined={colorModeForButtons === "dark"}
+                text={colorModeForButtons !== "dark"}
                 severity="secondary"
                 size="small"
                 aria-label="Dark theme"
