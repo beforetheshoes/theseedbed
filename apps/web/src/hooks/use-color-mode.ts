@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   getInitialColorMode,
   type ColorMode,
@@ -14,11 +14,13 @@ const getSystemPref = (): "light" | "dark" =>
   window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
 export function useColorMode() {
-  // Always start with "system" to match server render and avoid hydration mismatch.
-  // The real value from the cookie is synced in a useEffect below.
-  const [mode, setModeState] = useState<ColorMode>("system");
+  // Lazy-initialize from cookie on first client render to avoid
+  // setState-in-effect and the associated cascading render.
+  const [mode, setModeState] = useState<ColorMode>(() => {
+    if (typeof document === "undefined") return "system";
+    return getInitialColorMode(document.cookie, COOKIE_NAME);
+  });
   const [resolved, setResolved] = useState<"light" | "dark">("light");
-  const didSyncRef = useRef(false);
 
   const applyMode = useCallback((value: ColorMode) => {
     if (typeof document === "undefined" || typeof window === "undefined") {
@@ -56,16 +58,11 @@ export function useColorMode() {
     [applyMode],
   );
 
-  // Sync the real persisted mode from the cookie after first mount
+  // Apply the persisted mode on first mount
   useEffect(() => {
-    if (didSyncRef.current) return;
-    didSyncRef.current = true;
-    const persisted = getInitialColorMode(document.cookie, COOKIE_NAME);
-    if (persisted !== "system") {
-      setModeState(persisted);
-    }
-    applyMode(persisted);
-  }, [applyMode]);
+    applyMode(mode);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return useMemo(
     () => ({

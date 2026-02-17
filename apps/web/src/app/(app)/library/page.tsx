@@ -8,7 +8,6 @@ import { Calendar } from "primereact/calendar";
 import { Card } from "primereact/card";
 import { Column } from "primereact/column";
 import { DataTable } from "primereact/datatable";
-import { DataView } from "primereact/dataview";
 import { Dialog } from "primereact/dialog";
 import { Dropdown } from "primereact/dropdown";
 import { Inplace, InplaceContent, InplaceDisplay } from "primereact/inplace";
@@ -162,18 +161,6 @@ const VIEW_OPTIONS = [
   { label: "List", value: "list" },
   { label: "Grid", value: "grid" },
   { label: "Table", value: "table" },
-];
-const SORT_OPTIONS = [
-  { label: "Newest first", value: "newest" },
-  { label: "Oldest first", value: "oldest" },
-  { label: "Title A-Z", value: "title_asc" },
-  { label: "Title Z-A", value: "title_desc" },
-  { label: "Author A-Z", value: "author_asc" },
-  { label: "Author Z-A", value: "author_desc" },
-  { label: "Status A-Z", value: "status_asc" },
-  { label: "Status Z-A", value: "status_desc" },
-  { label: "Rating low-high", value: "rating_asc" },
-  { label: "Rating high-low", value: "rating_desc" },
 ];
 const TABLE_COLUMN_OPTIONS = [
   { label: "Cover", value: "cover" },

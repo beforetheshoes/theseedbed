@@ -19,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="en" data-app-ready="true">
       <head>
+        {/* eslint-disable-next-line @next/next/no-css-tags -- Runtime theme switching requires a dynamic link tag */}
         <link
           id="primereact-theme"
           rel="stylesheet"
