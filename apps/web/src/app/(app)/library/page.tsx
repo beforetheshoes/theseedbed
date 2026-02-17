@@ -695,12 +695,14 @@ export default function LibraryPage() {
 
   /* ─── Item field update tracking ─── */
 
-  const itemFieldUpdateKey = (itemId: string, field: "status" | "visibility") =>
-    `${itemId}:${field}`;
+  const itemFieldUpdateKey = (
+    itemId: string,
+    field: "status" | "visibility" | "rating",
+  ) => `${itemId}:${field}`;
 
   const isItemFieldUpdating = (
     itemId: string,
-    field: "status" | "visibility",
+    field: "status" | "visibility" | "rating",
   ) => Boolean(itemFieldUpdates[itemFieldUpdateKey(itemId, field)]);
 
   const isItemUpdating = (itemId: string) =>
