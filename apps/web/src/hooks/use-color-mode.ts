@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   getInitialColorMode,
   type ColorMode,
@@ -14,10 +14,13 @@ const getSystemPref = (): "light" | "dark" =>
   window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
 
 export function useColorMode() {
-  // Lazy-initialize from cookie on first client render to avoid
-  // setState-in-effect and the associated cascading render.
+  // Keep first render deterministic across SSR and hydration.
   const [mode, setModeState] = useState<ColorMode>(() => {
     if (typeof document === "undefined") return "system";
+    const fromDom = document.documentElement.dataset.colorMode;
+    if (fromDom === "light" || fromDom === "dark" || fromDom === "system") {
+      return fromDom;
+    }
     return getInitialColorMode(document.cookie, COOKIE_NAME);
   });
   const [resolved, setResolved] = useState<"light" | "dark">("light");
@@ -57,12 +60,6 @@ export function useColorMode() {
     },
     [applyMode],
   );
-
-  // Apply the persisted mode on first mount
-  useEffect(() => {
-    applyMode(mode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return useMemo(
     () => ({
