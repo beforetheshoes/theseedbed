@@ -224,4 +224,122 @@ describe("api helpers", () => {
     expect(error.code).toBe("bad");
     expect(error.status).toBe(400);
   });
+
+  it("sends JSON body when body is a plain object (not FormData)", async () => {
+    const supabase = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: "token-123" } },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    fetchMock.mockResolvedValue(
+      mockResponse({ data: { ok: true }, error: null }),
+    );
+
+    await apiRequest(supabase, "/api/v1/items", {
+      method: "POST",
+      body: { title: "Test" },
+    });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const headers = options.headers as Record<string, string>;
+    expect(headers["Content-Type"]).toBe("application/json");
+    expect(options.body).toBe(JSON.stringify({ title: "Test" }));
+  });
+
+  it("throws default error when non-ok response has empty body", async () => {
+    const supabase = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: "token-123" } },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    fetchMock.mockResolvedValue(mockResponse(null, { ok: false, status: 502 }));
+
+    await expect(apiRequest(supabase, "/api/v1/me")).rejects.toEqual(
+      expect.objectContaining({
+        message: "Request failed.",
+        code: "request_failed",
+        status: 502,
+      }),
+    );
+  });
+
+  it("throws default error when non-ok response body is not valid JSON", async () => {
+    const supabase = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: "token-123" } },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    fetchMock.mockResolvedValue({
+      ok: false,
+      status: 500,
+      text: vi.fn().mockResolvedValue("Internal Server Error"),
+    });
+
+    await expect(apiRequest(supabase, "/api/v1/me")).rejects.toEqual(
+      expect.objectContaining({
+        message: "Request failed.",
+        code: "request_failed",
+        status: 500,
+      }),
+    );
+  });
+
+  it("falls back to defaults when ok payload error has null message and code", async () => {
+    const supabase = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: "token-123" } },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    fetchMock.mockResolvedValue(
+      mockResponse(
+        { data: null, error: { code: null, message: null } },
+        { ok: true, status: 200 },
+      ),
+    );
+
+    await expect(apiRequest(supabase, "/api/v1/me")).rejects.toEqual(
+      expect.objectContaining({
+        message: "Request failed.",
+        code: "request_failed",
+        status: 200,
+      }),
+    );
+  });
+
+  it("falls back to defaults when non-ok payload error has null message and code", async () => {
+    const supabase = {
+      auth: {
+        getSession: vi.fn().mockResolvedValue({
+          data: { session: { access_token: "token-123" } },
+        }),
+      },
+    } as unknown as SupabaseClient;
+
+    fetchMock.mockResolvedValue(
+      mockResponse(
+        { data: null, error: { code: null, message: null } },
+        { ok: false, status: 422 },
+      ),
+    );
+
+    await expect(apiRequest(supabase, "/api/v1/me")).rejects.toEqual(
+      expect.objectContaining({
+        message: "Request failed.",
+        code: "request_failed",
+        status: 422,
+      }),
+    );
+  });
 });
