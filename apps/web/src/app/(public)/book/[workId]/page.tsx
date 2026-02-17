@@ -7,7 +7,7 @@ export default async function PublicBookPage({
 
   return (
     <section
-      className="rounded-xl border border-slate-300/60 bg-white/80 p-6"
+      className="rounded-xl border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-6"
       data-test="public-book-card"
     >
       <h1
@@ -16,7 +16,7 @@ export default async function PublicBookPage({
       >
         Public book page
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-[var(--p-text-muted-color)]">
         Reserved canonical URL for public book pages.
       </p>
       <p className="mt-3 text-sm">

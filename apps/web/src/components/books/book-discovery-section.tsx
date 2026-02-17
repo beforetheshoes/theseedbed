@@ -153,7 +153,7 @@ export function BookDiscoverySection({
     <Card className="mt-6" data-test="book-discovery">
       <div className="mb-3">
         <p className="text-sm font-medium">Discovery</p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-[var(--p-text-muted-color)]">
           Recommended from related titles and your authors.
         </p>
       </div>
@@ -165,31 +165,33 @@ export function BookDiscoverySection({
         <section>
           <p className="text-sm font-medium">Related books</p>
           {relatedLoading ? (
-            <p className="text-sm text-slate-500">Loading...</p>
+            <p className="text-sm text-[var(--p-text-muted-color)]">
+              Loading...
+            </p>
           ) : visibleRelatedBooks.length ? (
             <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-5">
               {visibleRelatedBooks.map((item) => (
                 <Button
                   key={item.work_key}
                   text
-                  className="rounded border border-slate-200 p-2 text-left hover:bg-slate-50"
+                  className="rounded border border-[var(--p-content-border-color)] p-2 text-left hover:bg-[var(--surface-hover)]"
                   data-test={`related-book-${item.work_key}`}
                   onClick={() => void importAndOpenRelated(item.work_key)}
                 >
                   <p className="line-clamp-2 text-xs font-semibold">
                     {item.title}
                   </p>
-                  <p className="mt-1 text-[11px] text-slate-500">
+                  <p className="mt-1 text-[11px] text-[var(--p-text-muted-color)]">
                     {relatedAuthorLabel(item)}
                   </p>
-                  <p className="text-[11px] text-slate-500">
+                  <p className="text-[11px] text-[var(--p-text-muted-color)]">
                     {item.first_publish_year ?? "Year unknown"}
                   </p>
                 </Button>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-[var(--p-text-muted-color)]">
               No related books with covers yet.
             </p>
           )}
@@ -198,17 +200,19 @@ export function BookDiscoverySection({
         <section>
           <p className="text-sm font-medium">More from the author(s)</p>
           {authorLoading ? (
-            <p className="text-sm text-slate-500">Loading...</p>
+            <p className="text-sm text-[var(--p-text-muted-color)]">
+              Loading...
+            </p>
           ) : authorProfilesWithCoverWorks.length ? (
             <div className="mt-2 grid gap-3">
               {authorProfilesWithCoverWorks.map((author) => (
                 <Card
                   key={author.id}
-                  className="rounded border border-slate-200 p-3"
+                  className="rounded border border-[var(--p-content-border-color)] p-3"
                 >
                   <p className="text-sm font-medium">{author.name}</p>
                   {author.bio ? (
-                    <p className="line-clamp-1 text-xs text-slate-500">
+                    <p className="line-clamp-1 text-xs text-[var(--p-text-muted-color)]">
                       {author.bio}
                     </p>
                   ) : null}
@@ -217,7 +221,7 @@ export function BookDiscoverySection({
                       <Button
                         key={`${author.id}-${book.work_key}`}
                         text
-                        className="rounded border border-slate-200 p-2 text-left hover:bg-slate-50"
+                        className="rounded border border-[var(--p-content-border-color)] p-2 text-left hover:bg-[var(--surface-hover)]"
                         data-test={`author-work-${book.work_key}`}
                         onClick={() => void importAndOpenRelated(book.work_key)}
                       >
@@ -231,7 +235,7 @@ export function BookDiscoverySection({
               ))}
             </div>
           ) : (
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-[var(--p-text-muted-color)]">
               No author books with covers yet.
             </p>
           )}

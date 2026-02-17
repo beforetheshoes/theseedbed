@@ -93,15 +93,15 @@ export function AuthCallbackPageClient({
 
   return (
     <section
-      className="rounded-xl border border-slate-300/60 bg-white/80 p-6 text-center shadow-sm"
+      className="rounded-xl border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-6 text-center shadow-sm"
       data-test="auth-callback-card"
     >
       <h1 className="text-2xl font-semibold tracking-tight">
         Finishing sign-in
       </h1>
-      <p className="mt-2 text-sm text-slate-600">{message}</p>
+      <p className="mt-2 text-sm text-[var(--p-text-muted-color)]">{message}</p>
       {error ? (
-        <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">
+        <p className="mt-3 rounded-lg bg-[var(--p-red-50)] px-3 py-2 text-sm text-[var(--p-red-700)]">
           {error}
         </p>
       ) : null}

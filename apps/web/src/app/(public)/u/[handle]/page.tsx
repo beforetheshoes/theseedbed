@@ -7,7 +7,7 @@ export default async function PublicProfilePage({
 
   return (
     <section
-      className="rounded-xl border border-slate-300/60 bg-white/80 p-6"
+      className="rounded-xl border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-6"
       data-test="public-profile-card"
     >
       <h1
@@ -16,7 +16,7 @@ export default async function PublicProfilePage({
       >
         Public profile
       </h1>
-      <p className="mt-2 text-sm text-slate-600">
+      <p className="mt-2 text-sm text-[var(--p-text-muted-color)]">
         Reserved for federation and public profile pages.
       </p>
       <p className="mt-3 text-sm">

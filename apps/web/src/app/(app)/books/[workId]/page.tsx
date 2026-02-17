@@ -143,6 +143,44 @@ type EnrichmentField = {
   candidates: EnrichmentCandidate[];
 };
 
+function resolveThemeColor(variableName: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue(variableName)
+    .trim();
+  return value || fallback;
+}
+
+function withAlpha(color: string, alpha: number): string {
+  if (color.startsWith("rgba(")) {
+    const [r, g, b] = color
+      .replace("rgba(", "")
+      .replace(")", "")
+      .split(",")
+      .map((part) => Number(part.trim()));
+    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)
+      ? `rgba(${r}, ${g}, ${b}, ${alpha})`
+      : color;
+  }
+  if (color.startsWith("rgb(")) {
+    const [r, g, b] = color
+      .replace("rgb(", "")
+      .replace(")", "")
+      .split(",")
+      .map((part) => Number(part.trim()));
+    return Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)
+      ? `rgba(${r}, ${g}, ${b}, ${alpha})`
+      : color;
+  }
+  const normalized = color.replace("#", "");
+  const isHex = /^[0-9a-fA-F]{6}$/.test(normalized);
+  if (!isHex) return color;
+  const r = Number.parseInt(normalized.slice(0, 2), 16);
+  const g = Number.parseInt(normalized.slice(2, 4), 16);
+  const b = Number.parseInt(normalized.slice(4, 6), 16);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
 export default function BookDetailPage({
   params,
 }: {
@@ -535,40 +573,50 @@ export default function BookDetailPage({
     }
     return chronological;
   })();
-  const progressChartData = useMemo(
-    () => ({
+  const progressChartData = useMemo(() => {
+    const primary = resolveThemeColor("--p-primary-color", "#3b82f6");
+    return {
       labels: progressChartPoints.map((point) => point.dateLabel),
       datasets: [
         {
           label: progressChartMode === "daily" ? "Daily progress" : "Progress",
           data: progressChartPoints.map((point) => point.value),
-          borderColor: "#3b82f6",
+          borderColor: primary,
           backgroundColor:
             progressChartMode === "daily"
-              ? "rgba(59, 130, 246, 0.3)"
-              : "rgba(59, 130, 246, 0.1)",
+              ? withAlpha(primary, 0.3)
+              : withAlpha(primary, 0.1),
           tension: 0.35,
           fill: progressChartMode !== "daily",
         },
       ],
-    }),
-    [progressChartMode, progressChartPoints],
-  );
-  const progressChartOptions = useMemo(
-    () => ({
+    };
+  }, [progressChartMode, progressChartPoints]);
+  const progressChartOptions = useMemo(() => {
+    const muted = resolveThemeColor("--p-text-muted-color", "#64748b");
+    const border = resolveThemeColor(
+      "--p-content-border-color",
+      "rgba(148, 163, 184, 0.5)",
+    );
+    return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
         legend: { display: false },
       },
       scales: {
+        x: {
+          ticks: { color: muted },
+          grid: { color: border },
+        },
         y: {
           beginAtZero: true,
+          ticks: { color: muted },
+          grid: { color: border },
         },
       },
-    }),
-    [],
-  );
+    };
+  }, []);
 
   useEffect(() => {
     if (!sessions.length) {
@@ -1707,14 +1755,17 @@ export default function BookDetailPage({
 
   return (
     <section
-      className="rounded-xl border border-slate-300/60 bg-white/80 p-6"
+      className="rounded-xl border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-6"
       data-test="book-detail-card"
     >
       <div className="mb-4 flex items-center justify-between gap-3">
         <h1 className="font-heading text-2xl font-semibold tracking-tight">
           Book details
         </h1>
-        <Link href="/library" className="rounded border px-3 py-2 text-sm">
+        <Link
+          href="/library"
+          className="rounded border border-[var(--p-content-border-color)] px-3 py-2 text-sm"
+        >
           Back to library
         </Link>
       </div>
@@ -1723,19 +1774,19 @@ export default function BookDetailPage({
         <p className="text-sm text-[var(--p-text-muted-color)]">Loading...</p>
       ) : null}
       {error ? (
-        <p
-          className="mt-3 rounded bg-red-50 px-3 py-2 text-sm text-red-700"
+        <Message
+          className="mt-3"
+          severity="error"
+          text={error}
           data-test="book-detail-error"
-        >
-          {error}
-        </p>
+        />
       ) : null}
 
       {!loading && work ? (
         <>
           <div className="grid gap-5 md:grid-cols-[220px_1fr]">
             <div
-              className="overflow-hidden rounded border border-slate-300/60 bg-slate-100"
+              className="overflow-hidden rounded border border-[var(--p-content-border-color)] bg-[var(--surface-hover)]"
               data-test="book-detail-cover"
             >
               {work.cover_url ? (
@@ -1828,7 +1879,7 @@ export default function BookDetailPage({
 
           {libraryItem ? (
             <>
-              <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+              <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                 <p className="text-sm font-medium">Edition and totals</p>
                 <div className="mt-3 grid gap-2 md:grid-cols-3">
                   <Dropdown
@@ -2402,7 +2453,7 @@ export default function BookDetailPage({
                 ) : null}
               </Dialog>
 
-              <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+              <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-heading text-lg font-semibold tracking-tight">
                     Notes
@@ -2465,7 +2516,7 @@ export default function BookDetailPage({
                     {notes.map((note) => (
                       <li
                         key={note.id}
-                        className="rounded border border-slate-200 p-2"
+                        className="rounded border border-[var(--p-content-border-color)] p-2"
                       >
                         <p className="text-sm font-medium">
                           {note.title || "Untitled note"}
@@ -2497,7 +2548,7 @@ export default function BookDetailPage({
                 )}
               </div>
 
-              <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+              <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-heading text-lg font-semibold tracking-tight">
                     Highlights
@@ -2565,7 +2616,7 @@ export default function BookDetailPage({
                     {highlights.map((highlight) => (
                       <li
                         key={highlight.id}
-                        className="rounded border border-slate-200 p-2"
+                        className="rounded border border-[var(--p-content-border-color)] p-2"
                       >
                         <p className="text-sm text-[var(--p-text-color)]">
                           {highlight.quote}
@@ -2594,7 +2645,7 @@ export default function BookDetailPage({
                 )}
               </div>
 
-              <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+              <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                 <p className="text-sm font-medium">Metadata enrichment</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Button
@@ -2664,7 +2715,7 @@ export default function BookDetailPage({
                     {enrichmentFields.map((field) => (
                       <li
                         key={field.field_key}
-                        className="rounded border border-slate-200 p-2"
+                        className="rounded border border-[var(--p-content-border-color)] p-2"
                       >
                         {field.candidates.length > 1 ? (
                           <p
@@ -2732,7 +2783,7 @@ export default function BookDetailPage({
                 )}
               </div>
 
-              <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+              <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-heading text-lg font-semibold tracking-tight">
                     Your review
@@ -2797,7 +2848,7 @@ export default function BookDetailPage({
               </div>
 
               {editNoteId ? (
-                <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+                <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                   <p className="text-sm font-medium">Edit note</p>
                   <InputText
                     className="mt-2 w-full"
@@ -2849,7 +2900,7 @@ export default function BookDetailPage({
               ) : null}
 
               {editHighlightId ? (
-                <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+                <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                   <p className="text-sm font-medium">Edit highlight</p>
                   <InputTextarea
                     className="mt-2 w-full"
@@ -2905,7 +2956,7 @@ export default function BookDetailPage({
               ) : null}
 
               {coverDialogOpen ? (
-                <div className="mt-6 rounded border border-slate-300/60 bg-white p-4">
+                <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium">Set cover</p>
                     <Button
@@ -2933,9 +2984,11 @@ export default function BookDetailPage({
                     />
                   </div>
                   {coverError ? (
-                    <p className="mt-2 rounded bg-red-50 px-3 py-2 text-sm text-red-700">
-                      {coverError}
-                    </p>
+                    <Message
+                      className="mt-2"
+                      severity="error"
+                      text={coverError}
+                    />
                   ) : null}
                   <div className="mt-3">
                     <label className="text-xs text-[var(--p-text-muted-color)]">
@@ -2968,7 +3021,7 @@ export default function BookDetailPage({
                           {coverCandidates.map((candidate, index) => (
                             <li
                               key={`${candidate.source}-${candidate.cover_id ?? index}`}
-                              className="flex items-center justify-between rounded border border-slate-200 p-2"
+                              className="flex items-center justify-between rounded border border-[var(--p-content-border-color)] p-2"
                             >
                               <span className="text-sm">
                                 {candidate.source}:{" "}
