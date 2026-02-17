@@ -225,8 +225,11 @@ describe("Settings page import + header UX", () => {
 
     expect(issuesPanel).toBeTruthy();
     expect(startButtons).toHaveLength(1);
+    if (!issuesPanel || !startButtons[0]) {
+      throw new Error("Expected StoryGraph issues panel and start button");
+    }
     expect(
-      issuesPanel?.compareDocumentPosition(startButtons[0] as Node) &
+      issuesPanel.compareDocumentPosition(startButtons[0]) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
@@ -277,8 +280,11 @@ describe("Settings page import + header UX", () => {
 
     expect(issuesPanel).toBeTruthy();
     expect(startButtons).toHaveLength(1);
+    if (!issuesPanel || !startButtons[0]) {
+      throw new Error("Expected Goodreads issues panel and start button");
+    }
     expect(
-      issuesPanel?.compareDocumentPosition(startButtons[0] as Node) &
+      issuesPanel.compareDocumentPosition(startButtons[0]) &
         Node.DOCUMENT_POSITION_FOLLOWING,
     ).toBeTruthy();
   });
