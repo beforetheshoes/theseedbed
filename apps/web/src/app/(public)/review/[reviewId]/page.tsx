@@ -1,9 +1,17 @@
+import { notFound } from "next/navigation";
+
+const REVIEW_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 export default async function PublicReviewPage({
   params,
 }: {
   params: Promise<{ reviewId: string }>;
 }) {
-  const { reviewId } = await params;
+  const { reviewId: rawReviewId } = await params;
+  const reviewId = rawReviewId.trim();
+  if (!reviewId || !REVIEW_ID_PATTERN.test(reviewId)) {
+    notFound();
+  }
 
   return (
     <section

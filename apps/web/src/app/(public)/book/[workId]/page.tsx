@@ -1,9 +1,17 @@
+import { notFound } from "next/navigation";
+
+const WORK_ID_PATTERN = /^[A-Za-z0-9_-]+$/;
+
 export default async function PublicBookPage({
   params,
 }: {
   params: Promise<{ workId: string }>;
 }) {
-  const { workId } = await params;
+  const { workId: rawWorkId } = await params;
+  const workId = rawWorkId.trim();
+  if (!workId || !WORK_ID_PATTERN.test(workId)) {
+    notFound();
+  }
 
   return (
     <section

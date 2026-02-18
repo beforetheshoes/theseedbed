@@ -66,9 +66,21 @@ export async function apiRequest<T>(
     signal?: AbortSignal;
   },
 ): Promise<T> {
-  const baseUrl = getApiBaseUrl();
   const token = await getAccessToken(supabase);
+  return apiRequestWithAccessToken<T>(token, path, options);
+}
 
+export async function apiRequestWithAccessToken<T>(
+  accessToken: string,
+  path: string,
+  options?: {
+    method?: "GET" | "POST" | "PATCH" | "DELETE";
+    query?: Record<string, string | number | undefined | null>;
+    body?: unknown;
+    signal?: AbortSignal;
+  },
+): Promise<T> {
+  const baseUrl = getApiBaseUrl();
   const isFormData =
     typeof FormData !== "undefined" && options?.body instanceof FormData;
 
@@ -84,7 +96,7 @@ export async function apiRequest<T>(
     method: options?.method ?? "GET",
     signal: options?.signal,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${accessToken}`,
       ...(isFormData ? {} : { "Content-Type": "application/json" }),
     },
     body: options?.body

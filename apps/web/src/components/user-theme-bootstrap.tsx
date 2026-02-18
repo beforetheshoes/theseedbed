@@ -1,15 +1,23 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import { apiRequest } from "@/lib/api";
 import { createBrowserClient } from "@/lib/supabase/browser";
-import { applyUserTheme, type UserThemeSettings } from "@/lib/user-theme";
+import {
+  applyUserTheme,
+  readStoredUserTheme,
+  type UserThemeSettings,
+} from "@/lib/user-theme";
 
 export function UserThemeBootstrap() {
   const supabase = useMemo(() => createBrowserClient(), []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     let active = true;
+    const cachedTheme = readStoredUserTheme();
+    if (cachedTheme) {
+      applyUserTheme(cachedTheme);
+    }
 
     const bootstrapTheme = async () => {
       try {

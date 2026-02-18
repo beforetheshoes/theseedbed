@@ -1,9 +1,17 @@
+import { notFound } from "next/navigation";
+
+const HANDLE_PATTERN = /^[A-Za-z0-9._-]+$/;
+
 export default async function PublicProfilePage({
   params,
 }: {
   params: Promise<{ handle: string }>;
 }) {
-  const { handle } = await params;
+  const { handle: rawHandle } = await params;
+  const handle = rawHandle.trim();
+  if (!handle || !HANDLE_PATTERN.test(handle)) {
+    notFound();
+  }
 
   return (
     <section
