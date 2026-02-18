@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Button } from "primereact/button";
 import { Card } from "primereact/card";
@@ -417,10 +418,13 @@ export function AppTopBarBookSearch() {
             >
               <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-[var(--p-surface-100)]">
                 {item.cover_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <Image
                     src={item.cover_url}
                     alt=""
+                    width={44}
+                    height={64}
+                    sizes="44px"
+                    unoptimized
                     className="h-full w-full object-cover"
                   />
                 ) : (
