@@ -682,7 +682,11 @@ def _openlibrary_edition_raw_has_compare_fields(raw: object) -> bool:
         _has_selected_value(value)
         for value in (
             _first_string(raw.get("publishers")),
-            raw.get("publish_date") if isinstance(raw.get("publish_date"), str) else None,
+            (
+                raw.get("publish_date")
+                if isinstance(raw.get("publish_date"), str)
+                else None
+            ),
             _first_string(raw.get("isbn_10")),
             _first_string(raw.get("isbn_13")),
             _extract_source_language(raw),

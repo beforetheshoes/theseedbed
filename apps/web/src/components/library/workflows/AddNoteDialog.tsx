@@ -2,10 +2,10 @@
 
 import { Button } from "primereact/button";
 import { Dialog } from "primereact/dialog";
-import { Dropdown } from "primereact/dropdown";
 import { InputTextarea } from "primereact/inputtextarea";
 import { InputText } from "primereact/inputtext";
 import { Message } from "primereact/message";
+import { SelectButton } from "primereact/selectbutton";
 
 type Props = {
   visible: boolean;
@@ -62,20 +62,24 @@ export function AddNoteDialog({
           placeholder="Write a note"
           onChange={(event) => onBodyChange(event.target.value)}
         />
-        <div className="flex items-center justify-between gap-2">
-          <Dropdown
-            value={visibility}
-            options={[
-              { label: "Private", value: "private" },
-              { label: "Public", value: "public" },
-            ]}
-            optionLabel="label"
-            optionValue="value"
-            onChange={(event) =>
-              onVisibilityChange(event.value as "private" | "public")
-            }
-          />
+        <div className="grid items-center gap-2 sm:grid-cols-[auto_12rem]">
+          <div className="flex justify-center sm:justify-start">
+            <SelectButton
+              value={visibility}
+              options={[
+                { label: "Private", value: "private" },
+                { label: "Public", value: "public" },
+              ]}
+              optionLabel="label"
+              optionValue="value"
+              className="h-[3rem] [&_.p-button]:h-full [&_.p-button]:px-4"
+              onChange={(event) =>
+                onVisibilityChange(event.value as "private" | "public")
+              }
+            />
+          </div>
           <Button
+            className="h-[3rem]"
             label="Add note"
             loading={saving}
             disabled={!body.trim()}

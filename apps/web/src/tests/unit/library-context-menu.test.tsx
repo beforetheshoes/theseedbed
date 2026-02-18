@@ -73,12 +73,13 @@ function buildLocalStorageMock() {
   };
 }
 
-function setupApiMock() {
+function setupApiMock(status: "reading" | "to_read" = "reading") {
+  const items = SAMPLE_ITEMS.map((item) => ({ ...item, status }));
   apiRequestMock.mockImplementation(
     async (_supabase: unknown, path: string) => {
       if (path === "/api/v1/library/items") {
         return {
-          items: SAMPLE_ITEMS,
+          items,
           pagination: {
             page: 1,
             page_size: 25,
@@ -92,7 +93,7 @@ function setupApiMock() {
         };
       }
       if (path.startsWith("/api/v1/library/items/item-1")) {
-        return SAMPLE_ITEMS[0];
+        return items[0];
       }
       if (path === "/api/v1/works/work-1/editions") {
         return {
@@ -166,7 +167,7 @@ describe("Library context menu", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
     vi.stubGlobal("localStorage", buildLocalStorageMock());
-    setupApiMock();
+    setupApiMock("reading");
     window.history.replaceState({}, "", "/library");
   });
   afterEach(() => {
@@ -191,6 +192,26 @@ describe("Library context menu", () => {
       "Add Note",
       "Add Review",
     ]);
+  });
+
+  it("hides Log Progress when item status is not reading", async () => {
+    setupApiMock("to_read");
+    localStorage.setItem("seedbed.library.viewMode", "list");
+    render(<LibraryPage />);
+
+    const listTitle = await screen.findByText("The Left Hand of Darkness");
+    fireEvent.contextMenu(listTitle);
+
+    await screen.findByText("Set Cover and Metadata");
+    const labels = Array.from(
+      document.querySelectorAll(".p-menuitem-text"),
+    ).map((node) => node.textContent?.trim());
+    expect(labels).toEqual([
+      "Set Cover and Metadata",
+      "Add Note",
+      "Add Review",
+    ]);
+    expect(screen.queryByText("Log Progress")).not.toBeInTheDocument();
   });
 
   it("opens from grid overflow trigger and opens merged workflow dialog without navigation", async () => {

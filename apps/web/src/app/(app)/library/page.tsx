@@ -39,6 +39,11 @@ import type {
 import type { Edition } from "@/components/library/workflows/types";
 import { ApiClientError, apiRequest } from "@/lib/api";
 import { renderDescriptionHtml } from "@/lib/description";
+import {
+  fromCanonicalPercent,
+  toCanonicalPercent,
+  type ProgressTotals,
+} from "@/lib/progress-conversion";
 import { createBrowserClient } from "@/lib/supabase/browser";
 import { CoverPlaceholder } from "@/components/cover-placeholder";
 import { EmptyState } from "@/components/empty-state";
@@ -142,6 +147,20 @@ type ReadDateEntry = {
 };
 
 type ProgressUnit = "pages_read" | "percent_complete" | "minutes_listened";
+type LibraryProgressStatistics = {
+  totals?: {
+    total_pages?: number | null;
+    total_audio_minutes?: number | null;
+  };
+  current?: {
+    canonical_percent?: number | null;
+    pages_read?: number | null;
+    minutes_listened?: number | null;
+  };
+  streak?: {
+    non_zero_days?: number | null;
+  };
+};
 type WorkflowDialogAction = LibraryWorkflowAction | null;
 type CoverMetadataMode = "choose" | "upload" | "url";
 type CoverMetadataComparePayload = {
@@ -698,6 +717,10 @@ export default function LibraryPage() {
   );
   const [progressNote, setProgressNote] = useState("");
   const [progressSaving, setProgressSaving] = useState(false);
+  const [progressStatistics, setProgressStatistics] =
+    useState<LibraryProgressStatistics | null>(null);
+  const [progressStatisticsLoading, setProgressStatisticsLoading] =
+    useState(false);
 
   const [newWorkflowNoteTitle, setNewWorkflowNoteTitle] = useState("");
   const [newWorkflowNoteBody, setNewWorkflowNoteBody] = useState("");
@@ -806,6 +829,18 @@ export default function LibraryPage() {
 
   const canEditWorkflowEditionTarget =
     workflowEditions.length > 0 && Boolean(workflowEditionId);
+  const progressTotals = useMemo<ProgressTotals>(
+    () => ({
+      total_pages: progressStatistics?.totals?.total_pages ?? null,
+      total_audio_minutes:
+        progressStatistics?.totals?.total_audio_minutes ?? null,
+    }),
+    [progressStatistics],
+  );
+  const progressStreakDays =
+    progressStatistics?.streak?.non_zero_days != null
+      ? progressStatistics.streak.non_zero_days
+      : 0;
 
   const coverMetadataCacheKey = useCallback(
     (
@@ -893,6 +928,47 @@ export default function LibraryPage() {
       }
     },
     [coverMetadataCacheKey, supabase],
+  );
+
+  const loadWorkflowProgressStatistics = useCallback(
+    async (itemId: string) => {
+      setProgressStatisticsLoading(true);
+      try {
+        const payload = await apiRequest<LibraryProgressStatistics>(
+          supabase,
+          `/api/v1/library/items/${itemId}/statistics`,
+        );
+        setProgressStatistics(payload);
+
+        const canonicalFromApi =
+          typeof payload.current?.canonical_percent === "number"
+            ? payload.current.canonical_percent
+            : null;
+        const canonical =
+          canonicalFromApi ??
+          (typeof payload.current?.pages_read === "number"
+            ? toCanonicalPercent("pages_read", payload.current.pages_read, {
+                total_pages: payload.totals?.total_pages ?? null,
+                total_audio_minutes:
+                  payload.totals?.total_audio_minutes ?? null,
+              })
+            : null);
+        if (canonical !== null) {
+          const converted = fromCanonicalPercent(progressUnit, canonical, {
+            total_pages: payload.totals?.total_pages ?? null,
+            total_audio_minutes: payload.totals?.total_audio_minutes ?? null,
+          });
+          if (converted !== null) {
+            setProgressValue(String(Math.max(0, Math.round(converted))));
+          }
+        }
+      } catch {
+        setProgressStatistics(null);
+      } finally {
+        setProgressStatisticsLoading(false);
+      }
+    },
+    [progressUnit, supabase],
   );
 
   const applyCompareFields = useCallback(
@@ -995,6 +1071,8 @@ export default function LibraryPage() {
         setProgressValue("");
         setProgressNote("");
         setProgressDate(new Date().toISOString().slice(0, 10));
+        setProgressStatistics(null);
+        await loadWorkflowProgressStatistics(contextItem.id);
         return;
       }
       if (action === "add-note") {
@@ -1011,6 +1089,7 @@ export default function LibraryPage() {
     [
       contextItem,
       loadCoverMetadataSources,
+      loadWorkflowProgressStatistics,
       loadWorkflowEditions,
       sourceLanguageFilter,
     ],
@@ -1064,16 +1143,20 @@ export default function LibraryPage() {
     workflowEditionId,
   ]);
 
-  const contextMenuModel = useMemo<MenuItem[]>(
-    () => [
+  const contextMenuModel = useMemo<MenuItem[]>(() => {
+    const items: MenuItem[] = [
       {
         label: "Set Cover and Metadata",
         command: () => void openWorkflowDialog("set-cover-metadata"),
       },
-      {
+    ];
+    if (contextItem?.status === "reading") {
+      items.push({
         label: "Log Progress",
         command: () => void openWorkflowDialog("log-progress"),
-      },
+      });
+    }
+    items.push(
       {
         label: "Add Note",
         command: () => void openWorkflowDialog("add-note"),
@@ -1082,15 +1165,17 @@ export default function LibraryPage() {
         label: "Add Review",
         command: () => void openWorkflowDialog("add-review"),
       },
-    ],
-    [openWorkflowDialog],
-  );
+    );
+    return items;
+  }, [contextItem?.status, openWorkflowDialog]);
 
   const openContextMenuForItem = useCallback(
     (event: SyntheticEvent, item: LibraryItem) => {
       event.preventDefault();
       setContextItem(item);
-      contextMenuRef.current?.show(event);
+      requestAnimationFrame(() => {
+        contextMenuRef.current?.show(event);
+      });
     },
     [],
   );
@@ -1112,7 +1197,9 @@ export default function LibraryPage() {
         stopPropagation: () => {},
       } as unknown as SyntheticEvent;
       setContextItem(item);
-      contextMenuRef.current?.show(syntheticEvent);
+      requestAnimationFrame(() => {
+        contextMenuRef.current?.show(syntheticEvent);
+      });
     },
     [],
   );
@@ -1727,6 +1814,30 @@ export default function LibraryPage() {
   };
 
   /* ─── Workflow dialogs ─── */
+
+  const handleProgressUnitChange = (nextUnit: ProgressUnit) => {
+    if (nextUnit === progressUnit) return;
+    const numeric = Number(progressValue.trim());
+    const hasNumeric = Number.isFinite(numeric) && numeric >= 0;
+    if (hasNumeric) {
+      const canonical = toCanonicalPercent(
+        progressUnit,
+        numeric,
+        progressTotals,
+      );
+      if (canonical !== null) {
+        const converted = fromCanonicalPercent(
+          nextUnit,
+          canonical,
+          progressTotals,
+        );
+        if (converted !== null) {
+          setProgressValue(String(Math.max(0, Math.round(converted))));
+        }
+      }
+    }
+    setProgressUnit(nextUnit);
+  };
 
   const closeWorkflowDialog = () => {
     comparePrefetchAbortRef.current?.abort();
@@ -3329,12 +3440,20 @@ export default function LibraryPage() {
         }}
         headerTitle={`Log progress${contextItem ? ` · ${contextItem.work_title}` : ""}`}
         workflowError={workflowError}
+        statisticsLoading={progressStatisticsLoading}
+        progressTotals={progressTotals}
+        streakDays={progressStreakDays}
         progressUnit={progressUnit}
         progressValue={progressValue}
         progressDate={progressDate}
         progressNote={progressNote}
         progressSaving={progressSaving}
-        onProgressUnitChange={setProgressUnit}
+        onRetryStatistics={() =>
+          contextItem
+            ? void loadWorkflowProgressStatistics(contextItem.id)
+            : undefined
+        }
+        onProgressUnitChange={handleProgressUnitChange}
         onProgressValueChange={setProgressValue}
         onProgressDateChange={setProgressDate}
         onProgressNoteChange={setProgressNote}
