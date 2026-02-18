@@ -18,6 +18,9 @@
   --app-theme-accent-safe-light: #0f766e;
   --app-theme-accent-safe-dark: #2dd4bf;
   --app-theme-accent-contrast: #111827;
+  --oauth-button-bg: #ffffff;
+  --oauth-button-fg: #1f1f1f;
+  --oauth-button-border: #d1d5db;
   --app-font-family: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --app-heading-font-family:
     "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
@@ -92,6 +95,21 @@ html.dark {
   --highlight-text-color: #e0e7ff;
   --maskbg: rgba(2, 6, 23, 0.7);
   color-scheme: dark;
+}
+
+html.dark,
+html[data-color-mode="dark"] {
+  --oauth-button-bg: #0f172a;
+  --oauth-button-fg: #eef4ff;
+  --oauth-button-border: #334155;
+}
+
+@media (prefers-color-scheme: dark) {
+  html[data-color-mode="system"] {
+    --oauth-button-bg: #0f172a;
+    --oauth-button-fg: #eef4ff;
+    --oauth-button-border: #334155;
+  }
 }
 
 * {
