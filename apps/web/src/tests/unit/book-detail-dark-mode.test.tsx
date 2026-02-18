@@ -1,6 +1,6 @@
-import { render, waitFor } from "@testing-library/react";
+import { render, waitFor, type RenderResult } from "@testing-library/react";
 import type { ComponentPropsWithoutRef } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { apiRequestMock, chartRenderMock } = vi.hoisted(() => ({
   apiRequestMock: vi.fn(),
@@ -154,6 +154,13 @@ function setupApiMock() {
 }
 
 describe("Book detail dark-mode surfaces", () => {
+  let rendered: RenderResult | null = null;
+
+  const renderSubject = () => {
+    rendered = render(<BookDetailPageClient initialWorkId="test-work" />);
+    return rendered;
+  };
+
   beforeEach(() => {
     apiRequestMock.mockReset();
     chartRenderMock.mockReset();
@@ -164,10 +171,18 @@ describe("Book detail dark-mode surfaces", () => {
     setupApiMock();
   });
 
+  afterEach(async () => {
+    if (rendered) {
+      rendered.unmount();
+      rendered = null;
+    }
+    // Let any queued microtasks complete before jsdom teardown.
+    await Promise.resolve();
+    await Promise.resolve();
+  });
+
   it("uses tokenized surface classes and themed chart colors", async () => {
-    const { container } = render(
-      <BookDetailPageClient initialWorkId="test-work" />,
-    );
+    const { container } = renderSubject();
 
     await waitFor(() => {
       expect(
@@ -216,7 +231,7 @@ describe("Book detail dark-mode surfaces", () => {
 
   it("handles set-cover workflow query, opens flow, and clears query", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("workflow=set-cover"));
-    render(<BookDetailPageClient initialWorkId="test-work" />);
+    renderSubject();
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenCalledWith(
@@ -231,7 +246,7 @@ describe("Book detail dark-mode surfaces", () => {
 
   it("handles add-note workflow query and focuses note input", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("workflow=add-note"));
-    render(<BookDetailPageClient initialWorkId="test-work" />);
+    renderSubject();
 
     await waitFor(() =>
       expect((document.activeElement as HTMLElement | null)?.id).toBe(
@@ -245,7 +260,7 @@ describe("Book detail dark-mode surfaces", () => {
     searchParamsMock.mockReturnValue(
       new URLSearchParams("workflow=add-review"),
     );
-    render(<BookDetailPageClient initialWorkId="test-work" />);
+    renderSubject();
 
     await waitFor(() =>
       expect((document.activeElement as HTMLElement | null)?.id).toBe(
