@@ -7,7 +7,7 @@ import {
 } from "@/lib/auth-routes";
 import { updateSession } from "@/lib/supabase/middleware";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isDev = process.env.NODE_ENV !== "production";
 
