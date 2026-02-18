@@ -24,6 +24,7 @@ import { Rating } from "primereact/rating";
 import { SelectButton } from "primereact/selectbutton";
 import { ApiClientError, apiRequest } from "@/lib/api";
 import { renderDescriptionHtml } from "@/lib/description";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 import {
   canConvert,
   fromCanonicalPercent,
@@ -1881,7 +1882,7 @@ export default function BookDetailPage({
                   alt=""
                   width={220}
                   height={320}
-                  unoptimized
+                  unoptimized={shouldUseUnoptimizedForUrl(work.cover_url)}
                   className="h-auto w-full object-cover"
                   data-test="book-detail-cover-image"
                 />

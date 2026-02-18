@@ -8,6 +8,7 @@ import { Message } from "primereact/message";
 import { SelectButton } from "primereact/selectbutton";
 import type { Edition } from "@/components/library/workflows/types";
 import { renderDescriptionHtml } from "@/lib/description";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 
 type CoverMetadataMode = "choose" | "upload" | "url";
 type SelectionValue = "current" | "selected";
@@ -224,7 +225,9 @@ export function SetCoverAndMetadataDialog({
                             alt=""
                             width={96}
                             height={144}
-                            unoptimized
+                            unoptimized={shouldUseUnoptimizedForUrl(
+                              item.cover_url,
+                            )}
                             className="mx-auto h-full w-auto max-w-full object-contain"
                           />
                         ) : null}
@@ -328,7 +331,9 @@ export function SetCoverAndMetadataDialog({
                                   alt=""
                                   width={240}
                                   height={144}
-                                  unoptimized
+                                  unoptimized={shouldUseUnoptimizedForUrl(
+                                    toImageUrl(field.current_value),
+                                  )}
                                   className="h-36 w-full bg-black/5 object-contain"
                                 />
                               ) : (
@@ -378,7 +383,9 @@ export function SetCoverAndMetadataDialog({
                                   alt=""
                                   width={240}
                                   height={144}
-                                  unoptimized
+                                  unoptimized={shouldUseUnoptimizedForUrl(
+                                    toImageUrl(selectedValue),
+                                  )}
                                   className="h-36 w-full bg-black/5 object-contain"
                                 />
                               ) : (

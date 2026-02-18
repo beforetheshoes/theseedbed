@@ -109,9 +109,46 @@ describe("AppTopBarBookSearch", () => {
         width: 44,
         height: 64,
         sizes: "44px",
-        unoptimized: true,
+        unoptimized: false,
       }),
     );
+  });
+
+  it("falls back to unoptimized for unknown cover hosts", async () => {
+    apiRequestMock.mockImplementation(
+      async (_supabase: unknown, path: string) => {
+        if (path === "/api/v1/library/search") {
+          return { items: [] };
+        }
+        if (path === "/api/v1/books/search") {
+          return {
+            items: [
+              {
+                source: "openlibrary",
+                source_id: "OL3W",
+                work_key: "OL3W",
+                title: "Fledgling",
+                author_names: ["Octavia E. Butler"],
+                cover_url:
+                  "https://legacy-cdn.example.com/covers/fledgling.jpg",
+              },
+            ],
+          };
+        }
+        throw new Error(`Unexpected path in test: ${path}`);
+      },
+    );
+
+    await runSearch("fledgling");
+
+    await waitFor(() => {
+      expect(imageRenderMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          src: "https://legacy-cdn.example.com/covers/fledgling.jpg",
+          unoptimized: true,
+        }),
+      );
+    });
   });
 
   it("renders no-cover fallback when cover_url is missing", async () => {

@@ -11,6 +11,7 @@ import { Message } from "primereact/message";
 import { SelectButton } from "primereact/selectbutton";
 import { Skeleton } from "primereact/skeleton";
 import { ApiClientError, apiRequest } from "@/lib/api";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 import { createBrowserClient } from "@/lib/supabase/browser";
 
 type SearchScope = "my" | "global" | "both";
@@ -424,7 +425,7 @@ export function AppTopBarBookSearch() {
                     width={44}
                     height={64}
                     sizes="44px"
-                    unoptimized
+                    unoptimized={shouldUseUnoptimizedForUrl(item.cover_url)}
                     className="h-full w-full object-cover"
                   />
                 ) : (
