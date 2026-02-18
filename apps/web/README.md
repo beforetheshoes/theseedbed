@@ -53,7 +53,7 @@ Implemented:
 - route and layout parity across all migrated routes
 - auth entry routes (`/login`, `/auth/callback`, `/oauth/consent`)
 - public canonical routes (`/u/:handle`, `/book/:workId`, `/review/:reviewId`)
-- middleware behavior for protected paths and ActivityPub placeholder responses
+- proxy behavior for protected paths and ActivityPub placeholder responses
 - `/.well-known/webfinger` placeholder handler
 - shared API client/error semantics port
 - color mode cookie/system handling + `window.__setColorMode` E2E hook
