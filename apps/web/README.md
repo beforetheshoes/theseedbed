@@ -46,6 +46,30 @@ Quality enforces:
 - unit tests with per-file coverage thresholds of 95%
 - production build
 
+## CSS layering contract
+
+PrimeReact and Tailwind precedence is controlled in
+`/Users/ryan/Developer/chapterverse/apps/web/src/app/globals.css` with a
+single canonical declaration:
+
+- `@layer theme, base, primereact, components, utilities, app-overrides;`
+
+Ownership rules:
+
+- `base`: app design tokens (`:root`, dark mode variables) and global reset/base
+  styles.
+- `primereact`: PrimeReact theme CSS loaded from
+  `#primereact-theme` (`/public/themes/lara-*/theme.css`) and runtime recolor
+  injection.
+- `app-overrides`: all app-specific PrimeReact overrides and scoped feature
+  overrides.
+
+Contributor guidelines:
+
+- Add any new PrimeReact overrides only in `@layer app-overrides`.
+- Prefer feature-scoped selectors over broad `.p-*` selectors.
+- Avoid adding new specificity hacks or unlayered global overrides.
+
 ## Current migration status
 
 Implemented:
