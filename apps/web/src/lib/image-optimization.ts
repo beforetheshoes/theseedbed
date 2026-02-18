@@ -49,7 +49,18 @@ export function isConfiguredRemoteImageUrl(src: string): boolean {
   });
 }
 
+function isLocalHost(hostname: string): boolean {
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
 export function shouldUseUnoptimizedForUrl(src: string): boolean {
+  try {
+    const parsed = new URL(src);
+    if (isLocalHost(parsed.hostname)) return true;
+  } catch {
+    return true;
+  }
+
   // Unknown hosts can still appear in legacy data; avoid runtime hostname errors.
   return !isConfiguredRemoteImageUrl(src);
 }

@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { buildImageRemotePatterns } from "@/lib/image-remote-patterns";
-import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
+import {
+  isConfiguredRemoteImageUrl,
+  shouldUseUnoptimizedForUrl,
+} from "@/lib/image-optimization";
 
 const originalSupabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 
@@ -35,17 +38,25 @@ describe("shouldUseUnoptimizedForUrl", () => {
     ).toBe(false);
   });
 
-  it("allows known supabase storage hosts including local development", () => {
+  it("allows known hosted supabase storage URLs", () => {
     expect(
       shouldUseUnoptimizedForUrl(
         "https://kypwcksvicrbrrwscdze.supabase.co/storage/v1/object/public/covers/a.jpg",
       ),
     ).toBe(false);
+  });
+
+  it("uses unoptimized for localhost storage URLs", () => {
     expect(
       shouldUseUnoptimizedForUrl(
         "http://localhost:54321/storage/v1/object/public/covers/a.jpg",
       ),
-    ).toBe(false);
+    ).toBe(true);
+    expect(
+      shouldUseUnoptimizedForUrl(
+        "http://127.0.0.1:55421/storage/v1/object/public/covers/a.jpg",
+      ),
+    ).toBe(true);
   });
 
   it("allows storage host derived from NEXT_PUBLIC_SUPABASE_URL", () => {
@@ -127,5 +138,24 @@ describe("buildImageRemotePatterns", () => {
           pattern.pathname === "/books/content",
       ),
     ).toBe(true);
+  });
+});
+
+describe("isConfiguredRemoteImageUrl", () => {
+  it("returns false for invalid URL input", () => {
+    expect(isConfiguredRemoteImageUrl("not-a-url")).toBe(false);
+  });
+
+  it("applies explicit local port matching from remote patterns", () => {
+    expect(
+      isConfiguredRemoteImageUrl(
+        "http://127.0.0.1:55421/storage/v1/object/public/covers/a.jpg",
+      ),
+    ).toBe(true);
+    expect(
+      isConfiguredRemoteImageUrl(
+        "http://127.0.0.1:5999/storage/v1/object/public/covers/a.jpg",
+      ),
+    ).toBe(false);
   });
 });
