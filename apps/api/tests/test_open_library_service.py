@@ -271,6 +271,58 @@ def test_fetch_work_bundle_skips_invalid_author_and_edition_entries() -> None:
     assert bundle.edition is None
 
 
+def test_fetch_work_editions_returns_summaries_and_applies_language_filter() -> None:
+    responses = {
+        "/works/OL1W/editions.json": {
+            "entries": [
+                {
+                    "key": "/books/OL10M",
+                    "title": "Edition A",
+                    "publishers": ["Pub A"],
+                    "publish_date": "2024",
+                    "languages": [{"key": "/languages/eng"}],
+                    "isbn_10": ["1234567890"],
+                    "covers": [12],
+                },
+                {
+                    "key": "/books/OL11M",
+                    "title": "Edition B",
+                    "publishers": ["Pub B"],
+                    "languages": [{"key": "/languages/spa"}],
+                    "isbn_13": ["9781234567890"],
+                },
+            ]
+        }
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    items = asyncio.run(
+        client.fetch_work_editions(work_key="OL1W", limit=10, language="eng")
+    )
+
+    assert len(items) == 1
+    assert items[0].key == "/books/OL10M"
+    assert items[0].publisher == "Pub A"
+    assert items[0].language == "eng"
+    assert items[0].cover_url == "https://covers.openlibrary.org/b/id/12-M.jpg"
+
+
+def test_fetch_work_editions_returns_empty_for_invalid_entries() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"entries": ["bad", {"title": "missing key"}]})
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    items = asyncio.run(client.fetch_work_editions(work_key="/works/OL1W", limit=5))
+
+    assert items == []
+
+
 def test_request_retries_on_5xx() -> None:
     calls = {"count": 0}
 

@@ -2,22 +2,41 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type SyntheticEvent,
+} from "react";
 import { Button } from "primereact/button";
 import { Calendar } from "primereact/calendar";
 import { Card } from "primereact/card";
 import { Column } from "primereact/column";
+import { ContextMenu } from "primereact/contextmenu";
 import { DataTable } from "primereact/datatable";
 import { Dialog } from "primereact/dialog";
 import { Dropdown } from "primereact/dropdown";
 import { Inplace, InplaceContent, InplaceDisplay } from "primereact/inplace";
 import { InputText } from "primereact/inputtext";
+import type { MenuItem } from "primereact/menuitem";
 import { Message } from "primereact/message";
 import { MultiSelect } from "primereact/multiselect";
 import { Paginator } from "primereact/paginator";
 import { SelectButton } from "primereact/selectbutton";
 import { Skeleton } from "primereact/skeleton";
 import { Tag } from "primereact/tag";
+import { AddNoteDialog } from "@/components/library/workflows/AddNoteDialog";
+import { AddReviewDialog } from "@/components/library/workflows/AddReviewDialog";
+import { LogProgressDialog } from "@/components/library/workflows/LogProgressDialog";
+import { SetCoverAndMetadataDialog } from "@/components/library/workflows/SetCoverAndMetadataDialog";
+import type {
+  CoverMetadataCompareField,
+  ProviderSourceTile,
+} from "@/components/library/workflows/SetCoverAndMetadataDialog";
+import type { Edition } from "@/components/library/workflows/types";
 import { ApiClientError, apiRequest } from "@/lib/api";
 import { renderDescriptionHtml } from "@/lib/description";
 import { createBrowserClient } from "@/lib/supabase/browser";
@@ -41,6 +60,11 @@ type SortMode =
   | "rating_asc"
   | "rating_desc";
 type LibraryViewMode = "list" | "grid" | "table";
+type LibraryWorkflowAction =
+  | "set-cover-metadata"
+  | "log-progress"
+  | "add-note"
+  | "add-review";
 type TableColumnKey =
   | "cover"
   | "title"
@@ -115,6 +139,19 @@ type ReadDateEntry = {
   key: string;
   startedAt: Date | null;
   endedAt: Date | null;
+};
+
+type ProgressUnit = "pages_read" | "percent_complete" | "minutes_listened";
+type WorkflowDialogAction = LibraryWorkflowAction | null;
+type CoverMetadataMode = "choose" | "upload" | "url";
+type CoverMetadataComparePayload = {
+  selected_source?: {
+    provider: "openlibrary" | "googlebooks";
+    source_id: string;
+    source_label: string;
+    edition_id: string | null;
+  } | null;
+  fields: CoverMetadataCompareField[];
 };
 
 /* ─── Constants ─── */
@@ -540,9 +577,11 @@ const mergeCandidateLabel = (
 export default function LibraryPage() {
   const supabase = useMemo(() => createBrowserClient(), []);
   const toast = useAppToast();
+  const contextMenuRef = useRef<ContextMenu>(null);
   const [items, setItems] = useState<LibraryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [contextItem, setContextItem] = useState<LibraryItem | null>(null);
 
   const [statusFilter, setStatusFilter] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState("");
@@ -618,6 +657,62 @@ export default function LibraryPage() {
   const [pendingRemoveItem, setPendingRemoveItem] =
     useState<LibraryItem | null>(null);
   const [removeLoading, setRemoveLoading] = useState(false);
+
+  // Context workflow dialogs
+  const [workflowDialog, setWorkflowDialog] =
+    useState<WorkflowDialogAction>(null);
+  const [workflowError, setWorkflowError] = useState("");
+
+  const [workflowEditions, setWorkflowEditions] = useState<Edition[]>([]);
+  const [workflowEditionId, setWorkflowEditionId] = useState("");
+  const [, setWorkflowEditionsLoading] = useState(false);
+
+  const [coverMetadataMode, setCoverMetadataMode] =
+    useState<CoverMetadataMode>("choose");
+  const [sourceLanguageFilter, setSourceLanguageFilter] = useState("");
+  const [sourceTiles, setSourceTiles] = useState<ProviderSourceTile[]>([]);
+  const [sourceTilesLoading, setSourceTilesLoading] = useState(false);
+  const [sourceTilesError, setSourceTilesError] = useState("");
+  const [selectedSourceKey, setSelectedSourceKey] = useState("");
+  const [compareFields, setCompareFields] = useState<
+    CoverMetadataCompareField[]
+  >([]);
+  const [compareFieldsLoading, setCompareFieldsLoading] = useState(false);
+  const [compareSelection, setCompareSelection] = useState<
+    Record<string, "current" | "selected">
+  >({});
+  const compareCacheRef = useRef<Map<string, CoverMetadataCompareField[]>>(
+    new Map(),
+  );
+  const comparePrefetchAbortRef = useRef<AbortController | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverSourceUrl, setCoverSourceUrl] = useState("");
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+
+  const [enrichmentApplying, setEnrichmentApplying] = useState(false);
+
+  const [progressUnit, setProgressUnit] = useState<ProgressUnit>("pages_read");
+  const [progressValue, setProgressValue] = useState("");
+  const [progressDate, setProgressDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [progressNote, setProgressNote] = useState("");
+  const [progressSaving, setProgressSaving] = useState(false);
+
+  const [newWorkflowNoteTitle, setNewWorkflowNoteTitle] = useState("");
+  const [newWorkflowNoteBody, setNewWorkflowNoteBody] = useState("");
+  const [newWorkflowNoteVisibility, setNewWorkflowNoteVisibility] = useState<
+    "private" | "public"
+  >("private");
+  const [workflowNoteSaving, setWorkflowNoteSaving] = useState(false);
+
+  const [reviewTitle, setReviewTitle] = useState("");
+  const [reviewBody, setReviewBody] = useState("");
+  const [reviewVisibility, setReviewVisibility] = useState<
+    "private" | "public"
+  >("private");
+  const [reviewRating, setReviewRating] = useState("");
+  const [reviewSaving, setReviewSaving] = useState(false);
 
   /* ─── Computed ─── */
 
@@ -708,6 +803,319 @@ export default function LibraryPage() {
   const isItemUpdating = (itemId: string) =>
     isItemFieldUpdating(itemId, "status") ||
     isItemFieldUpdating(itemId, "visibility");
+
+  const canEditWorkflowEditionTarget =
+    workflowEditions.length > 0 && Boolean(workflowEditionId);
+
+  const coverMetadataCacheKey = useCallback(
+    (
+      workId: string,
+      provider: "openlibrary" | "googlebooks",
+      sourceId: string,
+      editionId?: string,
+    ) => `${workId}|${provider}|${sourceId}|${editionId || ""}`,
+    [],
+  );
+
+  /* ─── Context menu ─── */
+
+  const loadWorkflowEditions = useCallback(
+    async (workId: string): Promise<string> => {
+      setWorkflowEditionsLoading(true);
+      try {
+        const payload = await apiRequest<{ items: Edition[] }>(
+          supabase,
+          `/api/v1/works/${workId}/editions`,
+          { query: { limit: 50 } },
+        );
+        setWorkflowEditions(payload.items ?? []);
+        const selectedEditionId = payload.items?.[0]?.id ?? "";
+        setWorkflowEditionId(selectedEditionId);
+        return selectedEditionId;
+      } catch (err) {
+        setWorkflowError(
+          err instanceof ApiClientError
+            ? err.message
+            : "Unable to load editions right now.",
+        );
+        setWorkflowEditions([]);
+        setWorkflowEditionId("");
+        return "";
+      } finally {
+        setWorkflowEditionsLoading(false);
+      }
+    },
+    [supabase],
+  );
+
+  const loadCoverMetadataSources = useCallback(
+    async (workId: string, language?: string, editionId?: string) => {
+      setSourceTilesLoading(true);
+      setSourceTilesError("");
+      try {
+        const payload = await apiRequest<{
+          items: ProviderSourceTile[];
+          prefetch_compare?: Record<string, CoverMetadataComparePayload>;
+        }>(supabase, `/api/v1/works/${workId}/cover-metadata/sources`, {
+          query: {
+            limit: 30,
+            language: language?.trim() || undefined,
+            include_prefetch_compare: "true",
+            prefetch_limit: 3,
+          },
+        });
+        const items = payload.items ?? [];
+        setSourceTiles(items);
+        const prefetched = payload.prefetch_compare ?? {};
+        for (const [sourceKey, comparePayload] of Object.entries(prefetched)) {
+          const separator = sourceKey.indexOf(":");
+          if (separator <= 0) continue;
+          const provider = sourceKey.slice(
+            0,
+            separator,
+          ) as ProviderSourceTile["provider"];
+          const sourceId = sourceKey.slice(separator + 1);
+          if (!sourceId || !Array.isArray(comparePayload?.fields)) continue;
+          compareCacheRef.current.set(
+            coverMetadataCacheKey(workId, provider, sourceId, editionId),
+            comparePayload.fields,
+          );
+        }
+      } catch (err) {
+        setSourceTiles([]);
+        setSourceTilesError(
+          err instanceof ApiClientError
+            ? err.message
+            : "Unable to load source options.",
+        );
+      } finally {
+        setSourceTilesLoading(false);
+      }
+    },
+    [coverMetadataCacheKey, supabase],
+  );
+
+  const applyCompareFields = useCallback(
+    (fields: CoverMetadataCompareField[]) => {
+      setCompareFields(fields);
+      const initial: Record<string, "current" | "selected"> = {};
+      for (const field of fields) {
+        initial[field.field_key] = field.selected_available
+          ? "selected"
+          : "current";
+      }
+      setCompareSelection(initial);
+    },
+    [],
+  );
+
+  const loadCoverMetadataComparison = useCallback(
+    async (
+      workId: string,
+      provider: "openlibrary" | "googlebooks",
+      sourceId: string,
+      options?: { silent?: boolean; signal?: AbortSignal; editionId?: string },
+    ) => {
+      const cacheKey = coverMetadataCacheKey(
+        workId,
+        provider,
+        sourceId,
+        options?.editionId ?? workflowEditionId,
+      );
+      const cached = compareCacheRef.current.get(cacheKey);
+      if (cached) {
+        applyCompareFields(cached);
+        return cached;
+      }
+      if (!options?.silent) setCompareFieldsLoading(true);
+      try {
+        const payload = await apiRequest<{
+          fields: CoverMetadataCompareField[];
+        }>(supabase, `/api/v1/works/${workId}/cover-metadata/compare`, {
+          query: {
+            provider,
+            source_id: sourceId,
+            edition_id: options?.editionId || workflowEditionId || undefined,
+          },
+          signal: options?.signal,
+        });
+        const fields = payload.fields ?? [];
+        compareCacheRef.current.set(cacheKey, fields);
+        if (!options?.silent) applyCompareFields(fields);
+        return fields;
+      } catch (err) {
+        if ((err as Error).name === "AbortError") {
+          return [];
+        }
+        if (!options?.silent) {
+          setCompareFields([]);
+          setCompareSelection({});
+        }
+        setWorkflowError(
+          err instanceof ApiClientError
+            ? err.message
+            : "Unable to load selected source comparison.",
+        );
+        return [];
+      } finally {
+        if (!options?.silent) setCompareFieldsLoading(false);
+      }
+    },
+    [applyCompareFields, coverMetadataCacheKey, supabase, workflowEditionId],
+  );
+
+  const openWorkflowDialog = useCallback(
+    async (action: LibraryWorkflowAction) => {
+      if (!contextItem) return;
+      setWorkflowError("");
+      setWorkflowDialog(action);
+
+      if (action === "set-cover-metadata") {
+        setCoverMetadataMode("choose");
+        setCoverSourceUrl("");
+        setCoverFile(null);
+        setSourceTilesError("");
+        setSourceTiles([]);
+        setSelectedSourceKey("");
+        setCompareFields([]);
+        setCompareSelection({});
+        comparePrefetchAbortRef.current?.abort();
+        const selectedEditionId = await loadWorkflowEditions(
+          contextItem.work_id,
+        );
+        await loadCoverMetadataSources(
+          contextItem.work_id,
+          sourceLanguageFilter,
+          selectedEditionId,
+        );
+        return;
+      }
+      if (action === "log-progress") {
+        setProgressUnit("pages_read");
+        setProgressValue("");
+        setProgressNote("");
+        setProgressDate(new Date().toISOString().slice(0, 10));
+        return;
+      }
+      if (action === "add-note") {
+        setNewWorkflowNoteTitle("");
+        setNewWorkflowNoteBody("");
+        setNewWorkflowNoteVisibility("private");
+        return;
+      }
+      setReviewTitle("");
+      setReviewBody("");
+      setReviewVisibility("private");
+      setReviewRating("");
+    },
+    [
+      contextItem,
+      loadCoverMetadataSources,
+      loadWorkflowEditions,
+      sourceLanguageFilter,
+    ],
+  );
+
+  useEffect(() => {
+    if (
+      workflowDialog !== "set-cover-metadata" ||
+      coverMetadataMode !== "choose" ||
+      !contextItem ||
+      !sourceTiles.length
+    ) {
+      comparePrefetchAbortRef.current?.abort();
+      comparePrefetchAbortRef.current = null;
+      return;
+    }
+    const controller = new AbortController();
+    comparePrefetchAbortRef.current?.abort();
+    comparePrefetchAbortRef.current = controller;
+    const run = async () => {
+      for (const tile of sourceTiles) {
+        if (controller.signal.aborted) return;
+        const cacheKey = coverMetadataCacheKey(
+          contextItem.work_id,
+          tile.provider,
+          tile.source_id,
+          workflowEditionId,
+        );
+        if (compareCacheRef.current.has(cacheKey)) continue;
+        await loadCoverMetadataComparison(
+          contextItem.work_id,
+          tile.provider,
+          tile.source_id,
+          {
+            silent: true,
+            signal: controller.signal,
+            editionId: workflowEditionId,
+          },
+        );
+      }
+    };
+    void run();
+    return () => controller.abort();
+  }, [
+    contextItem,
+    coverMetadataCacheKey,
+    coverMetadataMode,
+    loadCoverMetadataComparison,
+    sourceTiles,
+    workflowDialog,
+    workflowEditionId,
+  ]);
+
+  const contextMenuModel = useMemo<MenuItem[]>(
+    () => [
+      {
+        label: "Set Cover and Metadata",
+        command: () => void openWorkflowDialog("set-cover-metadata"),
+      },
+      {
+        label: "Log Progress",
+        command: () => void openWorkflowDialog("log-progress"),
+      },
+      {
+        label: "Add Note",
+        command: () => void openWorkflowDialog("add-note"),
+      },
+      {
+        label: "Add Review",
+        command: () => void openWorkflowDialog("add-review"),
+      },
+    ],
+    [openWorkflowDialog],
+  );
+
+  const openContextMenuForItem = useCallback(
+    (event: SyntheticEvent, item: LibraryItem) => {
+      event.preventDefault();
+      setContextItem(item);
+      contextMenuRef.current?.show(event);
+    },
+    [],
+  );
+
+  const openContextMenuFromKeyboard = useCallback(
+    (event: ReactKeyboardEvent<HTMLElement>, item: LibraryItem) => {
+      const isContextMenuKey =
+        event.key === "ContextMenu" || (event.shiftKey && event.key === "F10");
+      if (!isContextMenuKey) return;
+      event.preventDefault();
+      const target = event.currentTarget;
+      const rect = target.getBoundingClientRect();
+      const syntheticEvent = {
+        pageX: rect.left + rect.width / 2 + window.scrollX,
+        pageY: rect.top + rect.height / 2 + window.scrollY,
+        target,
+        currentTarget: target,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      } as unknown as SyntheticEvent;
+      setContextItem(item);
+      contextMenuRef.current?.show(syntheticEvent);
+    },
+    [],
+  );
 
   /* ─── API ─── */
 
@@ -1318,6 +1726,275 @@ export default function LibraryPage() {
     }
   };
 
+  /* ─── Workflow dialogs ─── */
+
+  const closeWorkflowDialog = () => {
+    comparePrefetchAbortRef.current?.abort();
+    comparePrefetchAbortRef.current = null;
+    setWorkflowDialog(null);
+    setWorkflowError("");
+  };
+
+  const uploadCover = async () => {
+    if (!workflowEditionId || !coverFile) return;
+    setCoverBusy(true);
+    setWorkflowError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", coverFile);
+      await apiRequest<unknown>(
+        supabase,
+        `/api/v1/editions/${workflowEditionId}/cover`,
+        {
+          method: "POST",
+          body: fd,
+        },
+      );
+      toast.show({
+        severity: "success",
+        summary: "Cover uploaded.",
+        life: 2200,
+      });
+      closeWorkflowDialog();
+      await fetchPage();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiClientError ? err.message : "Unable to upload cover.",
+      );
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const cacheCover = async () => {
+    if (!workflowEditionId || !coverSourceUrl.trim()) return;
+    setCoverBusy(true);
+    setWorkflowError("");
+    try {
+      await apiRequest<unknown>(
+        supabase,
+        `/api/v1/editions/${workflowEditionId}/cover/cache`,
+        {
+          method: "POST",
+          body: { source_url: coverSourceUrl.trim() },
+        },
+      );
+      toast.show({
+        severity: "success",
+        summary: "Cover cached.",
+        life: 2200,
+      });
+      closeWorkflowDialog();
+      await fetchPage();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiClientError ? err.message : "Unable to cache cover.",
+      );
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const selectSourceTile = async (tile: ProviderSourceTile) => {
+    if (!contextItem) return;
+    setSelectedSourceKey(`${tile.provider}:${tile.source_id}`);
+    setWorkflowError("");
+    await loadCoverMetadataComparison(
+      contextItem.work_id,
+      tile.provider,
+      tile.source_id,
+      { editionId: workflowEditionId },
+    );
+  };
+
+  const resetComparisonToCurrent = () => {
+    setCompareSelection((current) => {
+      const reset: Record<string, "current" | "selected"> = {};
+      for (const key of Object.keys(current)) {
+        reset[key] = "current";
+      }
+      return reset;
+    });
+  };
+
+  const applySelectedCoverMetadata = async () => {
+    if (!contextItem) return;
+    setEnrichmentApplying(true);
+    setWorkflowError("");
+    try {
+      const selections = compareFields
+        .map((field) => {
+          const selection = compareSelection[field.field_key] ?? "current";
+          if (selection !== "selected" || !field.selected_available)
+            return null;
+          return {
+            field_key: field.field_key,
+            provider: field.provider,
+            provider_id: field.provider_id,
+            value: field.selected_value,
+          };
+        })
+        .filter(Boolean);
+      await apiRequest<unknown>(
+        supabase,
+        `/api/v1/works/${contextItem.work_id}/enrichment/apply`,
+        {
+          method: "POST",
+          body: {
+            edition_id: workflowEditionId || null,
+            selections,
+          },
+        },
+      );
+      toast.show({
+        severity: "success",
+        summary: "Cover and metadata updated.",
+        life: 2200,
+      });
+      closeWorkflowDialog();
+      await fetchPage();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiClientError
+          ? err.message
+          : "Unable to apply enrichment selections.",
+      );
+    } finally {
+      setEnrichmentApplying(false);
+    }
+  };
+
+  const ensureActiveCycle = async (itemId: string): Promise<string> => {
+    const cycles = await apiRequest<{ items: Array<{ id: string }> }>(
+      supabase,
+      `/api/v1/library/items/${itemId}/read-cycles`,
+      { query: { limit: 1 } },
+    );
+    const existing = cycles.items[0]?.id;
+    if (existing) return existing;
+    const created = await apiRequest<{ id: string }>(
+      supabase,
+      `/api/v1/library/items/${itemId}/read-cycles`,
+      {
+        method: "POST",
+        body: { started_at: new Date().toISOString() },
+      },
+    );
+    return created.id;
+  };
+
+  const submitProgressLog = async () => {
+    if (!contextItem) return;
+    const numeric = Number(progressValue.trim());
+    if (!Number.isFinite(numeric) || numeric < 0) {
+      setWorkflowError("Enter a valid progress value.");
+      return;
+    }
+    if (!progressDate) {
+      setWorkflowError("Select a date.");
+      return;
+    }
+    setProgressSaving(true);
+    setWorkflowError("");
+    try {
+      const cycleId = await ensureActiveCycle(contextItem.id);
+      await apiRequest<unknown>(
+        supabase,
+        `/api/v1/read-cycles/${cycleId}/progress-logs`,
+        {
+          method: "POST",
+          body: {
+            unit: progressUnit,
+            value:
+              progressUnit === "percent_complete"
+                ? Math.min(100, numeric)
+                : numeric,
+            logged_at: new Date(`${progressDate}T12:00:00.000Z`).toISOString(),
+            note: progressNote.trim() || null,
+          },
+        },
+      );
+      toast.show({
+        severity: "success",
+        summary: "Progress logged.",
+        life: 2200,
+      });
+      closeWorkflowDialog();
+      await fetchPage();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiClientError ? err.message : "Unable to log progress.",
+      );
+    } finally {
+      setProgressSaving(false);
+    }
+  };
+
+  const submitNote = async () => {
+    if (!contextItem || !newWorkflowNoteBody.trim()) return;
+    setWorkflowNoteSaving(true);
+    setWorkflowError("");
+    try {
+      await apiRequest<unknown>(
+        supabase,
+        `/api/v1/library/items/${contextItem.id}/notes`,
+        {
+          method: "POST",
+          body: {
+            title: newWorkflowNoteTitle.trim() || null,
+            body: newWorkflowNoteBody.trim(),
+            visibility: newWorkflowNoteVisibility,
+          },
+        },
+      );
+      toast.show({
+        severity: "success",
+        summary: "Note added.",
+        life: 2200,
+      });
+      closeWorkflowDialog();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiClientError ? err.message : "Unable to add note.",
+      );
+    } finally {
+      setWorkflowNoteSaving(false);
+    }
+  };
+
+  const submitReview = async () => {
+    if (!contextItem) return;
+    setReviewSaving(true);
+    setWorkflowError("");
+    try {
+      await apiRequest<unknown>(
+        supabase,
+        `/api/v1/works/${contextItem.work_id}/review`,
+        {
+          method: "POST",
+          body: {
+            title: reviewTitle.trim() || null,
+            body: reviewBody,
+            rating: reviewRating.trim() ? Number(reviewRating) : null,
+            visibility: reviewVisibility,
+          },
+        },
+      );
+      toast.show({
+        severity: "success",
+        summary: "Review saved.",
+        life: 2200,
+      });
+      closeWorkflowDialog();
+    } catch (err) {
+      setWorkflowError(
+        err instanceof ApiClientError ? err.message : "Unable to save review.",
+      );
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+
   /* ─── Inplace editors ─── */
 
   const renderStatusInplace = (item: LibraryItem) => {
@@ -1543,6 +2220,12 @@ export default function LibraryPage() {
         ) : null}
       </Card>
 
+      <ContextMenu
+        ref={contextMenuRef}
+        model={contextMenuModel}
+        data-test="library-context-menu"
+      />
+
       {error ? (
         <Message
           className="mt-3"
@@ -1602,6 +2285,10 @@ export default function LibraryPage() {
                   onSelectionChange={(e) =>
                     setSelectedMergeItems(e.value as LibraryItem[])
                   }
+                  onContextMenu={(event: {
+                    originalEvent: SyntheticEvent;
+                    data: LibraryItem;
+                  }) => openContextMenuForItem(event.originalEvent, event.data)}
                   dataKey="id"
                   selectionMode="multiple"
                   stripedRows
@@ -1896,7 +2583,19 @@ export default function LibraryPage() {
                       <span className="library-header-label">Actions</span>
                     }
                     body={(item: LibraryItem) => (
-                      <div className="flex justify-center">
+                      <div className="flex items-center justify-center gap-1">
+                        <Button
+                          icon="pi pi-ellipsis-v"
+                          size="small"
+                          text
+                          severity="secondary"
+                          aria-label="Open actions menu"
+                          className="opacity-70 transition-opacity hover:opacity-100"
+                          data-test={`library-item-context-trigger-${item.id}`}
+                          onClick={(event) =>
+                            openContextMenuForItem(event, item)
+                          }
+                        />
                         <Button
                           icon="pi pi-trash"
                           size="small"
@@ -1922,7 +2621,17 @@ export default function LibraryPage() {
               <div data-test="library-data-view">
                 {displayItems.map((item) => (
                   <div key={item.id} className="mb-3">
-                    <Card className="transition-shadow duration-200 hover:shadow-md">
+                    <Card
+                      className="transition-shadow duration-200 hover:shadow-md"
+                      data-test={`library-list-item-${item.id}`}
+                      tabIndex={0}
+                      onContextMenu={(event) =>
+                        openContextMenuForItem(event, item)
+                      }
+                      onKeyDown={(event) =>
+                        openContextMenuFromKeyboard(event, item)
+                      }
+                    >
                       <div className="grid grid-cols-1 gap-3 md:h-[16rem] md:grid-cols-[10.75rem_minmax(0,1fr)_auto] md:items-stretch md:gap-4">
                         <div className="mx-auto h-[168px] w-[112px] shrink-0 overflow-hidden rounded-lg border border-[var(--p-content-border-color)] md:mx-0 md:h-full md:w-full">
                           {item.cover_url ? (
@@ -2008,6 +2717,18 @@ export default function LibraryPage() {
                         </div>
                         <div className="shrink-0 md:self-start">
                           <Button
+                            icon="pi pi-ellipsis-v"
+                            size="small"
+                            text
+                            severity="secondary"
+                            className="self-start opacity-70 transition-opacity hover:opacity-100"
+                            aria-label="Open actions menu"
+                            data-test={`library-item-context-trigger-${item.id}`}
+                            onClick={(event) =>
+                              openContextMenuForItem(event, item)
+                            }
+                          />
+                          <Button
                             icon="pi pi-trash"
                             size="small"
                             text
@@ -2038,6 +2759,14 @@ export default function LibraryPage() {
                   <Card
                     key={item.id}
                     className="group h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
+                    data-test={`library-grid-item-${item.id}`}
+                    tabIndex={0}
+                    onContextMenu={(event) =>
+                      openContextMenuForItem(event, item)
+                    }
+                    onKeyDown={(event) =>
+                      openContextMenuFromKeyboard(event, item)
+                    }
                     pt={{
                       body: { style: { padding: "0.75rem" } },
                       content: { style: { padding: 0 } },
@@ -2068,7 +2797,20 @@ export default function LibraryPage() {
                         </div>
                         <div className="flex min-w-0 items-start justify-center">
                           <div className="flex h-full w-full flex-col items-center justify-between pb-1">
-                            <div className="flex w-full justify-end">
+                            <div className="flex w-full justify-end gap-1">
+                              <Button
+                                icon="pi pi-ellipsis-v"
+                                size="small"
+                                text
+                                severity="secondary"
+                                className="opacity-70 transition-opacity hover:opacity-100"
+                                style={{ paddingTop: 0, paddingBottom: 0 }}
+                                aria-label="Open actions menu"
+                                data-test={`library-item-context-trigger-${item.id}`}
+                                onClick={(event) =>
+                                  openContextMenuForItem(event, item)
+                                }
+                              />
                               <Button
                                 icon="pi pi-trash"
                                 size="small"
@@ -2529,6 +3271,111 @@ export default function LibraryPage() {
           </div>
         </div>
       </Dialog>
+
+      {/* ─── Context Workflow Dialogs ─── */}
+      <SetCoverAndMetadataDialog
+        visible={workflowDialog === "set-cover-metadata"}
+        onHide={() => {
+          if (!coverBusy && !enrichmentApplying) closeWorkflowDialog();
+        }}
+        headerTitle={`Set cover and metadata${contextItem ? ` · ${contextItem.work_title}` : ""}`}
+        workflowError={workflowError}
+        mode={coverMetadataMode}
+        loadingSources={sourceTilesLoading}
+        sourceError={sourceTilesError}
+        sourceLanguageFilter={sourceLanguageFilter}
+        sourceTiles={sourceTiles}
+        selectedSourceKey={selectedSourceKey}
+        compareLoading={compareFieldsLoading}
+        compareFields={compareFields}
+        fieldSelection={compareSelection}
+        enrichmentApplying={enrichmentApplying}
+        coverBusy={coverBusy}
+        workflowEditions={workflowEditions}
+        workflowEditionId={workflowEditionId}
+        coverSourceUrl={coverSourceUrl}
+        hasSelectedFile={coverFile !== null}
+        canEditEditionTarget={canEditWorkflowEditionTarget}
+        onModeChange={setCoverMetadataMode}
+        onSourceLanguageFilterChange={setSourceLanguageFilter}
+        onRefreshSources={() =>
+          contextItem
+            ? void loadCoverMetadataSources(
+                contextItem.work_id,
+                sourceLanguageFilter,
+                workflowEditionId,
+              )
+            : undefined
+        }
+        onSelectSource={(tile) => void selectSourceTile(tile)}
+        onResetAllToCurrent={resetComparisonToCurrent}
+        onApplySelected={() => void applySelectedCoverMetadata()}
+        onFieldSelectionChange={(fieldKey, value) =>
+          setCompareSelection((current) => ({
+            ...current,
+            [fieldKey]: value,
+          }))
+        }
+        onFileChange={setCoverFile}
+        onUploadCover={() => void uploadCover()}
+        onCoverSourceUrlChange={setCoverSourceUrl}
+        onCacheCover={() => void cacheCover()}
+      />
+
+      <LogProgressDialog
+        visible={workflowDialog === "log-progress"}
+        onHide={() => {
+          if (!progressSaving) closeWorkflowDialog();
+        }}
+        headerTitle={`Log progress${contextItem ? ` · ${contextItem.work_title}` : ""}`}
+        workflowError={workflowError}
+        progressUnit={progressUnit}
+        progressValue={progressValue}
+        progressDate={progressDate}
+        progressNote={progressNote}
+        progressSaving={progressSaving}
+        onProgressUnitChange={setProgressUnit}
+        onProgressValueChange={setProgressValue}
+        onProgressDateChange={setProgressDate}
+        onProgressNoteChange={setProgressNote}
+        onSubmit={() => void submitProgressLog()}
+      />
+
+      <AddNoteDialog
+        visible={workflowDialog === "add-note"}
+        onHide={() => {
+          if (!workflowNoteSaving) closeWorkflowDialog();
+        }}
+        headerTitle={`Add note${contextItem ? ` · ${contextItem.work_title}` : ""}`}
+        workflowError={workflowError}
+        title={newWorkflowNoteTitle}
+        body={newWorkflowNoteBody}
+        visibility={newWorkflowNoteVisibility}
+        saving={workflowNoteSaving}
+        onTitleChange={setNewWorkflowNoteTitle}
+        onBodyChange={setNewWorkflowNoteBody}
+        onVisibilityChange={setNewWorkflowNoteVisibility}
+        onSubmit={() => void submitNote()}
+      />
+
+      <AddReviewDialog
+        visible={workflowDialog === "add-review"}
+        onHide={() => {
+          if (!reviewSaving) closeWorkflowDialog();
+        }}
+        headerTitle={`Add review${contextItem ? ` · ${contextItem.work_title}` : ""}`}
+        workflowError={workflowError}
+        title={reviewTitle}
+        body={reviewBody}
+        visibility={reviewVisibility}
+        rating={reviewRating}
+        saving={reviewSaving}
+        onTitleChange={setReviewTitle}
+        onBodyChange={setReviewBody}
+        onVisibilityChange={setReviewVisibility}
+        onRatingChange={setReviewRating}
+        onSubmit={() => void submitReview()}
+      />
 
       {/* ─── Remove Confirmation Dialog ─── */}
       <Dialog

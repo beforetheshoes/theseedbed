@@ -6,13 +6,18 @@ const { apiRequestMock, chartRenderMock } = vi.hoisted(() => ({
   apiRequestMock: vi.fn(),
   chartRenderMock: vi.fn(),
 }));
+const { routerReplaceMock, searchParamsMock } = vi.hoisted(() => ({
+  routerReplaceMock: vi.fn(),
+  searchParamsMock: vi.fn(() => new URLSearchParams()),
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
     push: vi.fn(),
-    replace: vi.fn(),
+    replace: routerReplaceMock,
     prefetch: vi.fn(),
   }),
+  useSearchParams: () => searchParamsMock(),
 }));
 
 vi.mock("next/link", () => ({
@@ -137,6 +142,12 @@ function setupApiMock() {
           data_quality: { has_missing_totals: false },
         };
       }
+      if (path === "/api/v1/works/test-work/covers") {
+        return { items: [] };
+      }
+      if (path === "/api/v1/works/test-work/enrichment/candidates") {
+        return { fields: [] };
+      }
       throw new Error(`Unhandled apiRequest call: ${method} ${path}`);
     },
   );
@@ -146,6 +157,10 @@ describe("Book detail dark-mode surfaces", () => {
   beforeEach(() => {
     apiRequestMock.mockReset();
     chartRenderMock.mockReset();
+    routerReplaceMock.mockReset();
+    searchParamsMock.mockReset();
+    searchParamsMock.mockReturnValue(new URLSearchParams());
+    HTMLElement.prototype.scrollIntoView = vi.fn();
     setupApiMock();
   });
 
@@ -197,5 +212,52 @@ describe("Book detail dark-mode surfaces", () => {
     expect(lastChartProps.options.scales.y.grid.color).toBe(
       "rgba(148, 163, 184, 0.5)",
     );
+  });
+
+  it("handles set-cover workflow query, opens flow, and clears query", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("workflow=set-cover"));
+    render(
+      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
+    );
+
+    await waitFor(() =>
+      expect(apiRequestMock).toHaveBeenCalledWith(
+        expect.anything(),
+        "/api/v1/works/test-work/covers",
+        expect.objectContaining({ query: { limit: 30 } }),
+      ),
+    );
+
+    expect(routerReplaceMock).toHaveBeenCalledWith("/books/test-work");
+  });
+
+  it("handles add-note workflow query and focuses note input", async () => {
+    searchParamsMock.mockReturnValue(new URLSearchParams("workflow=add-note"));
+    render(
+      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
+    );
+
+    await waitFor(() =>
+      expect((document.activeElement as HTMLElement | null)?.id).toBe(
+        "note-body-input",
+      ),
+    );
+    expect(routerReplaceMock).toHaveBeenCalledWith("/books/test-work");
+  });
+
+  it("handles add-review workflow query and focuses review input", async () => {
+    searchParamsMock.mockReturnValue(
+      new URLSearchParams("workflow=add-review"),
+    );
+    render(
+      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
+    );
+
+    await waitFor(() =>
+      expect((document.activeElement as HTMLElement | null)?.id).toBe(
+        "review-body-input",
+      ),
+    );
+    expect(routerReplaceMock).toHaveBeenCalledWith("/books/test-work");
   });
 });

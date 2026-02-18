@@ -2,8 +2,8 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "primereact/avatar";
 import { Button } from "primereact/button";
 import { Calendar } from "primereact/calendar";
@@ -143,6 +143,24 @@ type EnrichmentField = {
   candidates: EnrichmentCandidate[];
 };
 
+type WorkflowQueryAction =
+  | "set-cover"
+  | "enrich-metadata"
+  | "log-progress"
+  | "add-note"
+  | "add-review";
+
+const WORKFLOW_QUERY_KEY = "workflow";
+
+const isWorkflowQueryAction = (
+  value: string | null,
+): value is WorkflowQueryAction =>
+  value === "set-cover" ||
+  value === "enrich-metadata" ||
+  value === "log-progress" ||
+  value === "add-note" ||
+  value === "add-review";
+
 function resolveThemeColor(variableName: string, fallback: string): string {
   if (typeof window === "undefined") return fallback;
   const value = getComputedStyle(document.documentElement)
@@ -187,8 +205,10 @@ export default function BookDetailPage({
   params: Promise<{ workId: string }>;
 }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createBrowserClient(), []);
   const toast = useAppToast();
+  const handledWorkflowRef = useRef<WorkflowQueryAction | null>(null);
 
   const [workId, setWorkId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -1392,7 +1412,7 @@ export default function BookDetailPage({
     }
   };
 
-  const loadCoverCandidates = async () => {
+  const loadCoverCandidates = useCallback(async () => {
     if (!workId) return;
     setCoverCandidatesLoading(true);
     setCoverError("");
@@ -1413,15 +1433,15 @@ export default function BookDetailPage({
     } finally {
       setCoverCandidatesLoading(false);
     }
-  };
+  }, [supabase, workId]);
 
-  const openCoverDialog = async () => {
+  const openCoverDialog = useCallback(async () => {
     setCoverDialogOpen(true);
     setCoverMode("choose");
     setCoverFile(null);
     setCoverSourceUrl("");
     await loadCoverCandidates();
-  };
+  }, [loadCoverCandidates]);
 
   const selectCoverCandidate = async (candidate: CoverCandidate) => {
     if (!workId) return;
@@ -1516,7 +1536,7 @@ export default function BookDetailPage({
     }
   };
 
-  const loadEnrichmentCandidates = async () => {
+  const loadEnrichmentCandidates = useCallback(async () => {
     if (!workId) return;
     setEnrichmentLoading(true);
     setError("");
@@ -1541,7 +1561,7 @@ export default function BookDetailPage({
     } finally {
       setEnrichmentLoading(false);
     }
-  };
+  }, [supabase, workId]);
 
   const applyEnrichmentSelections = async () => {
     if (!workId) return;
@@ -1752,6 +1772,72 @@ export default function BookDetailPage({
       setSavingReview(false);
     }
   };
+
+  const clearWorkflowQuery = useCallback(() => {
+    if (!workId) return;
+    const nextParams = new URLSearchParams(searchParams.toString());
+    nextParams.delete(WORKFLOW_QUERY_KEY);
+    const nextQuery = nextParams.toString();
+    router.replace(
+      nextQuery ? `/books/${workId}?${nextQuery}` : `/books/${workId}`,
+    );
+  }, [router, searchParams, workId]);
+
+  const scrollAndFocus = useCallback((selector: string) => {
+    const element = document.querySelector<HTMLElement>(selector);
+    if (!element) return;
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (element.tabIndex < 0) {
+      element.setAttribute("tabindex", "-1");
+    }
+    element.focus();
+  }, []);
+
+  useEffect(() => {
+    const workflow = searchParams.get(WORKFLOW_QUERY_KEY);
+    if (!isWorkflowQueryAction(workflow)) return;
+    if (workflow === handledWorkflowRef.current) return;
+    if (loading || !workId || !libraryItem) return;
+
+    handledWorkflowRef.current = workflow;
+
+    const finalize = () => {
+      clearWorkflowQuery();
+    };
+
+    if (workflow === "set-cover") {
+      void openCoverDialog().finally(finalize);
+      return;
+    }
+    if (workflow === "enrich-metadata") {
+      void loadEnrichmentCandidates().finally(() => {
+        scrollAndFocus('[data-test="metadata-enrichment-section"]');
+        finalize();
+      });
+      return;
+    }
+    if (workflow === "log-progress") {
+      scrollAndFocus('[data-test="log-session"]');
+      finalize();
+      return;
+    }
+    if (workflow === "add-note") {
+      scrollAndFocus("#note-body-input");
+      finalize();
+      return;
+    }
+    scrollAndFocus("#review-body-input");
+    finalize();
+  }, [
+    clearWorkflowQuery,
+    libraryItem,
+    loadEnrichmentCandidates,
+    loading,
+    openCoverDialog,
+    searchParams,
+    scrollAndFocus,
+    workId,
+  ]);
 
   return (
     <section
@@ -2478,7 +2564,9 @@ export default function BookDetailPage({
                   placeholder="Title (optional)"
                 />
                 <InputTextarea
+                  id="note-body-input"
                   className="mt-2 w-full"
+                  data-test="new-note-body"
                   value={newNoteBody}
                   onChange={(event) => setNewNoteBody(event.target.value)}
                   placeholder="Write a note"
@@ -2548,7 +2636,10 @@ export default function BookDetailPage({
                 )}
               </div>
 
-              <div className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4">
+              <div
+                className="mt-6 rounded border border-[var(--p-content-border-color)] bg-[var(--surface-card)] p-4"
+                data-test="metadata-enrichment-section"
+              >
                 <div className="flex items-center justify-between gap-2">
                   <p className="font-heading text-lg font-semibold tracking-tight">
                     Highlights
@@ -2805,7 +2896,9 @@ export default function BookDetailPage({
                   placeholder="Review title"
                 />
                 <InputTextarea
+                  id="review-body-input"
                   className="mt-2 w-full"
+                  data-test="review-body-input"
                   value={reviewBody}
                   onChange={(event) => setReviewBody(event.target.value)}
                   placeholder="Write your review"

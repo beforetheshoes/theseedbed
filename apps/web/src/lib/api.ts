@@ -63,6 +63,7 @@ export async function apiRequest<T>(
     method?: "GET" | "POST" | "PATCH" | "DELETE";
     query?: Record<string, string | number | undefined | null>;
     body?: unknown;
+    signal?: AbortSignal;
   },
 ): Promise<T> {
   const baseUrl = getApiBaseUrl();
@@ -81,6 +82,7 @@ export async function apiRequest<T>(
 
   const response = await fetch(url.toString(), {
     method: options?.method ?? "GET",
+    signal: options?.signal,
     headers: {
       Authorization: `Bearer ${token}`,
       ...(isFormData ? {} : { "Content-Type": "application/json" }),

@@ -42,6 +42,18 @@ class OpenLibraryWorkBundle:
 
 
 @dataclass(frozen=True)
+class OpenLibraryEditionSummary:
+    key: str
+    title: str | None
+    publisher: str | None
+    publish_date: str | None
+    language: str | None
+    isbn10: str | None
+    isbn13: str | None
+    cover_url: str | None
+
+
+@dataclass(frozen=True)
 class OpenLibraryRelatedWork:
     work_key: str
     title: str
@@ -727,6 +739,78 @@ class OpenLibraryClient:
             raw_work=work_payload,
             raw_edition=raw_edition,
         )
+
+    async def fetch_work_editions(
+        self,
+        *,
+        work_key: str,
+        limit: int = 20,
+        language: str | None = None,
+    ) -> list[OpenLibraryEditionSummary]:
+        normalized_work_key = _normalize_work_key(work_key)
+        payload = await self._request_json(
+            f"{normalized_work_key}/editions.json",
+            params={"limit": max(1, min(limit, 100))},
+        )
+        entries = payload.get("entries", [])
+        if not isinstance(entries, list):
+            return []
+
+        normalized_language = (
+            language.strip().lower()
+            if isinstance(language, str) and language.strip()
+            else None
+        )
+        items: list[OpenLibraryEditionSummary] = []
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            edition_key = entry.get("key")
+            if not isinstance(edition_key, str):
+                continue
+
+            entry_languages = _extract_language_codes(entry.get("languages"))
+            primary_language = entry_languages[0] if entry_languages else None
+            if (
+                normalized_language is not None
+                and primary_language is not None
+                and primary_language.lower() != normalized_language
+            ):
+                continue
+
+            title = entry.get("title") if isinstance(entry.get("title"), str) else None
+            publisher = _first_list_string(entry.get("publishers"))
+            publish_date = (
+                entry.get("publish_date")
+                if isinstance(entry.get("publish_date"), str)
+                else None
+            )
+            isbn10 = _first_list_string(entry.get("isbn_10"))
+            isbn13 = _first_list_string(entry.get("isbn_13"))
+
+            cover_url = None
+            covers = entry.get("covers")
+            if isinstance(covers, list):
+                for cover_id in covers:
+                    if isinstance(cover_id, int) and cover_id > 0:
+                        cover_url = (
+                            f"https://covers.openlibrary.org/b/id/{cover_id}-M.jpg"
+                        )
+                        break
+
+            items.append(
+                OpenLibraryEditionSummary(
+                    key=_normalize_edition_key(edition_key),
+                    title=title,
+                    publisher=publisher,
+                    publish_date=publish_date,
+                    language=primary_language,
+                    isbn10=isbn10,
+                    isbn13=isbn13,
+                    cover_url=cover_url,
+                )
+            )
+        return items
 
     async def find_work_key_by_isbn(self, *, isbn: str) -> str | None:
         normalized = isbn.strip().replace("-", "")
