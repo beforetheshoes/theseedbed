@@ -63,7 +63,7 @@ vi.mock("@/components/toast-provider", () => ({
   useAppToast: () => ({ show: vi.fn() }),
 }));
 
-import BookDetailPage from "@/app/(app)/books/[workId]/page";
+import BookDetailPageClient from "@/app/(app)/books/[workId]/book-detail-page-client";
 
 function setupApiMock() {
   apiRequestMock.mockImplementation(
@@ -166,7 +166,7 @@ describe("Book detail dark-mode surfaces", () => {
 
   it("uses tokenized surface classes and themed chart colors", async () => {
     const { container } = render(
-      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
+      <BookDetailPageClient initialWorkId="test-work" />,
     );
 
     await waitFor(() => {
@@ -216,9 +216,7 @@ describe("Book detail dark-mode surfaces", () => {
 
   it("handles set-cover workflow query, opens flow, and clears query", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("workflow=set-cover"));
-    render(
-      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
-    );
+    render(<BookDetailPageClient initialWorkId="test-work" />);
 
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenCalledWith(
@@ -233,9 +231,7 @@ describe("Book detail dark-mode surfaces", () => {
 
   it("handles add-note workflow query and focuses note input", async () => {
     searchParamsMock.mockReturnValue(new URLSearchParams("workflow=add-note"));
-    render(
-      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
-    );
+    render(<BookDetailPageClient initialWorkId="test-work" />);
 
     await waitFor(() =>
       expect((document.activeElement as HTMLElement | null)?.id).toBe(
@@ -249,9 +245,7 @@ describe("Book detail dark-mode surfaces", () => {
     searchParamsMock.mockReturnValue(
       new URLSearchParams("workflow=add-review"),
     );
-    render(
-      <BookDetailPage params={Promise.resolve({ workId: "test-work" })} />,
-    );
+    render(<BookDetailPageClient initialWorkId="test-work" />);
 
     await waitFor(() =>
       expect((document.activeElement as HTMLElement | null)?.id).toBe(

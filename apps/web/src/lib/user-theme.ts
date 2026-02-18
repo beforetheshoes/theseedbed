@@ -21,6 +21,8 @@ export type ThemeWarning = {
   message: string;
 };
 
+const USER_THEME_STORAGE_KEY = "seedbed.userTheme";
+
 const HEX_COLOR_REGEX = /^#[0-9A-Fa-f]{6}$/;
 const LIGHT_SURFACE = "#FFFFFF";
 const DARK_SURFACE = "#0F172A";
@@ -376,6 +378,20 @@ export const applyUserTheme = (settings: UserThemeSettings) => {
   lastAppliedPrimary = primary;
   void injectRecoloredTheme(primary);
 
+  try {
+    globalThis.localStorage?.setItem(
+      USER_THEME_STORAGE_KEY,
+      JSON.stringify({
+        theme_primary_color: primary,
+        theme_accent_color: accent,
+        theme_font_family: fontFamily,
+        theme_heading_font_family: headingFontFamily,
+      } satisfies UserThemeSettings),
+    );
+  } catch {
+    // Ignore storage failures and keep runtime theme application.
+  }
+
   return {
     primary,
     accent,
@@ -384,3 +400,13 @@ export const applyUserTheme = (settings: UserThemeSettings) => {
     warnings: getThemeWarnings(settings),
   };
 };
+
+export function readStoredUserTheme(): UserThemeSettings | null {
+  try {
+    const raw = globalThis.localStorage?.getItem(USER_THEME_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as UserThemeSettings;
+  } catch {
+    return null;
+  }
+}

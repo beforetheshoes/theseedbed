@@ -20,9 +20,9 @@ dev-up:
 	@make supabase-env
 	@make dev
 
-# Kill any listener on 3000, clear web build artifacts, then start dev servers
+# Kill any listener on 3000/3001/8000, clear web build artifacts, then start dev servers
 dev-codex:
-	@for port in 3000 8000; do \
+	@for port in 3000 3001 8000; do \
 		echo "Checking port $$port..."; \
 		pids="$$(lsof -nP -tiTCP:$$port -sTCP:LISTEN 2>/dev/null || true)"; \
 		if [ -n "$$pids" ]; then \

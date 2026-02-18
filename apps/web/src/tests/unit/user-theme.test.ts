@@ -5,6 +5,7 @@ import {
   getThemeWarnings,
   isThemeFontFamily,
   normalizeHexColor,
+  readStoredUserTheme,
   reapplyThemeRecolor,
 } from "@/lib/user-theme";
 
@@ -131,6 +132,47 @@ describe("user theme helpers", () => {
       theme_heading_font_family: "invalid" as never,
     });
     expect(result?.headingFontFamily).toBe("inter");
+  });
+
+  it("reads cached user theme from localStorage", () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+    });
+    globalThis.localStorage?.setItem(
+      "seedbed.userTheme",
+      JSON.stringify({
+        theme_primary_color: "#123456",
+        theme_accent_color: "#654321",
+      }),
+    );
+
+    expect(readStoredUserTheme()).toEqual({
+      theme_primary_color: "#123456",
+      theme_accent_color: "#654321",
+    });
+  });
+
+  it("handles bad localStorage values and storage write errors safely", () => {
+    vi.stubGlobal("localStorage", {
+      getItem: () => "{not json",
+      setItem: () => {
+        throw new Error("storage blocked");
+      },
+      removeItem: () => undefined,
+    });
+    expect(readStoredUserTheme()).toBeNull();
+    expect(() =>
+      applyUserTheme({
+        theme_primary_color: "#ABCDEF",
+      }),
+    ).not.toThrow();
   });
 });
 

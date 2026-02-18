@@ -2350,6 +2350,12 @@ export default function LibraryPage() {
       {/* Skeleton loading */}
       {loading ? (
         <div className="mt-4 grid gap-3" data-test="library-loading">
+          <p
+            className="text-sm text-[var(--p-text-muted-color)]"
+            data-test="library-loading-message"
+          >
+            Loading your library...
+          </p>
           {Array.from({ length: 4 }).map((_, index) => (
             <Card key={index}>
               <div className="flex items-start gap-4">
@@ -2733,7 +2739,7 @@ export default function LibraryPage() {
           {viewMode === "list" ? (
             <div className="mt-4 grid gap-3" data-test="library-items">
               <div data-test="library-data-view">
-                {displayItems.map((item) => (
+                {displayItems.map((item, index) => (
                   <div key={item.id} className="mb-3">
                     <Card
                       className="transition-shadow duration-200 hover:shadow-md"
@@ -2754,6 +2760,7 @@ export default function LibraryPage() {
                               alt=""
                               width={112}
                               height={168}
+                              loading={index < 4 ? "eager" : "lazy"}
                               unoptimized={shouldUseUnoptimizedForUrl(
                                 item.cover_url,
                               )}
@@ -2871,7 +2878,7 @@ export default function LibraryPage() {
                 className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
                 data-test="library-items-grid"
               >
-                {displayItems.map((item) => (
+                {displayItems.map((item, index) => (
                   <Card
                     key={item.id}
                     className="group h-full transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg"
@@ -2903,6 +2910,7 @@ export default function LibraryPage() {
                               alt=""
                               width={256}
                               height={384}
+                              loading={index < 4 ? "eager" : "lazy"}
                               unoptimized={shouldUseUnoptimizedForUrl(
                                 item.cover_url,
                               )}
