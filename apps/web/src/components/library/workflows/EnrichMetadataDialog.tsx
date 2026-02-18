@@ -12,6 +12,7 @@ import type {
   EnrichmentCandidate,
   EnrichmentField,
 } from "@/components/library/workflows/types";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 
 type SelectionValue = "keep" | "openlibrary" | "googlebooks";
 
@@ -243,7 +244,9 @@ export function EnrichMetadataDialog({
                                 alt=""
                                 width={240}
                                 height={144}
-                                unoptimized
+                                unoptimized={shouldUseUnoptimizedForUrl(
+                                  toImageUrl(field.current_value),
+                                )}
                                 className="h-36 w-full bg-black/5 object-contain"
                               />
                             ) : (
@@ -314,7 +317,12 @@ export function EnrichMetadataDialog({
                                   alt=""
                                   width={240}
                                   height={144}
-                                  unoptimized
+                                  unoptimized={shouldUseUnoptimizedForUrl(
+                                    toImageUrl(
+                                      candidate?.display_value ||
+                                        candidate?.value,
+                                    ),
+                                  )}
                                   className="h-36 w-full bg-black/5 object-contain"
                                 />
                               ) : (

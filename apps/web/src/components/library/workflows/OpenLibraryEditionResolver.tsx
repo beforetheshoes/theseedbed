@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { Button } from "primereact/button";
 import { InputText } from "primereact/inputtext";
 import { Message } from "primereact/message";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 
 export type OpenLibraryEditionCandidate = {
   work_key: string;
@@ -106,7 +107,7 @@ export function OpenLibraryEditionResolver({
                       alt=""
                       width={120}
                       height={180}
-                      unoptimized
+                      unoptimized={shouldUseUnoptimizedForUrl(item.cover_url)}
                       className="mx-auto h-full w-auto max-w-full object-contain"
                     />
                   ) : null}

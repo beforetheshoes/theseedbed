@@ -10,6 +10,7 @@ import { InputText } from "primereact/inputtext";
 import { Message } from "primereact/message";
 import { Skeleton } from "primereact/skeleton";
 import { ApiClientError, apiRequest } from "@/lib/api";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 import { createBrowserClient } from "@/lib/supabase/browser";
 import { useAppToast } from "@/components/toast-provider";
 
@@ -483,7 +484,9 @@ export default function BookSearchPage() {
                         alt=""
                         width={80}
                         height={120}
-                        unoptimized
+                        unoptimized={shouldUseUnoptimizedForUrl(
+                          book.cover_url ?? "",
+                        )}
                         className="h-full w-full object-cover"
                         data-test="search-item-cover"
                         onError={() => {

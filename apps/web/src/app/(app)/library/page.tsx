@@ -39,6 +39,7 @@ import type {
 import type { Edition } from "@/components/library/workflows/types";
 import { ApiClientError, apiRequest } from "@/lib/api";
 import { renderDescriptionHtml } from "@/lib/description";
+import { shouldUseUnoptimizedForUrl } from "@/lib/image-optimization";
 import {
   fromCanonicalPercent,
   toCanonicalPercent,
@@ -2428,7 +2429,9 @@ export default function LibraryPage() {
                                 alt=""
                                 width={40}
                                 height={56}
-                                unoptimized
+                                unoptimized={shouldUseUnoptimizedForUrl(
+                                  item.cover_url,
+                                )}
                                 className="h-full w-full object-cover"
                                 data-test="library-item-cover"
                               />
@@ -2751,7 +2754,9 @@ export default function LibraryPage() {
                               alt=""
                               width={112}
                               height={168}
-                              unoptimized
+                              unoptimized={shouldUseUnoptimizedForUrl(
+                                item.cover_url,
+                              )}
                               className="h-full w-full object-contain"
                               data-test="library-item-cover"
                             />
@@ -2898,7 +2903,9 @@ export default function LibraryPage() {
                               alt=""
                               width={256}
                               height={384}
-                              unoptimized
+                              unoptimized={shouldUseUnoptimizedForUrl(
+                                item.cover_url,
+                              )}
                               className="block h-full w-full object-cover"
                               data-test="library-item-cover"
                             />
