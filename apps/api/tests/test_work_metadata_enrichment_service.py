@@ -37,9 +37,11 @@ from app.services.work_metadata_enrichment import (
     _list_isbn_queries,
     _normalize_isbn,
     _normalize_match_text,
+    _normalize_positive_int,
     _normalize_publish_date,
     _normalize_selection_value,
     _normalize_year,
+    _parse_duration_minutes,
     _resolve_openlibrary_work_key,
     _resolve_target_edition,
     _source_label,
@@ -1096,7 +1098,28 @@ def test_normalize_selection_value_variants() -> None:
     )
     assert _normalize_selection_value("edition.isbn10", "0123456789") == "0123456789"
     assert _normalize_selection_value("edition.isbn13", "bad") is None
+    assert _normalize_selection_value("edition.total_pages", "321") == 321
+    assert _normalize_selection_value("edition.total_audio_minutes", 42.5) == 42
     assert _normalize_selection_value("unknown", "x") is None
+
+
+def test_normalize_positive_int_and_duration_variants() -> None:
+    assert _normalize_positive_int(10) == 10
+    assert _normalize_positive_int(0) is None
+    assert _normalize_positive_int(12.8) == 12
+    assert _normalize_positive_int(" 15 ") == 15
+    assert _normalize_positive_int("x") is None
+
+    assert _parse_duration_minutes(90) == 90
+    assert _parse_duration_minutes(0) is None
+    assert _parse_duration_minutes(89.9) == 89
+    assert _parse_duration_minutes("120") == 120
+    assert _parse_duration_minutes("1:30:00") == 90
+    assert _parse_duration_minutes("1:30") == 90
+    assert _parse_duration_minutes("2h 15m") == 135
+    assert _parse_duration_minutes("45m") == 45
+    assert _parse_duration_minutes("  ") is None
+    assert _parse_duration_minutes("n/a") is None
 
 
 def test_apply_enrichment_openlibrary_selection_skips_without_work_key(
@@ -1139,6 +1162,58 @@ def test_apply_enrichment_openlibrary_selection_skips_without_work_key(
         )
     )
     assert result["updated"] == ["work.description"]
+
+
+def test_apply_enrichment_selections_sets_edition_totals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeSession()
+    work_id = uuid.uuid4()
+    work = Work(id=work_id, title="Book")
+    edition = Edition(id=uuid.uuid4(), work_id=work_id)
+
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_work",
+        lambda *_args, **_kwargs: work,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._resolve_target_edition",
+        lambda *_args, **_kwargs: edition,
+    )
+    monkeypatch.setattr(
+        "app.services.work_metadata_enrichment._get_openlibrary_work_key",
+        lambda *_args, **_kwargs: "/works/OL1W",
+    )
+
+    result = asyncio.run(
+        apply_enrichment_selections(
+            cast(Any, session),
+            user_id=uuid.uuid4(),
+            work_id=work_id,
+            selections=[
+                {
+                    "field_key": "edition.total_pages",
+                    "provider": "openlibrary",
+                    "provider_id": "/works/OL1W",
+                    "value": "880",
+                },
+                {
+                    "field_key": "edition.total_audio_minutes",
+                    "provider": "openlibrary",
+                    "provider_id": "/works/OL1W",
+                    "value": 637,
+                },
+            ],
+            edition_id=None,
+            open_library=cast(Any, FakeOpenLibrary(_openlibrary_bundle())),
+            google_books=cast(Any, FakeGoogleBooks({})),
+            google_enabled=False,
+        )
+    )
+    assert edition.total_pages == 880
+    assert edition.total_audio_minutes == 637
+    assert "edition.total_pages" in result["updated"]
+    assert "edition.total_audio_minutes" in result["updated"]
 
 
 def test_google_matching_helpers_and_labels() -> None:
