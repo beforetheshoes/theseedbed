@@ -14,7 +14,6 @@ import { config, proxy } from "../../proxy";
 
 const MATCHER =
   "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)";
-const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 
 function requestFor(path: string, headers?: HeadersInit) {
   return new NextRequest(`http://localhost${path}`, { headers });
@@ -23,11 +22,11 @@ function requestFor(path: string, headers?: HeadersInit) {
 describe("proxy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    vi.unstubAllEnvs();
   });
 
   afterEach(() => {
-    process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+    vi.unstubAllEnvs();
   });
 
   it("keeps matcher configuration unchanged", () => {
@@ -60,7 +59,7 @@ describe("proxy", () => {
   });
 
   it("redirects unauthenticated protected routes in production", async () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     const passthroughResponse = NextResponse.next();
     updateSessionMock.mockResolvedValue({
       response: passthroughResponse,
@@ -76,7 +75,7 @@ describe("proxy", () => {
   });
 
   it("does not redirect unauthenticated protected routes in development", async () => {
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
     const passthroughResponse = NextResponse.next();
     updateSessionMock.mockResolvedValue({
       response: passthroughResponse,
@@ -89,7 +88,7 @@ describe("proxy", () => {
   });
 
   it("returns passthrough response for non-protected routes", async () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     const passthroughResponse = NextResponse.next();
     updateSessionMock.mockResolvedValue({
       response: passthroughResponse,
