@@ -31,6 +31,24 @@ describe("user theme helpers", () => {
     expect(isThemeFontFamily(null)).toBe(false);
   });
 
+  it("maps each theme font family to a next/font CSS variable stack", () => {
+    expect(FONT_FAMILY_STACKS.atkinson).toContain("var(--font-atkinson)");
+    expect(FONT_FAMILY_STACKS.ibm_plex_sans).toContain(
+      "var(--font-ibm-plex-sans)",
+    );
+    expect(FONT_FAMILY_STACKS.fraunces).toContain("var(--font-fraunces)");
+    expect(FONT_FAMILY_STACKS.inter).toContain("var(--font-inter)");
+    expect(FONT_FAMILY_STACKS.averia_libre).toContain(
+      "var(--font-averia-libre)",
+    );
+    expect(FONT_FAMILY_STACKS.dongle).toContain("var(--font-dongle)");
+    expect(FONT_FAMILY_STACKS.nunito_sans).toContain("var(--font-nunito-sans)");
+    expect(FONT_FAMILY_STACKS.lora).toContain("var(--font-lora)");
+    expect(FONT_FAMILY_STACKS.libre_baskerville).toContain(
+      "var(--font-libre-baskerville)",
+    );
+  });
+
   it("warns for low-contrast colors", () => {
     const warnings = getThemeWarnings({
       theme_primary_color: "#FFFFFF",

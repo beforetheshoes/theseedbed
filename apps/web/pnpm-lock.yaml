@@ -7,33 +7,6 @@ settings:
 importers:
   .:
     dependencies:
-      "@fontsource/atkinson-hyperlegible":
-        specifier: ^5.2.8
-        version: 5.2.8
-      "@fontsource/averia-libre":
-        specifier: ^5.2.7
-        version: 5.2.7
-      "@fontsource/dongle":
-        specifier: ^5.2.7
-        version: 5.2.7
-      "@fontsource/fraunces":
-        specifier: ^5.2.9
-        version: 5.2.9
-      "@fontsource/ibm-plex-sans":
-        specifier: ^5.2.8
-        version: 5.2.8
-      "@fontsource/inter":
-        specifier: ^5.2.8
-        version: 5.2.8
-      "@fontsource/libre-baskerville":
-        specifier: ^5.2.10
-        version: 5.2.10
-      "@fontsource/lora":
-        specifier: ^5.2.8
-        version: 5.2.8
-      "@fontsource/nunito-sans":
-        specifier: ^5.2.7
-        version: 5.2.7
       "@primeuix/themes":
         specifier: 2.0.3
         version: 2.0.3
@@ -668,60 +641,6 @@ packages:
     peerDependenciesMeta:
       "@noble/hashes":
         optional: true
-
-  "@fontsource/atkinson-hyperlegible@5.2.8":
-    resolution:
-      {
-        integrity: sha512-HciLcJ5DIK/OVOdo71EbEN4NnvDFlp6/SpAxtcbWf2aAdcsOuPqITxj5KNEXb48qSPSdnnZdGGnSJChPKi3/bA==,
-      }
-
-  "@fontsource/averia-libre@5.2.7":
-    resolution:
-      {
-        integrity: sha512-wj2M7MyrKFiWR+H6BqAhYXu1RwPuqkifyEr+APVySV9Na1WUiJ1aVzgzy9mGOdIO5T9Rtsfe2QaadeicvbNZ/w==,
-      }
-
-  "@fontsource/dongle@5.2.7":
-    resolution:
-      {
-        integrity: sha512-oq/C+mEjjDNVQZLxBFbDNjjAW5qa2BbBMsfeaJl9iuOuXGjYUR9q3xPcJg+xQ9WVGJbbBm/BwrRhApK5yqZtuw==,
-      }
-
-  "@fontsource/fraunces@5.2.9":
-    resolution:
-      {
-        integrity: sha512-XDzuddBtoC7BZgZdBn6b7hsFZY2+V1hgN7yca5fBTKuHjb/lOd45a0Ji8dTUgFhPoL7RdGupo+bC2BFSt6UH8Q==,
-      }
-
-  "@fontsource/ibm-plex-sans@5.2.8":
-    resolution:
-      {
-        integrity: sha512-eztSXjDhPhcpxNIiGTgMebdLP9qS4rWkysuE1V7c+DjOR0qiezaiDaTwQE7bTnG5HxAY/8M43XKDvs3cYq6ZYQ==,
-      }
-
-  "@fontsource/inter@5.2.8":
-    resolution:
-      {
-        integrity: sha512-P6r5WnJoKiNVV+zvW2xM13gNdFhAEpQ9dQJHt3naLvfg+LkF2ldgSLiF4T41lf1SQCM9QmkqPTn4TH568IRagg==,
-      }
-
-  "@fontsource/libre-baskerville@5.2.10":
-    resolution:
-      {
-        integrity: sha512-Y/bGj4cOdWhAxU4+sBPen3MB5Og3t/WvezVL+05CJ7cvhDQUKpQFUuw/hm1IQKRc9u0lWs8VP2MKDOK2uQtloQ==,
-      }
-
-  "@fontsource/lora@5.2.8":
-    resolution:
-      {
-        integrity: sha512-AQlfsHw4TP1x/eb2IZ6VjQ70ctKa39m9JN9A4zlvDOeKYLrCs+GaYIEQ86Y6YfSPGHn01bErXkRcyktOW0LOPQ==,
-      }
-
-  "@fontsource/nunito-sans@5.2.7":
-    resolution:
-      {
-        integrity: sha512-Vh+xhMsrH1eA9Q83Va82su3rDmNilYg+ur/TfHAOyr5kTpCOWMB8B1tDoJvSe+yJPpZ2jEWtnBHGqI2LUPVxUA==,
-      }
 
   "@humanfs/core@0.19.1":
     resolution:
@@ -5123,24 +5042,6 @@ snapshots:
       levn: 0.4.1
 
   "@exodus/bytes@1.14.1": {}
-
-  "@fontsource/atkinson-hyperlegible@5.2.8": {}
-
-  "@fontsource/averia-libre@5.2.7": {}
-
-  "@fontsource/dongle@5.2.7": {}
-
-  "@fontsource/fraunces@5.2.9": {}
-
-  "@fontsource/ibm-plex-sans@5.2.8": {}
-
-  "@fontsource/inter@5.2.8": {}
-
-  "@fontsource/libre-baskerville@5.2.10": {}
-
-  "@fontsource/lora@5.2.8": {}
-
-  "@fontsource/nunito-sans@5.2.7": {}
 
   "@humanfs/core@0.19.1": {}
 

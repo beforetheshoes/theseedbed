@@ -7,6 +7,7 @@ import { ColorModeController } from "@/components/color-mode-controller";
 import { PrimeProvider } from "@/components/prime-react-provider";
 import { ToastProvider } from "@/components/toast-provider";
 import { UserThemeBootstrap } from "@/components/user-theme-bootstrap";
+import { appFontVariablesClassName } from "@/app/fonts";
 import type { ColorMode } from "@/lib/color-mode";
 
 export const metadata: Metadata = {
@@ -29,6 +30,7 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
+      className={appFontVariablesClassName}
       data-app-ready="false"
       data-color-mode={initialColorMode}
       suppressHydrationWarning

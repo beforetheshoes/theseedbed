@@ -32,15 +32,17 @@ const DEFAULT_FONT_FAMILY: ThemeFontFamily = "ibm_plex_sans";
 const MIN_SURFACE_CONTRAST = 3;
 
 export const FONT_FAMILY_STACKS: Record<ThemeFontFamily, string> = {
-  atkinson: "'Atkinson Hyperlegible', ui-sans-serif, system-ui, sans-serif",
-  ibm_plex_sans: "'IBM Plex Sans', ui-sans-serif, system-ui, sans-serif",
-  fraunces: "'Fraunces', ui-serif, Georgia, serif",
-  inter: "'Inter', ui-sans-serif, system-ui, sans-serif",
-  averia_libre: "'Averia Libre', ui-sans-serif, system-ui, sans-serif",
-  dongle: "'Dongle', ui-sans-serif, system-ui, sans-serif",
-  nunito_sans: "'Nunito Sans', ui-sans-serif, system-ui, sans-serif",
-  lora: "'Lora', ui-serif, Georgia, serif",
-  libre_baskerville: "'Libre Baskerville', ui-serif, Georgia, serif",
+  atkinson: "var(--font-atkinson), ui-sans-serif, system-ui, sans-serif",
+  ibm_plex_sans:
+    "var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif",
+  fraunces: "var(--font-fraunces), ui-serif, Georgia, serif",
+  inter: "var(--font-inter), ui-sans-serif, system-ui, sans-serif",
+  averia_libre:
+    "var(--font-averia-libre), ui-sans-serif, system-ui, sans-serif",
+  dongle: "var(--font-dongle), ui-sans-serif, system-ui, sans-serif",
+  nunito_sans: "var(--font-nunito-sans), ui-sans-serif, system-ui, sans-serif",
+  lora: "var(--font-lora), ui-serif, Georgia, serif",
+  libre_baskerville: "var(--font-libre-baskerville), ui-serif, Georgia, serif",
 };
 
 export const FONT_LABELS: Record<ThemeFontFamily, string> = {
