@@ -39,6 +39,7 @@ def test_users_table_schema() -> None:
         "theme_font_family",
         "theme_heading_font_family",
         "default_progress_unit",
+        "default_source_language",
         "actor_uri",
         "created_at",
         "updated_at",
@@ -55,6 +56,8 @@ def test_users_table_schema() -> None:
     assert isinstance(table.columns["theme_accent_color"].type, sa.Text)
     assert isinstance(table.columns["theme_font_family"].type, sa.String)
     assert table.columns["theme_font_family"].type.length == 32
+    assert isinstance(table.columns["default_source_language"].type, sa.String)
+    assert table.columns["default_source_language"].type.length == 8
     assert isinstance(table.columns["default_progress_unit"].type, sa.Enum)
     assert table.columns["default_progress_unit"].type.enums == [
         "pages_read",

@@ -52,6 +52,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             theme_font_family=None,
             theme_heading_font_family=None,
             default_progress_unit="pages_read",
+            default_source_language="eng",
         ),
     )
 
@@ -68,6 +69,7 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
         theme_font_family: str | None,
         theme_heading_font_family: str | None,
         default_progress_unit: str | None,
+        default_source_language: str | None,
     ) -> SimpleNamespace:
         if theme_primary_color is not None and not re.fullmatch(
             r"^#[0-9A-Fa-f]{6}$", theme_primary_color
@@ -99,6 +101,12 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             raise ValueError(
                 f"theme_heading_font_family must be one of: {', '.join(sorted(_valid_fonts))}"
             )
+        if default_source_language is not None and not re.fullmatch(
+            r"^[a-z]{2,3}$", default_source_language.strip().lower()
+        ):
+            raise ValueError(
+                "default_source_language must be a 2-3 letter lowercase language code"
+            )
         return SimpleNamespace(
             id=user_id,
             handle=handle or "seed",
@@ -112,6 +120,12 @@ def app(monkeypatch: pytest.MonkeyPatch) -> Generator[FastAPI, None, None]:
             theme_font_family=theme_font_family,
             theme_heading_font_family=theme_heading_font_family,
             default_progress_unit=default_progress_unit or "pages_read",
+            default_source_language=(
+                default_source_language.strip().lower()
+                if isinstance(default_source_language, str)
+                and default_source_language.strip()
+                else "eng"
+            ),
         )
 
     monkeypatch.setattr("app.routers.me.update_profile", _fake_update_profile)
@@ -193,6 +207,7 @@ def test_get_me(app: FastAPI) -> None:
     assert response.json()["data"]["theme_font_family"] is None
     assert response.json()["data"]["theme_heading_font_family"] is None
     assert response.json()["data"]["default_progress_unit"] == "pages_read"
+    assert response.json()["data"]["default_source_language"] == "eng"
 
 
 def test_patch_me(app: FastAPI) -> None:
@@ -216,6 +231,19 @@ def test_patch_me_updates_default_progress_unit(app: FastAPI) -> None:
     )
     assert response.status_code == 200
     assert response.json()["data"]["default_progress_unit"] == "minutes_listened"
+
+
+def test_patch_me_updates_default_source_language(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch("/api/v1/me", json={"default_source_language": "spa"})
+    assert response.status_code == 200
+    assert response.json()["data"]["default_source_language"] == "spa"
+
+
+def test_patch_me_rejects_invalid_default_source_language(app: FastAPI) -> None:
+    client = TestClient(app)
+    response = client.patch("/api/v1/me", json={"default_source_language": "english"})
+    assert response.status_code == 422
 
 
 def test_patch_me_updates_theme_settings(app: FastAPI) -> None:

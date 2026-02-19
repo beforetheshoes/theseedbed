@@ -28,7 +28,9 @@ ProgressUnit: TypeAlias = Literal[
 DEFAULT_LIBRARY_STATUS: LibraryItemStatus = "to_read"
 DEFAULT_LIBRARY_VISIBILITY: LibraryItemVisibility = "private"
 DEFAULT_PROGRESS_UNIT: ProgressUnit = "pages_read"
+DEFAULT_SOURCE_LANGUAGE = "eng"
 HEX_COLOR_PATTERN = re.compile(r"^#[0-9A-Fa-f]{6}$")
+SOURCE_LANGUAGE_PATTERN = re.compile(r"^[a-z]{2,3}$")
 LibraryItemSortMode: TypeAlias = Literal[
     "newest",
     "oldest",
@@ -63,6 +65,7 @@ def get_or_create_profile(session: Session, *, user_id: uuid.UUID) -> User:
         theme_font_family=None,
         theme_heading_font_family=None,
         default_progress_unit=DEFAULT_PROGRESS_UNIT,
+        default_source_language=DEFAULT_SOURCE_LANGUAGE,
     )
     session.add(profile)
     session.commit()
@@ -82,6 +85,7 @@ def update_profile(
     theme_font_family: str | None,
     theme_heading_font_family: str | None,
     default_progress_unit: ProgressUnit | None,
+    default_source_language: str | None,
 ) -> User:
     profile = get_or_create_profile(session, user_id=user_id)
 
@@ -146,6 +150,14 @@ def update_profile(
 
     if default_progress_unit is not None:
         profile.default_progress_unit = default_progress_unit
+
+    if default_source_language is not None:
+        normalized = default_source_language.strip().lower()
+        if not SOURCE_LANGUAGE_PATTERN.fullmatch(normalized):
+            raise ValueError(
+                "default_source_language must be a 2-3 letter lowercase language code"
+            )
+        profile.default_source_language = normalized
 
     session.commit()
     return profile

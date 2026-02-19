@@ -5,6 +5,7 @@ import { Button } from "primereact/button";
 import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
 import { Message } from "primereact/message";
+import { MultiSelect } from "primereact/multiselect";
 import { SelectButton } from "primereact/selectbutton";
 import type { Edition } from "@/components/library/workflows/types";
 import { renderDescriptionHtml } from "@/lib/description";
@@ -16,6 +17,7 @@ type SelectionValue = "current" | "selected";
 export type ProviderSourceTile = {
   provider: "openlibrary" | "googlebooks";
   source_id: string;
+  openlibrary_work_key?: string | null;
   title: string;
   authors: string[];
   publisher: string | null;
@@ -43,7 +45,10 @@ type Props = {
   mode: CoverMetadataMode;
   loadingSources: boolean;
   sourceError: string;
-  sourceLanguageFilter: string;
+  sourceSearchTitle: string;
+  sourceLanguages: string[];
+  languageOptions: Array<{ label: string; value: string }>;
+  defaultSourceLanguage: string;
   sourceTiles: ProviderSourceTile[];
   selectedSourceKey: string;
   compareLoading: boolean;
@@ -58,7 +63,8 @@ type Props = {
   canEditEditionTarget: boolean;
   onHide: () => void;
   onModeChange: (mode: CoverMetadataMode) => void;
-  onSourceLanguageFilterChange: (value: string) => void;
+  onSourceSearchTitleChange: (value: string) => void;
+  onSourceLanguagesChange: (values: string[]) => void;
   onRefreshSources: () => void;
   onSelectSource: (tile: ProviderSourceTile) => void;
   onResetAllToCurrent: () => void;
@@ -86,9 +92,9 @@ const toImageUrl = (value: unknown) => {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
   if (!trimmed) return "";
-  return trimmed.startsWith("http://") || trimmed.startsWith("https://")
-    ? trimmed
-    : "";
+  if (trimmed.startsWith("/")) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return "";
 };
 
 const renderFieldText = (fieldKey: string, value: unknown) => {
@@ -121,7 +127,10 @@ export function SetCoverAndMetadataDialog({
   mode,
   loadingSources,
   sourceError,
-  sourceLanguageFilter,
+  sourceSearchTitle,
+  sourceLanguages,
+  languageOptions,
+  defaultSourceLanguage,
   sourceTiles,
   selectedSourceKey,
   compareLoading,
@@ -136,7 +145,8 @@ export function SetCoverAndMetadataDialog({
   canEditEditionTarget,
   onHide,
   onModeChange,
-  onSourceLanguageFilterChange,
+  onSourceSearchTitleChange,
+  onSourceLanguagesChange,
   onRefreshSources,
   onSelectSource,
   onResetAllToCurrent,
@@ -178,30 +188,79 @@ export function SetCoverAndMetadataDialog({
         {mode === "choose" ? (
           <div className="flex min-h-0 flex-col gap-3">
             <div className="rounded-lg border border-[var(--p-content-border-color)] bg-[var(--surface-ground)] p-3">
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <div className="mb-2">
                 <p className="text-sm font-medium">Find editions and volumes</p>
-                <div className="flex items-center gap-2">
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex w-[30rem] max-w-full flex-col gap-1">
+                  <label
+                    htmlFor="cover-metadata-search-title"
+                    className="text-[11px] text-[var(--p-text-muted-color)]"
+                  >
+                    Search title
+                  </label>
                   <InputText
-                    value={sourceLanguageFilter}
+                    id="cover-metadata-search-title"
+                    value={sourceSearchTitle}
                     onChange={(event) =>
-                      onSourceLanguageFilterChange(event.target.value)
+                      onSourceSearchTitleChange(event.target.value)
                     }
-                    placeholder="Language (e.g. eng)"
-                    className="w-[11rem]"
-                  />
-                  <Button
-                    label="Refresh"
-                    size="small"
-                    severity="secondary"
-                    outlined
-                    loading={loadingSources}
-                    onClick={onRefreshSources}
+                    placeholder="Enter title"
+                    className="h-9 w-full"
+                    data-test="cover-metadata-title-input"
                   />
                 </div>
+                <div className="flex w-[20rem] max-w-full flex-col gap-1">
+                  <label
+                    htmlFor="cover-metadata-language-select"
+                    className="text-[11px] text-[var(--p-text-muted-color)]"
+                  >
+                    Languages
+                  </label>
+                  <MultiSelect
+                    inputId="cover-metadata-language-select"
+                    value={sourceLanguages}
+                    options={languageOptions}
+                    optionLabel="label"
+                    optionValue="value"
+                    appendTo="self"
+                    onChange={(event) =>
+                      onSourceLanguagesChange(
+                        Array.isArray(event.value)
+                          ? (event.value as string[])
+                          : [],
+                      )
+                    }
+                    className="h-9 w-full"
+                    panelClassName="max-w-[20rem]"
+                    display="chip"
+                    maxSelectedLabels={3}
+                    selectedItemsLabel="{0} selected"
+                    pt={{
+                      root: { className: "h-9" },
+                      labelContainer: { className: "flex h-full items-center" },
+                      label: { className: "py-0" },
+                    }}
+                    data-test="cover-metadata-language-select"
+                  />
+                </div>
+                <Button
+                  label="Search"
+                  severity="secondary"
+                  outlined
+                  loading={loadingSources}
+                  onClick={onRefreshSources}
+                  className="h-9 px-3"
+                />
               </div>
               {sourceError ? (
                 <Message severity="error" text={sourceError} />
               ) : null}
+              <p className="mt-2 text-xs text-[var(--p-text-muted-color)]">
+                Default language{" "}
+                <span className="font-mono">{defaultSourceLanguage}</span> is
+                always included.
+              </p>
 
               <div className="grid max-h-[34vh] gap-3 overflow-auto pr-1 md:grid-cols-2 2xl:grid-cols-3">
                 {sourceTiles.map((item) => {

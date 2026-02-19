@@ -41,6 +41,7 @@ const profileResponse = {
   theme_font_family: "ibm_plex_sans",
   theme_heading_font_family: "ibm_plex_sans",
   default_progress_unit: "pages_read",
+  default_source_language: "eng",
 };
 
 function setupApiMock({

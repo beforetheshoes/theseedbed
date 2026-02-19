@@ -37,6 +37,7 @@ export type MeProfile = {
   theme_font_family: ThemeFontFamily | null;
   theme_heading_font_family: ThemeFontFamily | null;
   default_progress_unit: "pages_read" | "percent_complete" | "minutes_listened";
+  default_source_language: string;
 };
 
 export type SettingsPageClientProps = {
@@ -156,6 +157,15 @@ function suggestionConfidenceText(issue: ImportIssue) {
 const fontOptions = (Object.keys(FONT_LABELS) as ThemeFontFamily[]).map(
   (key) => ({ label: FONT_LABELS[key], value: key }),
 );
+const sourceLanguageOptions = [
+  { label: "English", value: "eng" },
+  { label: "Spanish", value: "spa" },
+  { label: "French", value: "fra" },
+  { label: "German", value: "deu" },
+  { label: "Italian", value: "ita" },
+  { label: "Portuguese", value: "por" },
+  { label: "Japanese", value: "jpn" },
+];
 
 export default function SettingsPageClient({
   initialProfile,
@@ -184,6 +194,7 @@ export default function SettingsPageClient({
   const [defaultProgressUnit, setDefaultProgressUnit] = useState<
     "pages_read" | "percent_complete" | "minutes_listened"
   >("pages_read");
+  const [defaultSourceLanguage, setDefaultSourceLanguage] = useState("eng");
 
   const [storygraphFile, setStorygraphFile] = useState<File | null>(null);
   const [storygraphImporting, setStorygraphImporting] = useState(false);
@@ -283,6 +294,7 @@ export default function SettingsPageClient({
     setThemeFontFamily(bodyFont);
     setThemeHeadingFontFamily(headingFont);
     setDefaultProgressUnit(data.default_progress_unit ?? "pages_read");
+    setDefaultSourceLanguage(data.default_source_language ?? "eng");
     applyUserTheme({
       theme_primary_color: normalizedPrimary,
       theme_accent_color: normalizedAccent,
@@ -372,6 +384,7 @@ export default function SettingsPageClient({
           theme_font_family: themeFontFamily,
           theme_heading_font_family: themeHeadingFontFamily,
           default_progress_unit: defaultProgressUnit,
+          default_source_language: defaultSourceLanguage,
         },
       });
       applyUserTheme({
@@ -1004,6 +1017,17 @@ export default function SettingsPageClient({
               )
             }
             data-test="settings-default-progress-unit"
+          />
+        </label>
+        <label className="grid gap-1 text-sm">
+          Default source language
+          <Dropdown
+            value={defaultSourceLanguage}
+            options={sourceLanguageOptions}
+            optionLabel="label"
+            optionValue="value"
+            onChange={(event) => setDefaultSourceLanguage(String(event.value))}
+            data-test="settings-default-source-language"
           />
         </label>
       </div>
