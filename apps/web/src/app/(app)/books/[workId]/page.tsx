@@ -1,10 +1,6 @@
 import { notFound } from "next/navigation";
-import {
-  ApiClientError,
-  apiRequestWithAccessToken,
-  getAccessToken,
-} from "@/lib/api";
-import { createServerClient } from "@/lib/supabase/server";
+import { ApiClientError, apiRequestWithAccessToken } from "@/lib/api";
+import { bootstrapAppRouteAccessToken } from "@/lib/app-route-server-bootstrap";
 import BookDetailPageClient from "./book-detail-page-client";
 
 export const dynamic = "force-dynamic";
@@ -29,20 +25,14 @@ export default async function BookDetailPage({
     notFound();
   }
 
-  const supabase = await createServerClient();
-  let accessToken: string;
-  try {
-    accessToken = await getAccessToken(supabase);
-  } catch (error) {
-    if (error instanceof ApiClientError && error.status === 401) {
-      return <BookDetailPageClient initialWorkId={workId} />;
-    }
-    throw error;
+  const auth = await bootstrapAppRouteAccessToken();
+  if (auth.kind !== "authed") {
+    return <BookDetailPageClient initialWorkId={workId} />;
   }
 
   try {
     await apiRequestWithAccessToken<WorkLookup>(
-      accessToken,
+      auth.accessToken,
       `/api/v1/works/${workId}`,
     );
   } catch (error) {

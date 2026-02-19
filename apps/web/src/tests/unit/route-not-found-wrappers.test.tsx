@@ -3,13 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   apiRequestWithAccessTokenMock,
-  createServerClientMock,
-  getAccessTokenMock,
+  bootstrapAppRouteAccessTokenMock,
   notFoundMock,
 } = vi.hoisted(() => ({
   apiRequestWithAccessTokenMock: vi.fn(),
-  createServerClientMock: vi.fn(async () => ({ auth: {} })),
-  getAccessTokenMock: vi.fn(async () => "access-token"),
+  bootstrapAppRouteAccessTokenMock: vi.fn(async () => ({
+    kind: "authed" as const,
+    accessToken: "access-token",
+  })),
   notFoundMock: vi.fn(() => {
     throw new Error("NEXT_NOT_FOUND");
   }),
@@ -19,8 +20,8 @@ vi.mock("next/navigation", () => ({
   notFound: notFoundMock,
 }));
 
-vi.mock("@/lib/supabase/server", () => ({
-  createServerClient: createServerClientMock,
+vi.mock("@/lib/app-route-server-bootstrap", () => ({
+  bootstrapAppRouteAccessToken: bootstrapAppRouteAccessTokenMock,
 }));
 
 vi.mock("@/app/(app)/books/[workId]/book-detail-page-client", () => ({
@@ -44,7 +45,6 @@ vi.mock("@/lib/api", () => {
   return {
     ApiClientError: MockApiClientError,
     apiRequestWithAccessToken: apiRequestWithAccessTokenMock,
-    getAccessToken: getAccessTokenMock,
   };
 });
 
@@ -57,8 +57,7 @@ import { ApiClientError } from "@/lib/api";
 describe("route notFound wrappers", () => {
   beforeEach(() => {
     apiRequestWithAccessTokenMock.mockReset();
-    createServerClientMock.mockClear();
-    getAccessTokenMock.mockClear();
+    bootstrapAppRouteAccessTokenMock.mockClear();
     notFoundMock.mockClear();
   });
 
@@ -70,8 +69,7 @@ describe("route notFound wrappers", () => {
     });
     const { container } = render(ui);
 
-    expect(createServerClientMock).toHaveBeenCalledTimes(1);
-    expect(getAccessTokenMock).toHaveBeenCalledTimes(1);
+    expect(bootstrapAppRouteAccessTokenMock).toHaveBeenCalledTimes(1);
     expect(apiRequestWithAccessTokenMock).toHaveBeenCalledWith(
       "access-token",
       "/api/v1/works/work-1",
