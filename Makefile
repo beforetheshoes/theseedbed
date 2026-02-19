@@ -83,7 +83,8 @@ supabase-start:
 	supabase start
 
 supabase-env: supabase-start
-	@supabase status -o env | while IFS= read -r line; do \
+	@tmp_env="$$(mktemp)"; \
+	supabase status -o env | while IFS= read -r line; do \
 		case "$$line" in \
 			API_URL=*) \
 				value="$${line#API_URL=}"; \
@@ -112,7 +113,16 @@ supabase-env: supabase-start
 				echo "SUPABASE_JWT_SECRET=$$value"; \
 				;; \
 		esac; \
-	done > .env
+	done > "$$tmp_env"; \
+	for key in GOOGLE_BOOKS_API_KEY BOOK_PROVIDER_GOOGLE_ENABLED; do \
+		if [ -f ".env" ]; then \
+			existing_line="$$(grep -E "^$$key=" .env | tail -n 1)"; \
+			if [ -n "$$existing_line" ] && ! grep -q -E "^$$key=" "$$tmp_env"; then \
+				printf '%s\n' "$$existing_line" >> "$$tmp_env"; \
+			fi; \
+		fi; \
+	done; \
+	mv "$$tmp_env" .env
 	@echo "Wrote .env from local Supabase status."
 
 supabase-health:
