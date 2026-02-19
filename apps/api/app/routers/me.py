@@ -10,7 +10,11 @@ from app.core.rate_limit import enforce_client_user_rate_limit
 from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.session import get_db_session
-from app.services.user_library import get_or_create_profile, update_profile
+from app.services.user_library import (
+    DEFAULT_SOURCE_LANGUAGE,
+    get_or_create_profile,
+    update_profile,
+)
 
 
 class UpdateProfileRequest(BaseModel):
@@ -25,6 +29,9 @@ class UpdateProfileRequest(BaseModel):
     default_progress_unit: (
         Literal["pages_read", "percent_complete", "minutes_listened"] | None
     ) = None
+    default_source_language: str | None = Field(
+        default=None, min_length=2, max_length=3
+    )
 
 
 router = APIRouter(
@@ -40,6 +47,19 @@ def get_me(
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, object]:
     profile = get_or_create_profile(session, user_id=auth.user_id)
+    default_source_language = (
+        profile.default_source_language.strip().lower()
+        if isinstance(profile.default_source_language, str)
+        and profile.default_source_language.strip()
+        else DEFAULT_SOURCE_LANGUAGE
+    )
+    default_source_language = (
+        profile.default_source_language.strip().lower()
+        if isinstance(profile.default_source_language, str)
+        and profile.default_source_language.strip()
+        else DEFAULT_SOURCE_LANGUAGE
+    )
+
     return ok(
         {
             "id": str(profile.id),
@@ -52,6 +72,7 @@ def get_me(
             "theme_font_family": profile.theme_font_family,
             "theme_heading_font_family": profile.theme_heading_font_family,
             "default_progress_unit": profile.default_progress_unit,
+            "default_source_language": default_source_language,
         }
     )
 
@@ -75,9 +96,17 @@ def patch_me(
             theme_font_family=payload.theme_font_family,
             theme_heading_font_family=payload.theme_heading_font_family,
             default_progress_unit=payload.default_progress_unit,
+            default_source_language=payload.default_source_language,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    default_source_language = (
+        profile.default_source_language.strip().lower()
+        if isinstance(profile.default_source_language, str)
+        and profile.default_source_language.strip()
+        else DEFAULT_SOURCE_LANGUAGE
+    )
 
     return ok(
         {
@@ -91,5 +120,6 @@ def patch_me(
             "theme_font_family": profile.theme_font_family,
             "theme_heading_font_family": profile.theme_heading_font_family,
             "default_progress_unit": profile.default_progress_unit,
+            "default_source_language": default_source_language,
         }
     )

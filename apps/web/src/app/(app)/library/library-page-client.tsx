@@ -173,6 +173,9 @@ type CoverMetadataComparePayload = {
   } | null;
   fields: CoverMetadataCompareField[];
 };
+type SourceLanguageProfile = {
+  default_source_language?: string | null;
+};
 
 export type LibraryPageInitialData = {
   items: LibraryItem[];
@@ -252,6 +255,16 @@ const TABLE_COLUMN_OPTIONS = [
   { label: "Last read", value: "last_read" },
   { label: "Added", value: "added" },
 ] satisfies ReadonlyArray<{ label: string; value: TableColumnKey }>;
+const SOURCE_LANGUAGE_OPTIONS = [
+  { label: "English (eng)", value: "eng" },
+  { label: "Spanish (spa)", value: "spa" },
+  { label: "French (fra)", value: "fra" },
+  { label: "German (deu)", value: "deu" },
+  { label: "Italian (ita)", value: "ita" },
+  { label: "Portuguese (por)", value: "por" },
+  { label: "Japanese (jpn)", value: "jpn" },
+] as const;
+const DEFAULT_SOURCE_LANGUAGE = "eng";
 
 /* ─── Helpers ─── */
 
@@ -355,6 +368,12 @@ function resolveTagColors(
     color: isDark ? cs.darkColor : cs.color,
     borderColor: isDark ? cs.darkBorderColor : cs.borderColor,
   };
+}
+
+function normalizeSourceLanguage(value: string | null | undefined): string {
+  if (!value) return DEFAULT_SOURCE_LANGUAGE;
+  const normalized = value.trim().toLowerCase();
+  return /^[a-z]{2,3}$/.test(normalized) ? normalized : DEFAULT_SOURCE_LANGUAGE;
 }
 
 const statusTagPt = (value: LibraryItemStatus, isDark: boolean) => ({
@@ -471,7 +490,12 @@ const descriptionSnippet = (value?: string | null) => {
 const renderDescriptionSnippet = (value?: string | null) => {
   const snippet = descriptionSnippet(value);
   if (snippet === EMPTY_DESCRIPTION_LABEL) return snippet;
-  return renderDescriptionHtml(snippet, { inline: true });
+  // Keep list/grid/table snippets deterministic across SSR and hydration.
+  // `renderDescriptionHtml` sanitizes HTML with DOMParser in browsers, but
+  // server rendering does not have DOMParser. Strip tags for snippets so both
+  // environments render identical text.
+  const plainSnippet = snippet.replace(/<[^>]+>/g, " ");
+  return renderDescriptionHtml(plainSnippet, { inline: true });
 };
 
 const firstAuthor = (item: LibraryItem) =>
@@ -628,6 +652,25 @@ export default function LibraryPageClient({
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(initialError);
+  const showContextMenu = useCallback(
+    (
+      item: LibraryItem,
+      position: { pageX: number; pageY: number; target: EventTarget | null },
+    ) => {
+      setContextItem(item);
+      const syntheticEvent = {
+        pageX: position.pageX,
+        pageY: position.pageY,
+        target: position.target,
+        currentTarget: position.target,
+        preventDefault: () => {},
+        stopPropagation: () => {},
+      } as unknown as SyntheticEvent;
+      contextMenuRef.current?.show(syntheticEvent);
+    },
+    [],
+  );
+
   const [contextItem, setContextItem] = useState<LibraryItem | null>(null);
 
   const [statusFilter, setStatusFilter] = useState("");
@@ -709,7 +752,13 @@ export default function LibraryPageClient({
 
   const [coverMetadataMode, setCoverMetadataMode] =
     useState<CoverMetadataMode>("choose");
-  const [sourceLanguageFilter, setSourceLanguageFilter] = useState("");
+  const [defaultSourceLanguage, setDefaultSourceLanguage] = useState(
+    DEFAULT_SOURCE_LANGUAGE,
+  );
+  const [selectedSourceLanguages, setSelectedSourceLanguages] = useState<
+    string[]
+  >([DEFAULT_SOURCE_LANGUAGE]);
+  const [sourceSearchTitle, setSourceSearchTitle] = useState("");
   const [sourceTiles, setSourceTiles] = useState<ProviderSourceTile[]>([]);
   const [sourceTilesLoading, setSourceTilesLoading] = useState(false);
   const [sourceTilesError, setSourceTilesError] = useState("");
@@ -767,6 +816,32 @@ export default function LibraryPageClient({
   useEffect(() => {
     setHasHydrated(true);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadSourceLanguagePreference = async () => {
+      try {
+        const profile = await apiRequest<SourceLanguageProfile>(
+          supabase,
+          "/api/v1/me",
+        );
+        if (!active) return;
+        const normalized = normalizeSourceLanguage(
+          profile.default_source_language,
+        );
+        setDefaultSourceLanguage(normalized);
+        setSelectedSourceLanguages([normalized]);
+      } catch {
+        if (!active) return;
+        setDefaultSourceLanguage(DEFAULT_SOURCE_LANGUAGE);
+        setSelectedSourceLanguages([DEFAULT_SOURCE_LANGUAGE]);
+      }
+    };
+    void loadSourceLanguagePreference();
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
 
   /* ─── Computed ─── */
 
@@ -915,19 +990,35 @@ export default function LibraryPageClient({
   );
 
   const loadCoverMetadataSources = useCallback(
-    async (workId: string, language?: string, editionId?: string) => {
+    async (
+      workId: string,
+      languages: string[],
+      editionId?: string,
+      titleOverride?: string,
+    ) => {
       setSourceTilesLoading(true);
       setSourceTilesError("");
       try {
+        const normalizedLanguages = Array.from(
+          new Set(
+            languages
+              .map((entry) => normalizeSourceLanguage(entry))
+              .filter((entry) => Boolean(entry)),
+          ),
+        );
         const payload = await apiRequest<{
           items: ProviderSourceTile[];
           prefetch_compare?: Record<string, CoverMetadataComparePayload>;
         }>(supabase, `/api/v1/works/${workId}/cover-metadata/sources`, {
           query: {
             limit: 30,
-            language: language?.trim() || undefined,
+            languages:
+              normalizedLanguages.length > 0
+                ? normalizedLanguages.join(",")
+                : undefined,
+            title: titleOverride?.trim() || undefined,
             include_prefetch_compare: "true",
-            prefetch_limit: 3,
+            prefetch_limit: 2,
           },
         });
         const items = payload.items ?? [];
@@ -1021,7 +1112,12 @@ export default function LibraryPageClient({
       workId: string,
       provider: "openlibrary" | "googlebooks",
       sourceId: string,
-      options?: { silent?: boolean; signal?: AbortSignal; editionId?: string },
+      options?: {
+        silent?: boolean;
+        signal?: AbortSignal;
+        editionId?: string;
+        openlibraryWorkKey?: string;
+      },
     ) => {
       const cacheKey = coverMetadataCacheKey(
         workId,
@@ -1042,6 +1138,10 @@ export default function LibraryPageClient({
           query: {
             provider,
             source_id: sourceId,
+            openlibrary_work_key:
+              provider === "openlibrary"
+                ? options?.openlibraryWorkKey?.trim() || undefined
+                : undefined,
             edition_id: options?.editionId || workflowEditionId || undefined,
           },
           signal: options?.signal,
@@ -1086,14 +1186,18 @@ export default function LibraryPageClient({
         setSelectedSourceKey("");
         setCompareFields([]);
         setCompareSelection({});
+        const initialLanguages = [defaultSourceLanguage];
+        setSelectedSourceLanguages(initialLanguages);
+        setSourceSearchTitle(contextItem.work_title);
         comparePrefetchAbortRef.current?.abort();
         const selectedEditionId = await loadWorkflowEditions(
           contextItem.work_id,
         );
         await loadCoverMetadataSources(
           contextItem.work_id,
-          sourceLanguageFilter,
+          initialLanguages,
           selectedEditionId,
+          contextItem.work_title,
         );
         return;
       }
@@ -1122,7 +1226,7 @@ export default function LibraryPageClient({
       loadCoverMetadataSources,
       loadWorkflowProgressStatistics,
       loadWorkflowEditions,
-      sourceLanguageFilter,
+      defaultSourceLanguage,
     ],
   );
 
@@ -1158,6 +1262,7 @@ export default function LibraryPageClient({
             silent: true,
             signal: controller.signal,
             editionId: workflowEditionId,
+            openlibraryWorkKey: tile.openlibrary_work_key ?? undefined,
           },
         );
       }
@@ -1203,12 +1308,19 @@ export default function LibraryPageClient({
   const openContextMenuForItem = useCallback(
     (event: SyntheticEvent, item: LibraryItem) => {
       event.preventDefault();
-      setContextItem(item);
-      requestAnimationFrame(() => {
-        contextMenuRef.current?.show(event);
+      event.stopPropagation();
+      const pointerEvent = event as unknown as {
+        pageX?: number;
+        pageY?: number;
+        target?: EventTarget | null;
+      };
+      showContextMenu(item, {
+        pageX: Number(pointerEvent.pageX ?? 0),
+        pageY: Number(pointerEvent.pageY ?? 0),
+        target: pointerEvent.target ?? null,
       });
     },
-    [],
+    [showContextMenu],
   );
 
   const openContextMenuFromKeyboard = useCallback(
@@ -1222,17 +1334,11 @@ export default function LibraryPageClient({
       const syntheticEvent = {
         pageX: rect.left + rect.width / 2 + window.scrollX,
         pageY: rect.top + rect.height / 2 + window.scrollY,
-        target,
-        currentTarget: target,
-        preventDefault: () => {},
-        stopPropagation: () => {},
-      } as unknown as SyntheticEvent;
-      setContextItem(item);
-      requestAnimationFrame(() => {
-        contextMenuRef.current?.show(syntheticEvent);
-      });
+        target: target as EventTarget,
+      };
+      showContextMenu(item, syntheticEvent);
     },
-    [],
+    [showContextMenu],
   );
 
   /* ─── API ─── */
@@ -1950,7 +2056,10 @@ export default function LibraryPageClient({
       contextItem.work_id,
       tile.provider,
       tile.source_id,
-      { editionId: workflowEditionId },
+      {
+        editionId: workflowEditionId,
+        openlibraryWorkKey: tile.openlibrary_work_key ?? undefined,
+      },
     );
   };
 
@@ -2370,6 +2479,7 @@ export default function LibraryPageClient({
       <ContextMenu
         ref={contextMenuRef}
         model={contextMenuModel}
+        appendTo={typeof document !== "undefined" ? document.body : undefined}
         data-test="library-context-menu"
       />
 
@@ -3444,7 +3554,10 @@ export default function LibraryPageClient({
         mode={coverMetadataMode}
         loadingSources={sourceTilesLoading}
         sourceError={sourceTilesError}
-        sourceLanguageFilter={sourceLanguageFilter}
+        sourceSearchTitle={sourceSearchTitle}
+        sourceLanguages={selectedSourceLanguages}
+        languageOptions={[...SOURCE_LANGUAGE_OPTIONS]}
+        defaultSourceLanguage={defaultSourceLanguage}
         sourceTiles={sourceTiles}
         selectedSourceKey={selectedSourceKey}
         compareLoading={compareFieldsLoading}
@@ -3458,13 +3571,27 @@ export default function LibraryPageClient({
         hasSelectedFile={coverFile !== null}
         canEditEditionTarget={canEditWorkflowEditionTarget}
         onModeChange={setCoverMetadataMode}
-        onSourceLanguageFilterChange={setSourceLanguageFilter}
+        onSourceSearchTitleChange={setSourceSearchTitle}
+        onSourceLanguagesChange={(values) => {
+          const normalized = Array.from(
+            new Set(
+              values
+                .map((value) => normalizeSourceLanguage(value))
+                .filter((value) => Boolean(value)),
+            ),
+          );
+          if (!normalized.includes(defaultSourceLanguage)) {
+            normalized.unshift(defaultSourceLanguage);
+          }
+          setSelectedSourceLanguages(normalized);
+        }}
         onRefreshSources={() =>
           contextItem
             ? void loadCoverMetadataSources(
                 contextItem.work_id,
-                sourceLanguageFilter,
+                selectedSourceLanguages,
                 workflowEditionId,
+                sourceSearchTitle,
               )
             : undefined
         }

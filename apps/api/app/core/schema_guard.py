@@ -32,6 +32,7 @@ _REQUIRED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("users", "theme_font_family"),
     ("users", "theme_heading_font_family"),
     ("users", "default_progress_unit"),
+    ("users", "default_source_language"),
     # Cover provenance columns: if these aren't present, basic work fetches can 500.
     ("editions", "cover_set_by"),
     ("editions", "cover_set_at"),

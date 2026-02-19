@@ -65,9 +65,8 @@ const toImageUrl = (value: unknown) => {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
   if (!trimmed) return "";
-  if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-    return trimmed;
-  }
+  if (trimmed.startsWith("/")) return trimmed;
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return "";
 };
 

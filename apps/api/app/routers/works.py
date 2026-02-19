@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections.abc import Awaitable, Callable
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, cast
 
 import httpx
 import sqlalchemy as sa
@@ -430,6 +431,152 @@ def _extract_source_identifier(raw: object, fallback: str) -> str:
 
 
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
+_PARENTHETICAL_RE = re.compile(r"\s*\([^)]*\)")
+_LANGUAGE_CODE_RE = re.compile(r"^[a-z]{2,3}$")
+_INVALID_LANGUAGE_VALUES = {"n/a", "na", "null", "none", "unknown", "und"}
+_OPENLIBRARY_CANONICAL_LANGUAGE_MAP: dict[str, str] = {
+    "en": "eng",
+    "eng": "eng",
+    "es": "spa",
+    "spa": "spa",
+    "fr": "fra",
+    "fra": "fra",
+    "fre": "fra",
+    "de": "deu",
+    "deu": "deu",
+    "ger": "deu",
+    "it": "ita",
+    "ita": "ita",
+    "pt": "por",
+    "por": "por",
+    "ja": "jpn",
+    "jpn": "jpn",
+}
+_GOOGLE_LANGUAGE_MAP: dict[str, str] = {
+    "eng": "en",
+    "spa": "es",
+    "fra": "fr",
+    "fre": "fr",
+    "deu": "de",
+    "ger": "de",
+    "ita": "it",
+    "por": "pt",
+    "jpn": "ja",
+}
+_DEFAULT_SOURCE_LANGUAGE = "eng"
+_OPENLIBRARY_SOURCE_CAP = 12
+_GOOGLE_SOURCE_CAP = 2
+_PREFETCH_COMPARE_CAP = 2
+_OPENLIBRARY_ENRICHMENT_CAP = 8
+_OPENLIBRARY_SCAN_LIMIT = 100
+
+
+def _normalize_language_code(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip().lower()
+    if not normalized or normalized in _INVALID_LANGUAGE_VALUES:
+        return None
+    if _LANGUAGE_CODE_RE.fullmatch(normalized) is None:
+        return None
+    return normalized
+
+
+def _parse_languages_query(languages: str | None) -> list[str]:
+    if not isinstance(languages, str) or not languages.strip():
+        return []
+    parsed: list[str] = []
+    seen: set[str] = set()
+    for raw_part in languages.split(","):
+        normalized = _normalize_language_code(raw_part)
+        if normalized is None or normalized in seen:
+            continue
+        seen.add(normalized)
+        parsed.append(normalized)
+    return parsed
+
+
+def _to_openlibrary_canonical_language(code: str) -> str:
+    return _OPENLIBRARY_CANONICAL_LANGUAGE_MAP.get(code, code)
+
+
+def _canonical_to_google_language(code: str) -> str | None:
+    if code in _GOOGLE_LANGUAGE_MAP:
+        return _GOOGLE_LANGUAGE_MAP[code]
+    if len(code) == 2:
+        return code
+    if len(code) == 3 and code.isalpha():
+        return code[:2]
+    return None
+
+
+def _resolve_effective_languages(
+    *,
+    explicit_languages: str | None,
+    legacy_language: str | None,
+    default_language: str | None,
+) -> list[str]:
+    def _canonicalize(values: list[str]) -> list[str]:
+        result: list[str] = []
+        seen: set[str] = set()
+        for value in values:
+            canonical = _to_openlibrary_canonical_language(value)
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            result.append(canonical)
+        return result
+
+    parsed_explicit = _parse_languages_query(explicit_languages)
+    if parsed_explicit:
+        return _canonicalize(parsed_explicit)
+    parsed_legacy = _parse_languages_query(legacy_language)
+    if parsed_legacy:
+        return _canonicalize(parsed_legacy)
+    normalized_default = _normalize_language_code(default_language)
+    if normalized_default:
+        return [_to_openlibrary_canonical_language(normalized_default)]
+    return [_DEFAULT_SOURCE_LANGUAGE]
+
+
+def _provider_language_sets(
+    canonical_languages: list[str],
+) -> tuple[set[str], set[str], str | None]:
+    openlibrary_languages = set(canonical_languages)
+    google_languages: set[str] = set()
+    primary_google_language: str | None = None
+    for code in canonical_languages:
+        mapped = _canonical_to_google_language(code)
+        if mapped is None:
+            continue
+        google_languages.add(mapped)
+        if primary_google_language is None:
+            primary_google_language = mapped
+    return openlibrary_languages, google_languages, primary_google_language
+
+
+def _is_nonempty_cover_url(value: object) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _tile_matches_provider_language_and_cover(
+    *,
+    tile: dict[str, object],
+    openlibrary_languages: set[str],
+    google_languages: set[str],
+) -> bool:
+    provider = str(tile.get("provider") or "").strip().lower()
+    language = _normalize_language_code(tile.get("language"))
+    if not _is_nonempty_cover_url(tile.get("cover_url")):
+        return False
+    if language is None:
+        return False
+    if provider == "openlibrary":
+        canonical_language = _to_openlibrary_canonical_language(language)
+        return canonical_language in openlibrary_languages
+    if provider == "googlebooks":
+        return language in google_languages
+    return False
 
 
 def _normalize_text_tokens(value: str | None) -> list[str]:
@@ -438,9 +585,19 @@ def _normalize_text_tokens(value: str | None) -> list[str]:
     return _TOKEN_RE.findall(value.lower())
 
 
+def _normalize_title_for_lookup(value: str | None) -> str:
+    if not isinstance(value, str):
+        return ""
+    without_parenthetical = _PARENTHETICAL_RE.sub(" ", value)
+    normalized = re.sub(r"\s+", " ", without_parenthetical).strip()
+    return normalized
+
+
 def _title_match_score(expected_title: str, candidate_title: str) -> int:
-    expected_tokens = _normalize_text_tokens(expected_title)
-    candidate_tokens = _normalize_text_tokens(candidate_title)
+    normalized_expected = _normalize_title_for_lookup(expected_title)
+    normalized_candidate = _normalize_title_for_lookup(candidate_title)
+    expected_tokens = _normalize_text_tokens(normalized_expected)
+    candidate_tokens = _normalize_text_tokens(normalized_candidate)
     if not expected_tokens or not candidate_tokens:
         return 0
     expected_joined = " ".join(expected_tokens)
@@ -491,14 +648,18 @@ async def _collect_google_source_tiles(
     settings: Settings,
     limit: int,
     language: str | None,
+    allowed_google_languages: set[str],
+    lookup_title: str | None = None,
 ) -> list[dict[str, object]]:
+    if not allowed_google_languages:
+        return []
     profile = get_or_create_profile(session, user_id=auth.user_id)
     if not profile.enable_google_books:
         return []
     work = session.get(Work, work_id)
     if work is None:
         return []
-    title = work.title.strip()
+    title = (lookup_title or work.title).strip()
     if not title:
         return []
 
@@ -562,6 +723,11 @@ async def _collect_google_source_tiles(
             score += 10
         if score < 60:
             continue
+        edition_language = _normalize_language_code(edition.get("language"))
+        if edition_language is None or edition_language not in allowed_google_languages:
+            continue
+        if not _is_nonempty_cover_url(bundle.cover_url):
+            continue
         scored_tiles.append(
             (
                 score,
@@ -582,8 +748,74 @@ async def _collect_google_source_tiles(
             )
         )
     scored_tiles.sort(key=lambda entry: entry[0], reverse=True)
-    max_google_tiles = min(limit, 2)
+    max_google_tiles = min(limit, _GOOGLE_SOURCE_CAP)
     return [item for _, item in scored_tiles[:max_google_tiles]]
+
+
+async def _collect_openlibrary_search_tiles(
+    *,
+    session: Session,
+    work_id: uuid.UUID,
+    open_library: OpenLibraryClient,
+    language: str | None,
+    limit: int,
+    lookup_title: str | None = None,
+) -> list[dict[str, object]]:
+    search_books = getattr(open_library, "search_books", None)
+    if not callable(search_books):
+        return []
+    lookup_title = lookup_title or _work_title_for_lookup(session, work_id=work_id)
+    if not lookup_title:
+        return []
+    lookup_query_title = _normalize_title_for_lookup(lookup_title) or lookup_title
+    lookup_author = _first_author_for_lookup(session, work_id=work_id)
+    matches = await search_books(
+        query=lookup_query_title,
+        limit=max(10, min(limit * 4, 60)),
+        page=1,
+        author=lookup_author,
+        language=language,
+        sort="relevance",
+    )
+    items: list[dict[str, object]] = []
+    seen_work_keys: set[str] = set()
+    for match_item in matches.items:
+        work_key = match_item.work_key.strip()
+        if not work_key or work_key in seen_work_keys:
+            continue
+        seen_work_keys.add(work_key)
+        if not _is_nonempty_cover_url(match_item.cover_url):
+            continue
+        title_score = _title_match_score(lookup_title, match_item.title)
+        if title_score < 60:
+            continue
+        language_value = (
+            _to_openlibrary_canonical_language(match_item.languages[0])
+            if match_item.languages
+            else None
+        )
+        items.append(
+            {
+                "provider": "openlibrary",
+                "source_id": work_key,
+                "openlibrary_work_key": work_key,
+                "title": match_item.title or lookup_title,
+                "authors": match_item.author_names or [],
+                "publisher": None,
+                "publish_date": (
+                    str(match_item.first_publish_year)
+                    if isinstance(match_item.first_publish_year, int)
+                    else None
+                ),
+                "language": language_value,
+                "identifier": work_key,
+                "cover_url": match_item.cover_url,
+                "source_label": "Open Library",
+            }
+        )
+        if len(items) >= limit:
+            break
+    return items
 
 
 def _tile_sort_key(item: dict[str, object]) -> tuple[int, str]:
@@ -650,9 +882,14 @@ def _resolve_openlibrary_work_key_for_source(
     session: Session,
     work_id: uuid.UUID,
     source_id: str,
+    openlibrary_work_key: str | None = None,
 ) -> str | None:
     if source_id.startswith("/works/"):
         return source_id
+    if isinstance(openlibrary_work_key, str):
+        normalized_work_key = openlibrary_work_key.strip()
+        if normalized_work_key.startswith("/works/"):
+            return normalized_work_key
     if source_id.startswith("/books/"):
         raw = session.scalar(
             sa.select(SourceRecord.raw).where(
@@ -945,7 +1182,29 @@ def _current_field_values_for_compare(
     )
     return {
         "work.description": work.description,
-        "work.cover_url": work.default_cover_url,
+        "work.cover_url": session.scalar(
+            sa.select(
+                sa.func.coalesce(
+                    LibraryItem.cover_override_url,
+                    Edition.cover_url,
+                    Work.default_cover_url,
+                )
+            )
+            .select_from(LibraryItem)
+            .join(Work, Work.id == LibraryItem.work_id)
+            .join(
+                Edition,
+                Edition.id == LibraryItem.preferred_edition_id,
+                isouter=True,
+            )
+            .where(
+                LibraryItem.user_id == user_id,
+                LibraryItem.work_id == work_id,
+            )
+            .limit(1)
+        )
+        or (edition.cover_url if edition else None)
+        or work.default_cover_url,
         "work.first_publish_year": work.first_publish_year,
         "edition.publisher": edition.publisher if edition else None,
         "edition.publish_date": edition.publish_date if edition else None,
@@ -970,6 +1229,7 @@ async def _build_cover_metadata_compare_payload(
     provider: str,
     source_id: str,
     edition_id: uuid.UUID | None,
+    openlibrary_work_key: str | None = None,
 ) -> dict[str, object]:
     normalized_provider = provider.strip().lower()
     if normalized_provider not in {"openlibrary", "googlebooks"}:
@@ -995,7 +1255,20 @@ async def _build_cover_metadata_compare_payload(
             session=session,
             work_id=work_id,
             source_id=normalized_source_id,
+            openlibrary_work_key=openlibrary_work_key,
         )
+        if not work_key and normalized_source_id.startswith("/books/"):
+            try:
+                resolver = open_library.resolve_work_key_from_edition_key
+            except AttributeError:
+                resolver = None
+            if callable(resolver):
+                try:
+                    resolved = await resolver(edition_key=normalized_source_id)
+                except (ValueError, httpx.HTTPError):
+                    resolved = None
+                if isinstance(resolved, str) and resolved.startswith("/works/"):
+                    work_key = resolved
         if not work_key:
             raise HTTPException(
                 status_code=404,
@@ -1004,6 +1277,7 @@ async def _build_cover_metadata_compare_payload(
         edition_key = (
             normalized_source_id if normalized_source_id.startswith("/books/") else None
         )
+        selected_edition_key = edition_key
         raw_work = session.scalar(
             sa.select(SourceRecord.raw).where(
                 SourceRecord.provider == "openlibrary",
@@ -1023,12 +1297,28 @@ async def _build_cover_metadata_compare_payload(
         edition_requires_refresh = bool(
             edition_key and not _openlibrary_edition_raw_has_compare_fields(raw_edition)
         )
-        if (
+        fetch_work_bundle = getattr(open_library, "fetch_work_bundle", None)
+        can_fetch_work_bundle = callable(fetch_work_bundle)
+        should_fetch_bundle = (
             not isinstance(raw_work, dict)
             or (edition_key and not isinstance(raw_edition, dict))
             or edition_requires_refresh
-        ):
-            openlibrary_bundle = await open_library.fetch_work_bundle(
+            # Work-level source tiles need a concrete edition payload for
+            # edition.* compare fields.
+            or (normalized_source_id.startswith("/works/") and can_fetch_work_bundle)
+        )
+        openlibrary_bundle: OpenLibraryWorkBundle | None = None
+        if should_fetch_bundle:
+            if not can_fetch_work_bundle:
+                raise HTTPException(
+                    status_code=502,
+                    detail="Open Library lookup is unavailable right now.",
+                )
+            fetch_work_bundle_fn = cast(
+                Callable[..., Awaitable[OpenLibraryWorkBundle]],
+                fetch_work_bundle,
+            )
+            openlibrary_bundle = await fetch_work_bundle_fn(
                 work_key=work_key,
                 edition_key=edition_key,
             )
@@ -1041,25 +1331,40 @@ async def _build_cover_metadata_compare_payload(
             )
             should_commit = True
             raw_work = openlibrary_bundle.raw_work
-            if openlibrary_bundle.raw_edition and edition_key:
-                _upsert_source_record(
-                    session,
-                    provider="openlibrary",
-                    entity_type="edition",
-                    provider_id=edition_key,
-                    raw=openlibrary_bundle.raw_edition,
-                )
-                should_commit = True
+            if openlibrary_bundle.raw_edition:
+                if selected_edition_key is None and isinstance(
+                    openlibrary_bundle.edition, dict
+                ):
+                    candidate_edition_key = openlibrary_bundle.edition.get("key")
+                    if isinstance(
+                        candidate_edition_key, str
+                    ) and candidate_edition_key.startswith("/books/"):
+                        selected_edition_key = candidate_edition_key
+                edition_provider_id = selected_edition_key or edition_key
+                if edition_provider_id:
+                    _upsert_source_record(
+                        session,
+                        provider="openlibrary",
+                        entity_type="edition",
+                        provider_id=edition_provider_id,
+                        raw=openlibrary_bundle.raw_edition,
+                    )
+                    should_commit = True
                 raw_edition = openlibrary_bundle.raw_edition
-        selected_values = _parse_openlibrary_selected_values(
-            raw_work=raw_work,
-            raw_edition=raw_edition,
-        )
+        if openlibrary_bundle is not None:
+            selected_values = _selected_values_from_openlibrary_bundle(
+                bundle=openlibrary_bundle
+            )
+        else:
+            selected_values = _parse_openlibrary_selected_values(
+                raw_work=raw_work,
+                raw_edition=raw_edition,
+            )
         selected_source_label = f"Open Library {normalized_source_id.removeprefix('/works/').removeprefix('/books/')}"
         for field_key in FIELD_LABELS:
             provider_id = work_key
-            if field_key.startswith("edition.") and edition_key:
-                provider_id = edition_key
+            if field_key.startswith("edition.") and selected_edition_key:
+                provider_id = selected_edition_key
             selected_provider_ids[field_key] = provider_id
     else:
         raw_volume = session.scalar(
@@ -1191,10 +1496,29 @@ async def list_cover_metadata_sources(
     google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
     settings: Annotated[Settings, Depends(get_settings)],
     limit: Annotated[int, Query(ge=1, le=100)] = 30,
+    title: str | None = Query(default=None, min_length=1, max_length=255),
     language: str | None = Query(default=None, min_length=1, max_length=32),
+    languages: str | None = Query(default=None, max_length=255),
     include_prefetch_compare: bool = Query(default=False),
-    prefetch_limit: Annotated[int, Query(ge=1, le=6)] = 3,
+    prefetch_limit: Annotated[int, Query(ge=1, le=6)] = 2,
 ) -> dict[str, object]:
+    profile = get_or_create_profile(session, user_id=auth.user_id)
+    effective_languages = _resolve_effective_languages(
+        explicit_languages=languages,
+        legacy_language=language,
+        default_language=getattr(profile, "default_source_language", None),
+    )
+    openlibrary_languages, google_languages, primary_google_language = (
+        _provider_language_sets(effective_languages)
+    )
+    primary_openlibrary_language = (
+        effective_languages[0] if effective_languages else None
+    )
+    requested_lookup_title = _normalize_title_for_lookup(title)
+    lookup_title = requested_lookup_title or _work_title_for_lookup(
+        session, work_id=work_id
+    )
+
     mapped_work_key = _openlibrary_work_key_for_work(session, work_id=work_id)
     work_author_names = _work_authors_for_lookup(session, work_id=work_id)
     if mapped_work_key and not work_author_names:
@@ -1222,41 +1546,63 @@ async def list_cover_metadata_sources(
             (mapped_work_key, "Mapped Open Library work", work_author_names)
         )
     else:
-        lookup_title = _work_title_for_lookup(session, work_id=work_id)
         if lookup_title:
+            lookup_query_title = (
+                _normalize_title_for_lookup(lookup_title) or lookup_title
+            )
             lookup_author = _first_author_for_lookup(session, work_id=work_id)
             matches = await open_library.search_books(
-                query=lookup_title,
+                query=lookup_query_title,
                 limit=min(5, limit),
                 page=1,
                 author=lookup_author,
-                language=language,
+                language=primary_openlibrary_language,
                 sort="relevance",
             )
             seen_work_keys: set[str] = set()
+            ranked_candidates: list[tuple[int, int, str, str, list[str]]] = []
             for match_item in matches.items:
                 normalized_work_key = match_item.work_key.strip()
                 if not normalized_work_key or normalized_work_key in seen_work_keys:
                     continue
                 seen_work_keys.add(normalized_work_key)
-                candidate_works.append(
+                title_score = _title_match_score(lookup_title, match_item.title)
+                # Require meaningful title overlap so nearby works by the same
+                # author (for example Animal Farm while searching for 1984)
+                # do not pollute source tiles.
+                if title_score < 60:
+                    continue
+                author_score = _author_match_score(
+                    lookup_author, match_item.author_names
+                )
+                ranked_candidates.append(
                     (
+                        title_score + author_score,
+                        title_score,
                         normalized_work_key,
                         match_item.title,
                         match_item.author_names,
                     )
                 )
-                if len(candidate_works) >= 3:
-                    break
+            ranked_candidates.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
+            if ranked_candidates:
+                best_title_score = ranked_candidates[0][1]
+                for _, title_score, work_key, title, authors in ranked_candidates:
+                    if title_score < best_title_score:
+                        continue
+                    candidate_works.append((work_key, title, authors))
+                    if len(candidate_works) >= 2:
+                        break
 
     openlibrary_items: list[dict[str, object]] = []
     seen_openlibrary_ids: set[str] = set()
-    per_work_limit = max(5, min(limit, 20))
+    max_openlibrary_candidates = _OPENLIBRARY_SCAN_LIMIT
+    per_work_limit = _OPENLIBRARY_SCAN_LIMIT
     for work_key, work_title, work_authors in candidate_works:
         editions = await open_library.fetch_work_editions(
             work_key=work_key,
             limit=per_work_limit,
-            language=language,
+            language=primary_openlibrary_language,
         )
         for entry in editions:
             if entry.key in seen_openlibrary_ids:
@@ -1266,6 +1612,7 @@ async def list_cover_metadata_sources(
                 {
                     "provider": "openlibrary",
                     "source_id": entry.key,
+                    "openlibrary_work_key": work_key,
                     "title": entry.title or work_title,
                     "authors": work_authors or work_author_names,
                     "publisher": entry.publisher,
@@ -1276,9 +1623,9 @@ async def list_cover_metadata_sources(
                     "source_label": "Open Library",
                 }
             )
-            if len(openlibrary_items) >= limit:
+            if len(openlibrary_items) >= max_openlibrary_candidates:
                 break
-        if len(openlibrary_items) >= limit:
+        if len(openlibrary_items) >= max_openlibrary_candidates:
             break
 
     google_items = await _collect_google_source_tiles(
@@ -1288,7 +1635,9 @@ async def list_cover_metadata_sources(
         google_books=google_books,
         settings=settings,
         limit=limit,
-        language=language,
+        language=primary_google_language,
+        allowed_google_languages=google_languages,
+        lookup_title=lookup_title,
     )
 
     deduped: list[dict[str, object]] = []
@@ -1335,10 +1684,93 @@ async def list_cover_metadata_sources(
         if not identifier:
             source_item["identifier"] = _extract_source_identifier(raw, source_id)
 
-    items = deduped[:limit]
+    # Open Library editions.json frequently omits language/cover for some rows.
+    # Enrich a bounded number of unresolved edition tiles from /books/{id}.json
+    # before applying strict final filtering.
+    enrich_calls = 0
+    fetch_edition_payload = getattr(open_library, "fetch_edition_payload", None)
+    for source_item in deduped:
+        if enrich_calls >= _OPENLIBRARY_ENRICHMENT_CAP:
+            break
+        provider = str(source_item.get("provider") or "").strip().lower()
+        source_id = str(source_item.get("source_id") or "").strip()
+        if provider != "openlibrary" or not source_id.startswith("/books/"):
+            continue
+        has_language = _normalize_language_code(source_item.get("language")) is not None
+        has_cover = _is_nonempty_cover_url(source_item.get("cover_url"))
+        if has_language and has_cover:
+            continue
+        if not callable(fetch_edition_payload):
+            continue
+        try:
+            raw = await fetch_edition_payload(edition_key=source_id)
+        except Exception:
+            continue
+        enrich_calls += 1
+        _upsert_source_record(
+            session,
+            provider="openlibrary",
+            entity_type="edition",
+            provider_id=source_id,
+            raw=raw,
+        )
+        if not source_item.get("language"):
+            source_item["language"] = _extract_source_language(raw)
+        if not source_item.get("cover_url"):
+            source_item["cover_url"] = _extract_source_cover(raw)
+        if not source_item.get("publisher"):
+            source_item["publisher"] = _extract_source_publisher(raw)
+        if not source_item.get("publish_date"):
+            source_item["publish_date"] = _extract_source_publish_date(raw)
+        identifier = str(source_item.get("identifier") or "").strip()
+        if not identifier:
+            source_item["identifier"] = _extract_source_identifier(raw, source_id)
+
+    filtered_items = [
+        source_item
+        for source_item in deduped
+        if _tile_matches_provider_language_and_cover(
+            tile=source_item,
+            openlibrary_languages=openlibrary_languages,
+            google_languages=google_languages,
+        )
+    ]
+    if not any(item.get("provider") == "openlibrary" for item in filtered_items):
+        openlibrary_search_items = await _collect_openlibrary_search_tiles(
+            session=session,
+            work_id=work_id,
+            open_library=open_library,
+            language=primary_openlibrary_language,
+            limit=_OPENLIBRARY_SOURCE_CAP,
+            lookup_title=lookup_title,
+        )
+        for source_item in openlibrary_search_items:
+            if _tile_matches_provider_language_and_cover(
+                tile=source_item,
+                openlibrary_languages=openlibrary_languages,
+                google_languages=google_languages,
+            ):
+                filtered_items.append(source_item)
+
+        # Keep deterministic ordering after fallback append.
+        dedupe_again: list[dict[str, object]] = []
+        seen_fallback_keys: set[tuple[str, str]] = set()
+        for source_item in filtered_items:
+            provider = str(source_item.get("provider") or "")
+            source_id = str(source_item.get("source_id") or "")
+            key = (provider, source_id)
+            if key in seen_fallback_keys:
+                continue
+            seen_fallback_keys.add(key)
+            dedupe_again.append(source_item)
+        dedupe_again.sort(key=_tile_sort_key)
+        filtered_items = dedupe_again
+
+    items = filtered_items[:limit]
     prefetch_compare: dict[str, object] = {}
     if include_prefetch_compare:
-        for source_item in items[:prefetch_limit]:
+        effective_prefetch_limit = min(prefetch_limit, _PREFETCH_COMPARE_CAP)
+        for source_item in items[:effective_prefetch_limit]:
             provider = str(source_item.get("provider") or "").strip().lower()
             source_id = str(source_item.get("source_id") or "").strip()
             if not provider or not source_id:
@@ -1352,6 +1784,12 @@ async def list_cover_metadata_sources(
                 provider=provider,
                 source_id=source_id,
                 edition_id=None,
+                openlibrary_work_key=(
+                    str(source_item.get("openlibrary_work_key"))
+                    if provider == "openlibrary"
+                    and isinstance(source_item.get("openlibrary_work_key"), str)
+                    else None
+                ),
             )
             prefetch_compare[f"{provider}:{source_id}"] = payload
 
@@ -1372,6 +1810,9 @@ async def compare_cover_metadata_source(
     google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
     provider: Annotated[str, Query(min_length=1, max_length=32)],
     source_id: Annotated[str, Query(min_length=1, max_length=255)],
+    openlibrary_work_key: Annotated[
+        str | None, Query(min_length=1, max_length=255)
+    ] = None,
     edition_id: uuid.UUID | None = None,
 ) -> dict[str, object]:
     payload = await _build_cover_metadata_compare_payload(
@@ -1383,6 +1824,7 @@ async def compare_cover_metadata_source(
         provider=provider,
         source_id=source_id,
         edition_id=edition_id,
+        openlibrary_work_key=openlibrary_work_key,
     )
     return ok(payload)
 
@@ -1394,6 +1836,7 @@ async def list_openlibrary_editions(
     session: Annotated[Session, Depends(get_db_session)],
     open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    title: str | None = Query(default=None, min_length=1, max_length=255),
     language: str | None = Query(default=None, min_length=1, max_length=32),
 ) -> dict[str, object]:
     mapped_work_key = _openlibrary_work_key_for_work(session, work_id=work_id)
@@ -1401,11 +1844,16 @@ async def list_openlibrary_editions(
     if mapped_work_key:
         candidate_works.append((mapped_work_key, "Mapped Open Library work", []))
     else:
-        lookup_title = _work_title_for_lookup(session, work_id=work_id)
+        lookup_title = _normalize_title_for_lookup(title) or _work_title_for_lookup(
+            session, work_id=work_id
+        )
         if lookup_title:
+            lookup_query_title = (
+                _normalize_title_for_lookup(lookup_title) or lookup_title
+            )
             lookup_author = _first_author_for_lookup(session, work_id=work_id)
             matches = await open_library.search_books(
-                query=lookup_title,
+                query=lookup_query_title,
                 limit=min(5, limit),
                 page=1,
                 author=lookup_author,

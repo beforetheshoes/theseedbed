@@ -38,6 +38,7 @@ from app.routers.works import (
     _parse_openlibrary_first_publish_year,
     _parse_openlibrary_selected_values,
     _resolve_edition_target_for_compare,
+    _resolve_effective_languages,
     _resolve_openlibrary_work_key_for_source,
     _selected_values_from_google_bundle,
     _selected_values_from_openlibrary_bundle,
@@ -575,7 +576,7 @@ def test_list_cover_metadata_sources_returns_mixed_provider_tiles(
                 "authors": ["Matt Dinniman"],
                 "publisher": "Ace",
                 "publish_date": "2025-09-23",
-                "language": "eng",
+                "language": "en",
                 "identifier": "9780000000002",
                 "cover_url": "https://books.google.com/cover.jpg",
                 "source_label": "Google Books",
@@ -605,6 +606,8 @@ def test_list_cover_metadata_sources_returns_mixed_provider_tiles(
     items = response.json()["data"]["items"]
     assert any(item["provider"] == "openlibrary" for item in items)
     assert any(item["provider"] == "googlebooks" for item in items)
+    openlibrary_item = next(item for item in items if item["provider"] == "openlibrary")
+    assert openlibrary_item["openlibrary_work_key"] == "/works/OL1W"
 
 
 def test_list_cover_metadata_sources_includes_prefetch_compare_when_requested(
@@ -631,7 +634,10 @@ def test_list_cover_metadata_sources_includes_prefetch_compare_when_requested(
             )
         ]
 
+    compare_kwargs: dict[str, Any] = {}
+
     async def _fake_compare_payload(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+        compare_kwargs.update(_kwargs)
         return {
             "selected_source": {
                 "provider": "openlibrary",
@@ -670,7 +676,9 @@ def test_list_cover_metadata_sources_includes_prefetch_compare_when_requested(
     assert response.status_code == 200
     payload = response.json()["data"]
     assert payload["items"][0]["source_id"] == "/books/OL1M"
+    assert payload["items"][0]["openlibrary_work_key"] == "/works/OL1W"
     assert "openlibrary:/books/OL1M" in payload["prefetch_compare"]
+    assert compare_kwargs["openlibrary_work_key"] == "/works/OL1W"
 
 
 def test_compare_cover_metadata_source_returns_normalized_fields(
@@ -678,6 +686,7 @@ def test_compare_cover_metadata_source_returns_normalized_fields(
 ) -> None:
     fake_session = _FakeSession(
         scalar_values=[
+            None,
             None,
             None,
             {
@@ -771,6 +780,30 @@ class _FakeSession:
 def test_work_title_for_lookup_returns_none_for_missing_work() -> None:
     session = _FakeSession(scalar_values=[], work=None)
     assert _work_title_for_lookup(cast(Any, session), work_id=uuid.uuid4()) is None
+
+
+def test_current_field_values_for_compare_prefers_library_cover_override() -> None:
+    session = _FakeSession(
+        scalar_values=[
+            None,  # preferred_edition_id lookup
+            None,  # latest edition lookup
+            "https://example.com/override-cover.jpg",  # cover coalesce lookup
+        ],
+        work=SimpleNamespace(
+            description="Current description",
+            default_cover_url="https://example.com/default-cover.jpg",
+            first_publish_year=2020,
+        ),
+    )
+
+    values = _current_field_values_for_compare(
+        session=cast(Any, session),
+        work_id=uuid.uuid4(),
+        user_id=uuid.uuid4(),
+        edition_id=None,
+    )
+
+    assert values["work.cover_url"] == "https://example.com/override-cover.jpg"
 
 
 def test_google_books_enabled_for_user_requires_setting_key_and_profile(
@@ -1403,6 +1436,15 @@ def test_resolve_openlibrary_work_key_for_source_and_upsert(
         )
         == "/works/FALLBACK"
     )
+    assert (
+        _resolve_openlibrary_work_key_for_source(
+            session=cast(Any, _FakeSession(scalar_values=[])),
+            work_id=work_id,
+            source_id="/books/OL60639135M",
+            openlibrary_work_key="/works/OLPREFERRED",
+        )
+        == "/works/OLPREFERRED"
+    )
 
     add_session = _FakeSession(scalar_values=[None])
     _upsert_source_record(
@@ -1524,6 +1566,7 @@ async def test_collect_google_source_tiles_filters_and_limits(
         settings=settings,
         limit=10,
         language="en",
+        allowed_google_languages={"en"},
     )
 
     assert len(tiles) <= 2
@@ -1761,6 +1804,70 @@ def test_list_cover_metadata_sources_search_fallback_dedupes(
     assert items[0]["source_id"] == "/books/OL1M"
 
 
+def test_list_cover_metadata_sources_search_fallback_filters_unrelated_titles(
+    app: FastAPI,
+) -> None:
+    work_id = uuid.uuid4()
+    fake_session = _FakeSession(
+        scalar_values=[None],
+        execute_rows=[[]],
+        work=SimpleNamespace(title="1984"),
+    )
+    fetched_work_keys: list[str] = []
+
+    async def _fake_search_books(*_args: Any, **_kwargs: Any) -> Any:
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(
+                    work_key="/works/OL1984W",
+                    title="1984",
+                    author_names=["George Orwell"],
+                ),
+                SimpleNamespace(
+                    work_key="/works/OLANIMALW",
+                    title="Animal Farm",
+                    author_names=["George Orwell"],
+                ),
+            ]
+        )
+
+    async def _fake_fetch_work_editions(*, work_key: str, **_kwargs: Any) -> list[Any]:
+        fetched_work_keys.append(work_key)
+        if work_key == "/works/OL1984W":
+            return [
+                SimpleNamespace(
+                    key="/books/OL1984M",
+                    title="1984",
+                    publisher="Secker & Warburg",
+                    publish_date="1949-06-08",
+                    language="eng",
+                    isbn10=None,
+                    isbn13=None,
+                    cover_url="https://covers.openlibrary.org/b/id/123-M.jpg",
+                )
+            ]
+        return []
+
+    def _override_session() -> Generator[object, None, None]:
+        yield fake_session
+
+    app.dependency_overrides[get_db_session] = _override_session
+    app.dependency_overrides[get_open_library_client] = lambda: SimpleNamespace(
+        search_books=_fake_search_books,
+        fetch_work_editions=_fake_fetch_work_editions,
+    )
+    app.dependency_overrides[get_google_books_client] = lambda: SimpleNamespace()
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{work_id}/cover-metadata/sources")
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["source_id"] == "/books/OL1984M"
+    assert items[0]["openlibrary_work_key"] == "/works/OL1984W"
+    assert fetched_work_keys == ["/works/OL1984W"]
+
+
 def test_list_cover_metadata_sources_ignores_mapped_author_fetch_failure(
     app: FastAPI,
 ) -> None:
@@ -1939,6 +2046,65 @@ def test_list_cover_metadata_sources_fills_missing_fields_from_source_records(
     assert item["cover_url"].endswith("-M.jpg")
 
 
+def test_list_cover_metadata_sources_enriches_openlibrary_missing_language_cover(
+    app: FastAPI,
+) -> None:
+    work_id = uuid.uuid4()
+    fake_session = _FakeSession(
+        scalar_values=["/works/OL41914127W"],
+        execute_rows=[[], []],
+        work=SimpleNamespace(title="This Inevitable Ruin"),
+    )
+    fetch_calls: list[str] = []
+
+    async def _fake_fetch_work_editions(*_args: Any, **_kwargs: Any) -> list[Any]:
+        return [
+            SimpleNamespace(
+                key="/books/OL1M",
+                title="Recovered title",
+                publisher=None,
+                publish_date=None,
+                language=None,
+                isbn10=None,
+                isbn13=None,
+                cover_url=None,
+            )
+        ]
+
+    async def _fake_fetch_edition_payload(*, edition_key: str) -> dict[str, Any]:
+        fetch_calls.append(edition_key)
+        return {
+            "languages": [{"key": "/languages/eng"}],
+            "covers": [15142977],
+            "publishers": ["Recovered Publisher"],
+            "publish_date": "2025-09-23",
+            "isbn_13": ["9798217190041"],
+        }
+
+    async def _fake_no_google(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    def _override_session() -> Generator[object, None, None]:
+        yield fake_session
+
+    app.dependency_overrides[get_db_session] = _override_session
+    app.dependency_overrides[get_open_library_client] = lambda: SimpleNamespace(
+        fetch_work_editions=_fake_fetch_work_editions,
+        fetch_work_bundle=lambda **_kwargs: SimpleNamespace(authors=[]),
+        fetch_edition_payload=_fake_fetch_edition_payload,
+    )
+    app.dependency_overrides[get_google_books_client] = lambda: SimpleNamespace()
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{work_id}/cover-metadata/sources")
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert len(items) == 1
+    assert items[0]["language"] == "eng"
+    assert items[0]["cover_url"].endswith("-M.jpg")
+    assert fetch_calls == ["/books/OL1M"]
+
+
 def test_helper_extractors_handle_invalid_inputs() -> None:
     assert _extract_source_title(None) is None
     assert _extract_source_authors(None) == []
@@ -1973,6 +2139,12 @@ def test_title_and_author_match_score_branches() -> None:
     assert _title_match_score("a b c", "a b c x") == 80
     assert _title_match_score("a b c", "x a b c y") == 80
     assert _title_match_score("a", "z") == 0
+    assert (
+        _title_match_score(
+            "The Da Vinci Code (Robert Langdon, #2)", "The Da Vinci Code"
+        )
+        >= 80
+    )
 
     assert _author_match_score(None, ["a"]) == 0
     assert _author_match_score("  ", ["a"]) == 0
@@ -1983,6 +2155,19 @@ def test_title_and_author_match_score_branches() -> None:
     assert _author_match_score("", ["A"]) == 0
     assert _author_match_score("!!!", ["A"]) == 0
     assert _author_match_score("Matt Dinniman", ["!!!", "Matt Dinniman"]) == 30
+
+
+def test_resolve_effective_languages_canonicalizes_to_openlibrary_codes() -> None:
+    assert _resolve_effective_languages(
+        explicit_languages="en,es,fra",
+        legacy_language=None,
+        default_language=None,
+    ) == ["eng", "spa", "fra"]
+    assert _resolve_effective_languages(
+        explicit_languages=None,
+        legacy_language="en",
+        default_language=None,
+    ) == ["eng"]
     assert _normalize_text_tokens(None) == []
     assert _title_match_score("", "This Inevitable Ruin") == 0
 
@@ -2069,6 +2254,7 @@ async def test_collect_google_source_tiles_handles_missing_work_and_blank_title(
         settings=settings,
         limit=5,
         language=None,
+        allowed_google_languages={"en"},
     )
     assert missing_work_tiles == []
 
@@ -2086,6 +2272,7 @@ async def test_collect_google_source_tiles_handles_missing_work_and_blank_title(
         settings=settings,
         limit=5,
         language=None,
+        allowed_google_languages={"en"},
     )
     assert blank_title_tiles == []
 
@@ -2153,6 +2340,7 @@ async def test_collect_google_source_tiles_breaks_on_high_volume_search(
         settings=settings,
         limit=10,
         language=None,
+        allowed_google_languages={"en"},
     )
     assert search_calls["count"] == 1
     assert len(tiles) <= 2
@@ -2301,6 +2489,63 @@ def test_list_cover_metadata_sources_handles_empty_lookup_title_without_search(
     response = client.get(f"/api/v1/works/{work_id}/cover-metadata/sources")
     assert response.status_code == 200
     assert response.json()["data"]["items"] == []
+
+
+def test_list_cover_metadata_sources_uses_title_override_query(
+    app: FastAPI,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    work_id = uuid.uuid4()
+    fake_session = _FakeSession(
+        scalar_values=[None],
+        execute_rows=[[]],
+        work=SimpleNamespace(title=" "),
+    )
+    seen_queries: list[str] = []
+
+    async def _fake_fetch_work_editions(*_args: Any, **_kwargs: Any) -> list[Any]:
+        return []
+
+    async def _fake_search_books(*_args: Any, **_kwargs: Any) -> Any:
+        seen_queries.append(str(_kwargs.get("query") or ""))
+        return SimpleNamespace(
+            items=[
+                SimpleNamespace(
+                    work_key="/works/OL1W",
+                    title="The Da Vinci Code",
+                    author_names=["Dan Brown"],
+                    cover_url="https://covers.openlibrary.org/b/id/1-M.jpg",
+                    first_publish_year=2003,
+                    languages=["eng"],
+                )
+            ]
+        )
+
+    def _override_session() -> Generator[object, None, None]:
+        yield fake_session
+
+    app.dependency_overrides[get_db_session] = _override_session
+    app.dependency_overrides[get_open_library_client] = lambda: SimpleNamespace(
+        fetch_work_editions=_fake_fetch_work_editions,
+        search_books=_fake_search_books,
+    )
+
+    async def _fake_google_tiles(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+    monkeypatch.setattr(
+        "app.routers.works._collect_google_source_tiles", _fake_google_tiles
+    )
+
+    client = TestClient(app)
+    response = client.get(
+        f"/api/v1/works/{work_id}/cover-metadata/sources",
+        params={"title": "The Da Vinci Code (Robert Langdon, #2)"},
+    )
+    assert response.status_code == 200
+    assert seen_queries
+    assert seen_queries[0] == "The Da Vinci Code"
+    assert response.json()["data"]["items"][0]["source_id"] == "/works/OL1W"
 
 
 def test_list_cover_metadata_sources_hydrates_google_missing_fields(
@@ -2489,6 +2734,97 @@ async def test_build_cover_metadata_compare_payload_openlibrary_without_raw_edit
         source_id="/books/OL1M",
         edition_id=None,
     )
+    assert cast(dict[str, Any], payload["selected_source"])["provider"] == "openlibrary"
+
+
+@pytest.mark.anyio
+async def test_build_cover_metadata_compare_payload_openlibrary_work_source_includes_edition_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession(scalar_values=[None])
+    monkeypatch.setattr(
+        "app.routers.works._current_field_values_for_compare",
+        lambda **_kwargs: {"edition.publisher": None},
+    )
+    monkeypatch.setattr(
+        "app.routers.works._resolve_openlibrary_work_key_for_source",
+        lambda **_kwargs: "/works/OL1W",
+    )
+
+    async def _fake_fetch_work_bundle(*, work_key: str, edition_key: str | None) -> Any:
+        assert work_key == "/works/OL1W"
+        assert edition_key is None
+        return OpenLibraryWorkBundle(
+            work_key=work_key,
+            title="Title",
+            description="Desc",
+            first_publish_year=2024,
+            cover_url="https://covers.openlibrary.org/b/id/1-L.jpg",
+            authors=[],
+            edition={"key": "/books/OL999M", "publisher": "Ace"},
+            raw_work={"description": "Desc"},
+            raw_edition={"publishers": ["Ace"], "covers": [1]},
+        )
+
+    payload = await _build_cover_metadata_compare_payload(
+        session=cast(Any, session),
+        auth=AuthContext(claims={}, client_id=None, user_id=uuid.uuid4()),
+        work_id=uuid.uuid4(),
+        open_library=cast(
+            Any, SimpleNamespace(fetch_work_bundle=_fake_fetch_work_bundle)
+        ),
+        google_books=cast(Any, SimpleNamespace()),
+        provider="openlibrary",
+        source_id="/works/OL1W",
+        edition_id=None,
+    )
+    fields = cast(list[dict[str, Any]], cast(dict[str, Any], payload)["fields"])
+    publisher_field = next(
+        field for field in fields if field["field_key"] == "edition.publisher"
+    )
+    assert publisher_field["selected_value"] == "Ace"
+    assert publisher_field["selected_available"] is True
+    assert publisher_field["provider_id"] == "/books/OL999M"
+
+
+@pytest.mark.anyio
+async def test_build_cover_metadata_compare_payload_openlibrary_resolves_work_key_from_edition_when_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = _FakeSession(
+        scalar_values=[
+            {"description": "Resolved work description", "covers": [1]},
+            {"covers": [1], "publishers": ["Ace"]},
+        ],
+    )
+    monkeypatch.setattr(
+        "app.routers.works._current_field_values_for_compare",
+        lambda **_kwargs: {"work.description": None},
+    )
+    monkeypatch.setattr(
+        "app.routers.works._resolve_openlibrary_work_key_for_source",
+        lambda **_kwargs: None,
+    )
+
+    async def _resolve_work_key_from_edition_key(**_kwargs: Any) -> str:
+        return "/works/OLRESOLVED"
+
+    payload = await _build_cover_metadata_compare_payload(
+        session=cast(Any, session),
+        auth=AuthContext(claims={}, client_id=None, user_id=uuid.uuid4()),
+        work_id=uuid.uuid4(),
+        open_library=cast(
+            Any,
+            SimpleNamespace(
+                resolve_work_key_from_edition_key=_resolve_work_key_from_edition_key
+            ),
+        ),
+        google_books=cast(Any, SimpleNamespace()),
+        provider="openlibrary",
+        source_id="/books/OL1M",
+        edition_id=None,
+    )
+
     assert cast(dict[str, Any], payload["selected_source"])["provider"] == "openlibrary"
 
 

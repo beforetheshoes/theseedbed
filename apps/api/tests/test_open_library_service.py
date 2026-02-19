@@ -79,7 +79,8 @@ def test_search_books_uses_user_agent_and_cache() -> None:
     assert first.items[0].edition_count is None
     assert first.items[0].languages == []
     assert first.items[0].readable is False
-    assert seen_params[0]["q"] == "title:book"
+    assert seen_params[0]["title"] == "book"
+    assert "q" not in seen_params[0]
     assert "sort" not in seen_params[0]
     assert "fields" in seen_params[0]
 
@@ -121,9 +122,10 @@ def test_search_books_supports_fielded_filters() -> None:
     assert result.items[0].languages == ["eng", "deu"]
     assert result.items[0].readable is True
     assert seen_params[0]["sort"] == "new"
-    assert "author:Author A" in seen_params[0]["q"]
-    assert "subject:Fantasy" in seen_params[0]["q"]
-    assert "language:eng" in seen_params[0]["q"]
+    assert seen_params[0]["title"] == "book"
+    assert seen_params[0]["author"] == "Author A"
+    assert seen_params[0]["subject"] == "Fantasy"
+    assert seen_params[0]["language"] == "eng"
     assert "first_publish_year:[1990 TO *]" in seen_params[0]["q"]
     assert "first_publish_year:[* TO 2005]" in seen_params[0]["q"]
 
@@ -321,6 +323,44 @@ def test_fetch_work_editions_returns_empty_for_invalid_entries() -> None:
     items = asyncio.run(client.fetch_work_editions(work_key="/works/OL1W", limit=5))
 
     assert items == []
+
+
+def test_resolve_work_key_from_edition_key_reads_works_array() -> None:
+    responses = {
+        "/books/OL1M.json": {"works": [{"key": "/works/OL1W"}]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    resolved = asyncio.run(client.resolve_work_key_from_edition_key(edition_key="OL1M"))
+
+    assert resolved == "/works/OL1W"
+
+
+def test_resolve_work_key_from_edition_key_returns_none_for_missing_work_entries() -> (
+    None
+):
+    responses = {
+        "/books/OL1M.json": {"works": ["bad", {"key": 123}]},
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = responses.get(request.url.path)
+        if payload is None:
+            return httpx.Response(404, json={"error": "missing"})
+        return httpx.Response(200, json=payload)
+
+    client = OpenLibraryClient(transport=httpx.MockTransport(handler))
+    resolved = asyncio.run(
+        client.resolve_work_key_from_edition_key(edition_key="/books/OL1M")
+    )
+
+    assert resolved is None
 
 
 def test_request_retries_on_5xx() -> None:

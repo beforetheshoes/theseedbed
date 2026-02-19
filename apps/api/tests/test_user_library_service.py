@@ -138,6 +138,7 @@ def test_update_profile_validates_handle() -> None:
             theme_font_family=None,
             theme_heading_font_family=None,
             default_progress_unit=None,
+            default_source_language=None,
         )
 
 
@@ -160,6 +161,7 @@ def test_update_profile_rejects_duplicate_handle() -> None:
             theme_font_family=None,
             theme_heading_font_family=None,
             default_progress_unit=None,
+            default_source_language=None,
         )
 
 
@@ -181,6 +183,7 @@ def test_update_profile_updates_fields() -> None:
         theme_font_family="ibm_plex_sans",
         theme_heading_font_family=None,
         default_progress_unit="minutes_listened",
+        default_source_language="eng",
     )
     assert updated is profile
     assert updated.handle == "fresh"
@@ -211,6 +214,7 @@ def test_update_profile_rejects_invalid_theme_colors() -> None:
             theme_font_family=None,
             theme_heading_font_family=None,
             default_progress_unit=None,
+            default_source_language=None,
         )
 
     with pytest.raises(ValueError):
@@ -226,6 +230,7 @@ def test_update_profile_rejects_invalid_theme_colors() -> None:
             theme_font_family=None,
             theme_heading_font_family=None,
             default_progress_unit=None,
+            default_source_language=None,
         )
 
 
@@ -247,6 +252,7 @@ def test_update_profile_rejects_invalid_theme_font() -> None:
             theme_font_family=cast(Any, "comic_sans"),
             theme_heading_font_family=None,
             default_progress_unit=None,
+            default_source_language=None,
         )
 
 

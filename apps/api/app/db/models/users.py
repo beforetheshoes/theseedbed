@@ -67,6 +67,11 @@ class User(Base):
         nullable=False,
         server_default=sa.text("'pages_read'::reading_progress_unit"),
     )
+    default_source_language: Mapped[str] = mapped_column(
+        sa.String(8),
+        nullable=False,
+        server_default=sa.text("'eng'"),
+    )
     actor_uri: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[dt.datetime] = mapped_column(
         sa.DateTime(timezone=True),

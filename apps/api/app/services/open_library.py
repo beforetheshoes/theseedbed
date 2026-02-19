@@ -13,6 +13,24 @@ import httpx
 
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _YEAR_RE = re.compile(r"(\d{4})")
+_OPENLIBRARY_CANONICAL_LANGUAGE_MAP: dict[str, str] = {
+    "en": "eng",
+    "eng": "eng",
+    "es": "spa",
+    "spa": "spa",
+    "fr": "fra",
+    "fra": "fra",
+    "fre": "fra",
+    "de": "deu",
+    "deu": "deu",
+    "ger": "deu",
+    "it": "ita",
+    "ita": "ita",
+    "pt": "por",
+    "por": "por",
+    "ja": "jpn",
+    "jpn": "jpn",
+}
 T = TypeVar("T")
 
 
@@ -168,6 +186,15 @@ def _extract_language_codes(raw_languages: Any) -> list[str]:
         seen.add(normalized)
         deduped.append(normalized)
     return deduped
+
+
+def _canonical_openlibrary_language(code: str | None) -> str | None:
+    if not isinstance(code, str):
+        return None
+    normalized = code.strip().lower()
+    if not normalized:
+        return None
+    return _OPENLIBRARY_CANONICAL_LANGUAGE_MAP.get(normalized, normalized)
 
 
 def _first_list_string(values: Any) -> str | None:
@@ -471,18 +498,12 @@ class OpenLibraryClient:
         normalized_author = (author or "").strip()
         normalized_subject = (subject or "").strip()
         normalized_language = (language or "").strip().lower()
-        q_parts = [f"title:{normalized_query}"]
-        if normalized_author:
-            q_parts.append(f"author:{normalized_author}")
-        if normalized_subject:
-            q_parts.append(f"subject:{normalized_subject}")
-        if normalized_language:
-            q_parts.append(f"language:{normalized_language}")
+        q_parts: list[str] = []
         if first_publish_year_from is not None:
             q_parts.append(f"first_publish_year:[{first_publish_year_from} TO *]")
         if first_publish_year_to is not None:
             q_parts.append(f"first_publish_year:[* TO {first_publish_year_to}]")
-        q = " ".join(q_parts)
+        q = " ".join(q_parts) if q_parts else None
         sort_param = "new" if sort == "new" else "old" if sort == "old" else None
         cache_key = (
             f"{normalized_query.lower()}::{normalized_author.lower()}::{normalized_subject.lower()}::"
@@ -502,7 +523,7 @@ class OpenLibraryClient:
             )
 
         params: dict[str, str | int] = {
-            "q": q,
+            "title": normalized_query,
             "limit": limit,
             "page": page,
             "fields": (
@@ -510,6 +531,14 @@ class OpenLibraryClient:
                 "language,has_fulltext,public_scan_b,ia"
             ),
         }
+        if normalized_author:
+            params["author"] = normalized_author
+        if normalized_subject:
+            params["subject"] = normalized_subject
+        if normalized_language:
+            params["language"] = normalized_language
+        if q:
+            params["q"] = q
         if sort_param is not None:
             params["sort"] = sort_param
         payload = await self._request_json("/search.json", params=params)
@@ -740,6 +769,29 @@ class OpenLibraryClient:
             raw_edition=raw_edition,
         )
 
+    async def resolve_work_key_from_edition_key(
+        self, *, edition_key: str
+    ) -> str | None:
+        normalized_edition_key = _normalize_edition_key(edition_key)
+        payload = await self._request_json(f"{normalized_edition_key}.json")
+        works = payload.get("works")
+        if not isinstance(works, list):
+            return None
+        for item in works:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key")
+            if isinstance(key, str):
+                normalized = key.strip()
+                if normalized.startswith("/works/"):
+                    return normalized
+        return None
+
+    async def fetch_edition_payload(self, *, edition_key: str) -> dict[str, Any]:
+        normalized_edition_key = _normalize_edition_key(edition_key)
+        payload = await self._request_json(f"{normalized_edition_key}.json")
+        return payload if isinstance(payload, dict) else {}
+
     async def fetch_work_editions(
         self,
         *,
@@ -757,7 +809,7 @@ class OpenLibraryClient:
             return []
 
         normalized_language = (
-            language.strip().lower()
+            _canonical_openlibrary_language(language)
             if isinstance(language, str) and language.strip()
             else None
         )
@@ -774,7 +826,8 @@ class OpenLibraryClient:
             if (
                 normalized_language is not None
                 and primary_language is not None
-                and primary_language.lower() != normalized_language
+                and _canonical_openlibrary_language(primary_language)
+                != normalized_language
             ):
                 continue
 

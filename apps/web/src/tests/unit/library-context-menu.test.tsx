@@ -77,6 +77,9 @@ function setupApiMock(status: "reading" | "to_read" = "reading") {
   const items = SAMPLE_ITEMS.map((item) => ({ ...item, status }));
   apiRequestMock.mockImplementation(
     async (_supabase: unknown, path: string) => {
+      if (path === "/api/v1/me") {
+        return { default_source_language: "eng" };
+      }
       if (path === "/api/v1/library/items") {
         return {
           items,
@@ -106,6 +109,7 @@ function setupApiMock(status: "reading" | "to_read" = "reading") {
             {
               provider: "openlibrary",
               source_id: "/books/OL1M",
+              openlibrary_work_key: "/works/OL1W",
               title: "The Left Hand of Darkness",
               authors: ["Ursula K. Le Guin"],
               publisher: "Ace",
@@ -303,5 +307,250 @@ describe("Library context menu", () => {
       (entry) => entry[1] === "/api/v1/works/work-1/cover-metadata/compare",
     );
     expect(compareCalls).toHaveLength(0);
+  });
+
+  it("sends openlibrary work key when requesting compare for an openlibrary tile", async () => {
+    const items = SAMPLE_ITEMS.map((item) => ({ ...item, status: "reading" }));
+    apiRequestMock.mockImplementation(
+      async (
+        _supabase: unknown,
+        path: string,
+        opts?: {
+          query?: Record<string, string | number | boolean | null | undefined>;
+        },
+      ) => {
+        if (path === "/api/v1/library/items") {
+          return {
+            items,
+            pagination: {
+              page: 1,
+              page_size: 25,
+              total_count: 1,
+              total_pages: 1,
+              from: 1,
+              to: 1,
+              has_prev: false,
+              has_next: false,
+            },
+          };
+        }
+        if (path === "/api/v1/me") {
+          return { default_source_language: "eng" };
+        }
+        if (path.startsWith("/api/v1/library/items/item-1")) return items[0];
+        if (path === "/api/v1/works/work-1/editions") {
+          return {
+            items: [
+              { id: "edition-1", title: "Default Edition", format: null },
+            ],
+          };
+        }
+        if (path === "/api/v1/works/work-1/cover-metadata/sources") {
+          expect(String(opts?.query?.languages ?? "")).toContain("eng");
+          expect(opts?.query?.language).toBeUndefined();
+          return {
+            items: [
+              {
+                provider: "openlibrary",
+                source_id: "/books/OL1M",
+                openlibrary_work_key: "/works/OL1W",
+                title: "The Left Hand of Darkness",
+                authors: ["Ursula K. Le Guin"],
+                publisher: "Ace",
+                publish_date: "1969-01-01",
+                language: "eng",
+                identifier: "9780441478129",
+                cover_url: "https://covers.openlibrary.org/b/id/1-M.jpg",
+                source_label: "Open Library",
+              },
+            ],
+            prefetch_compare: {},
+          };
+        }
+        if (path === "/api/v1/works/work-1/cover-metadata/compare") {
+          expect(opts?.query?.openlibrary_work_key).toBe("/works/OL1W");
+          return {
+            fields: [
+              {
+                field_key: "edition.publisher",
+                field_label: "Publisher",
+                current_value: "Current publisher",
+                selected_value: "Ace",
+                selected_available: true,
+                provider: "openlibrary",
+                provider_id: "/books/OL1M",
+              },
+            ],
+          };
+        }
+        throw new Error(`Unhandled apiRequest call: ${path}`);
+      },
+    );
+
+    render(<LibraryPageClient initialAuthed />);
+    await setViewMode("Grid");
+
+    await openFromOverflowTrigger();
+    fireEvent.click(await screen.findByText("Set Cover and Metadata"));
+    const tile = await screen.findByRole("button", { name: /Open Library/i });
+    fireEvent.click(tile);
+
+    await screen.findByText("Publisher");
+    const compareCalls = apiRequestMock.mock.calls.filter(
+      (entry) => entry[1] === "/api/v1/works/work-1/cover-metadata/compare",
+    );
+    expect(compareCalls.length).toBeGreaterThanOrEqual(1);
+    for (const call of compareCalls) {
+      const options = call[2] as {
+        query?: Record<string, string | number | boolean | null | undefined>;
+      };
+      expect(options?.query?.openlibrary_work_key).toBe("/works/OL1W");
+    }
+  });
+
+  it("sends title override when refreshing source lookup", async () => {
+    const sourceTitles: string[] = [];
+    apiRequestMock.mockImplementation(
+      async (
+        _supabase: unknown,
+        path: string,
+        opts?: {
+          query?: Record<string, string | number | boolean | null | undefined>;
+        },
+      ) => {
+        if (path === "/api/v1/me") return { default_source_language: "eng" };
+        if (path === "/api/v1/library/items") {
+          return {
+            items: SAMPLE_ITEMS,
+            pagination: {
+              page: 1,
+              page_size: 25,
+              total_count: 1,
+              total_pages: 1,
+              from: 1,
+              to: 1,
+              has_prev: false,
+              has_next: false,
+            },
+          };
+        }
+        if (path.startsWith("/api/v1/library/items/item-1"))
+          return SAMPLE_ITEMS[0];
+        if (path === "/api/v1/works/work-1/editions") {
+          return {
+            items: [
+              { id: "edition-1", title: "Default Edition", format: null },
+            ],
+          };
+        }
+        if (path === "/api/v1/works/work-1/cover-metadata/sources") {
+          sourceTitles.push(String(opts?.query?.title ?? ""));
+          return { items: [], prefetch_compare: {} };
+        }
+        throw new Error(`Unhandled apiRequest call: ${path}`);
+      },
+    );
+
+    render(<LibraryPageClient initialAuthed />);
+    await setViewMode("Grid");
+    await openFromOverflowTrigger();
+    fireEvent.click(await screen.findByText("Set Cover and Metadata"));
+
+    const titleInput = await screen.findByLabelText("Search title");
+    fireEvent.change(titleInput, { target: { value: "Da Vinci Code" } });
+    fireEvent.click(await screen.findByRole("button", { name: "Search" }));
+
+    await waitFor(() => expect(sourceTitles.length).toBeGreaterThanOrEqual(2));
+    expect(sourceTitles[0]).toBe("The Left Hand of Darkness");
+    expect(sourceTitles.at(-1)).toBe("Da Vinci Code");
+  });
+
+  it("renders current cover when compare returns a relative cover path", async () => {
+    apiRequestMock.mockImplementation(
+      async (
+        _supabase: unknown,
+        path: string,
+        opts?: {
+          query?: Record<string, string | number | boolean | null | undefined>;
+        },
+      ) => {
+        if (path === "/api/v1/me") {
+          return { default_source_language: "eng" };
+        }
+        if (path === "/api/v1/library/items") {
+          return {
+            items: SAMPLE_ITEMS,
+            pagination: {
+              page: 1,
+              page_size: 25,
+              total_count: 1,
+              total_pages: 1,
+              from: 1,
+              to: 1,
+              has_prev: false,
+              has_next: false,
+            },
+          };
+        }
+        if (path.startsWith("/api/v1/library/items/item-1")) {
+          return SAMPLE_ITEMS[0];
+        }
+        if (path === "/api/v1/works/work-1/editions") {
+          return {
+            items: [
+              { id: "edition-1", title: "Default Edition", format: null },
+            ],
+          };
+        }
+        if (path === "/api/v1/works/work-1/cover-metadata/sources") {
+          expect(String(opts?.query?.languages ?? "")).toContain("eng");
+          return {
+            items: [
+              {
+                provider: "openlibrary",
+                source_id: "/books/OL1M",
+                openlibrary_work_key: "/works/OL1W",
+                title: "The Left Hand of Darkness",
+                authors: ["Ursula K. Le Guin"],
+                publisher: "Ace",
+                publish_date: "1969-01-01",
+                language: "eng",
+                identifier: "9780441478129",
+                cover_url: "https://covers.openlibrary.org/b/id/1-M.jpg",
+                source_label: "Open Library",
+              },
+            ],
+            prefetch_compare: {},
+          };
+        }
+        if (path === "/api/v1/works/work-1/cover-metadata/compare") {
+          return {
+            fields: [
+              {
+                field_key: "work.cover_url",
+                field_label: "Cover",
+                current_value: "/storage/v1/object/public/covers/current.jpg",
+                selected_value: "https://covers.openlibrary.org/b/id/1-L.jpg",
+                selected_available: true,
+                provider: "openlibrary",
+                provider_id: "/books/OL1M",
+              },
+            ],
+          };
+        }
+        throw new Error(`Unhandled apiRequest call: ${path}`);
+      },
+    );
+
+    render(<LibraryPageClient initialAuthed />);
+    await setViewMode("Grid");
+    await openFromOverflowTrigger();
+    fireEvent.click(await screen.findByText("Set Cover and Metadata"));
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Open Library/i }),
+    );
+
+    await screen.findByText("Cover");
+    expect(screen.queryByText("No current cover")).not.toBeInTheDocument();
   });
 });
