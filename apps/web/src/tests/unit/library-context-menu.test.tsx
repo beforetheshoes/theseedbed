@@ -40,7 +40,7 @@ vi.mock("@/components/toast-provider", () => ({
   useAppToast: () => ({ show: vi.fn() }),
 }));
 
-import LibraryPage from "@/app/(app)/library/page";
+import LibraryPageClient from "@/app/(app)/library/library-page-client";
 
 const SAMPLE_ITEMS = [
   {
@@ -176,7 +176,7 @@ describe("Library context menu", () => {
 
   it("opens from list right-click and renders 4 actions in order", async () => {
     localStorage.setItem("seedbed.library.viewMode", "list");
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
 
     const listTitle = await screen.findByText("The Left Hand of Darkness");
 
@@ -197,7 +197,7 @@ describe("Library context menu", () => {
   it("hides Log Progress when item status is not reading", async () => {
     setupApiMock("to_read");
     localStorage.setItem("seedbed.library.viewMode", "list");
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
 
     const listTitle = await screen.findByText("The Left Hand of Darkness");
     fireEvent.contextMenu(listTitle);
@@ -215,7 +215,7 @@ describe("Library context menu", () => {
   });
 
   it("opens from grid overflow trigger and opens merged workflow dialog without navigation", async () => {
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
     await setViewMode("Grid");
 
     await openFromOverflowTrigger();
@@ -232,7 +232,7 @@ describe("Library context menu", () => {
   });
 
   it("opens from table row right-click and opens Log Progress dialog", async () => {
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
     await setViewMode("Table");
 
     const titleLink = await screen.findByText("The Left Hand of Darkness");
@@ -253,7 +253,7 @@ describe("Library context menu", () => {
 
   it("supports keyboard context menu trigger (Shift+F10) for list cards", async () => {
     localStorage.setItem("seedbed.library.viewMode", "list");
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
 
     const titleLink = await screen.findByText("The Left Hand of Darkness");
     const listCard = titleLink.closest(".p-card");
@@ -265,7 +265,7 @@ describe("Library context menu", () => {
   });
 
   it("closes menu after action selection", async () => {
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
     await setViewMode("Grid");
 
     await openFromOverflowTrigger();
@@ -287,7 +287,7 @@ describe("Library context menu", () => {
   });
 
   it("uses prefetched compare cache when selecting a prefetched tile", async () => {
-    render(<LibraryPage />);
+    render(<LibraryPageClient initialAuthed />);
     await setViewMode("Grid");
 
     await openFromOverflowTrigger();

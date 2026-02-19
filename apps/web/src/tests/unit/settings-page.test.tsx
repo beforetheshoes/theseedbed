@@ -17,7 +17,7 @@ vi.mock("@/lib/supabase/browser", () => ({
   createBrowserClient: vi.fn(() => ({ auth: { getSession: vi.fn() } })),
 }));
 
-import SettingsPage from "@/app/(app)/settings/page";
+import SettingsPageClient from "@/app/(app)/settings/settings-page-client";
 
 type ImportIssueSeed = {
   row_number: number;
@@ -154,7 +154,7 @@ describe("Settings page import + header UX", () => {
   it("renders Save settings in the page header area", async () => {
     setupApiMock();
 
-    const { container } = render(<SettingsPage />);
+    const { container } = render(<SettingsPageClient />);
     await waitFor(() =>
       expect(apiRequestMock).toHaveBeenCalledWith(
         expect.anything(),
@@ -191,7 +191,7 @@ describe("Settings page import + header UX", () => {
       ],
     });
 
-    const { container } = render(<SettingsPage />);
+    const { container } = render(<SettingsPageClient />);
     await uploadCsv(
       container,
       "storygraph-file-input",
@@ -251,7 +251,7 @@ describe("Settings page import + header UX", () => {
       ],
     });
 
-    const { container } = render(<SettingsPage />);
+    const { container } = render(<SettingsPageClient />);
     await uploadCsv(
       container,
       "goodreads-file-input",
