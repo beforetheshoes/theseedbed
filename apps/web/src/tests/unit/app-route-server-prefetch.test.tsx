@@ -2,14 +2,18 @@ import fs from "node:fs";
 import path from "node:path";
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { AppRouteServerBootstrapResult } from "@/lib/app-route-server-bootstrap";
 
 const { apiRequestWithAccessTokenMock, bootstrapAppRouteAccessTokenMock } =
   vi.hoisted(() => ({
     apiRequestWithAccessTokenMock: vi.fn(),
-    bootstrapAppRouteAccessTokenMock: vi.fn(async () => ({
-      kind: "authed" as const,
-      accessToken: "token-123",
-    })),
+    bootstrapAppRouteAccessTokenMock:
+      vi.fn<() => Promise<AppRouteServerBootstrapResult>>(
+        async () => ({
+          kind: "authed" as const,
+          accessToken: "token-123",
+        }),
+      ),
   }));
 
 vi.mock("@/lib/api", async () => {
