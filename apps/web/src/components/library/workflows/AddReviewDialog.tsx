@@ -143,11 +143,7 @@ export function AddReviewDialog({
               }
             />
           </div>
-          <Button
-            label="Save review"
-            loading={saving}
-            onClick={onSubmit}
-          />
+          <Button label="Save review" loading={saving} onClick={onSubmit} />
         </div>
       </div>
     </Dialog>

@@ -242,12 +242,12 @@ export default function LibraryEnrichmentPage() {
   const [taskBusyId, setTaskBusyId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [hasBackgroundUpdates, setHasBackgroundUpdates] = useState(false);
-  const [selectedNeedsReviewIds, setSelectedNeedsReviewIds] = useState<string[]>(
-    [],
-  );
-  const [bulkActionBusy, setBulkActionBusy] = useState<"apply" | "retry" | null>(
-    null,
-  );
+  const [selectedNeedsReviewIds, setSelectedNeedsReviewIds] = useState<
+    string[]
+  >([]);
+  const [bulkActionBusy, setBulkActionBusy] = useState<
+    "apply" | "retry" | null
+  >(null);
   const isRefreshingRef = useRef(false);
   const isProcessingRef = useRef(false);
   const compareCacheRef = useRef<Map<string, CoverMetadataCompareField[]>>(
@@ -267,9 +267,9 @@ export default function LibraryEnrichmentPage() {
   const [sourceTilesLoading, setSourceTilesLoading] = useState(false);
   const [sourceTilesError, setSourceTilesError] = useState("");
   const [selectedSourceKey, setSelectedSourceKey] = useState("");
-  const [compareFields, setCompareFields] = useState<CoverMetadataCompareField[]>(
-    [],
-  );
+  const [compareFields, setCompareFields] = useState<
+    CoverMetadataCompareField[]
+  >([]);
   const [compareSelection, setCompareSelection] = useState<
     Record<string, SelectionValue>
   >({});
@@ -283,41 +283,44 @@ export default function LibraryEnrichmentPage() {
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverBusy] = useState(false);
 
-  const refreshData = useCallback(async ({ silent = false }: { silent?: boolean } = {}) => {
-    if (isRefreshingRef.current) {
-      return;
-    }
-    isRefreshingRef.current = true;
-    if (!silent) {
-      setLoading(true);
-    }
-    try {
-      const all: EnrichmentTask[] = [];
-      let cursor: string | null = null;
-      do {
-        const query: Record<string, string | number> = { limit: 100 };
-        if (cursor) query.cursor = cursor;
-        const res = await apiRequest<{
-          items: EnrichmentTask[];
-          next_cursor: string | null;
-        }>(supabase, "/api/v1/library/enrichment/tasks", { query });
-        all.push(...(res.items ?? []));
-        cursor = res.next_cursor ?? null;
-      } while (cursor);
-      setAllTasks(all);
-    } catch (err) {
-      setError(
-        err instanceof ApiClientError
-          ? err.message
-          : "Unable to load enrichment data right now.",
-      );
-    } finally {
-      isRefreshingRef.current = false;
-      if (!silent) {
-        setLoading(false);
+  const refreshData = useCallback(
+    async ({ silent = false }: { silent?: boolean } = {}) => {
+      if (isRefreshingRef.current) {
+        return;
       }
-    }
-  }, [supabase]);
+      isRefreshingRef.current = true;
+      if (!silent) {
+        setLoading(true);
+      }
+      try {
+        const all: EnrichmentTask[] = [];
+        let cursor: string | null = null;
+        do {
+          const query: Record<string, string | number> = { limit: 100 };
+          if (cursor) query.cursor = cursor;
+          const res = await apiRequest<{
+            items: EnrichmentTask[];
+            next_cursor: string | null;
+          }>(supabase, "/api/v1/library/enrichment/tasks", { query });
+          all.push(...(res.items ?? []));
+          cursor = res.next_cursor ?? null;
+        } while (cursor);
+        setAllTasks(all);
+      } catch (err) {
+        setError(
+          err instanceof ApiClientError
+            ? err.message
+            : "Unable to load enrichment data right now.",
+        );
+      } finally {
+        isRefreshingRef.current = false;
+        if (!silent) {
+          setLoading(false);
+        }
+      }
+    },
+    [supabase],
+  );
 
   useEffect(() => {
     void refreshData();
@@ -383,9 +386,8 @@ export default function LibraryEnrichmentPage() {
   const selectedNeedsReviewTasks = selectedNeedsReviewIds
     .map((id) => needsReviewTaskMap.get(id))
     .filter((task): task is EnrichmentTask => Boolean(task));
-  const selectedNeedsReviewWithSuggestions = selectedNeedsReviewTasks.filter(
-    hasSuggestedMetadata,
-  );
+  const selectedNeedsReviewWithSuggestions =
+    selectedNeedsReviewTasks.filter(hasSuggestedMetadata);
   const dialogTask = useMemo(
     () => allTasks.find((task) => task.id === dialogTaskId) ?? null,
     [allTasks, dialogTaskId],
@@ -401,7 +403,10 @@ export default function LibraryEnrichmentPage() {
   }, [needsReviewTasks]);
 
   const processBatch = useCallback(
-    async ({ limit = 1, silent = false }: { limit?: number; silent?: boolean } = {}) => {
+    async ({
+      limit = 1,
+      silent = false,
+    }: { limit?: number; silent?: boolean } = {}) => {
       if (isProcessingRef.current) {
         return;
       }
@@ -452,7 +457,13 @@ export default function LibraryEnrichmentPage() {
   };
 
   useEffect(() => {
-    if (loading || enriching || taskBusyId || bulkActionBusy || document.hidden) {
+    if (
+      loading ||
+      enriching ||
+      taskBusyId ||
+      bulkActionBusy ||
+      document.hidden
+    ) {
       return;
     }
     if (pendingCount + inProgressCount <= 0) {
@@ -635,13 +646,18 @@ export default function LibraryEnrichmentPage() {
     let appliedCount = 0;
     let failedCount = 0;
     const skippedCount =
-      selectedNeedsReviewTasks.length - selectedNeedsReviewWithSuggestions.length;
+      selectedNeedsReviewTasks.length -
+      selectedNeedsReviewWithSuggestions.length;
     for (const task of selectedNeedsReviewWithSuggestions) {
       try {
-        await apiRequest(supabase, `/api/v1/library/enrichment/${task.id}/approve`, {
-          method: "POST",
-          body: { selections: [] },
-        });
+        await apiRequest(
+          supabase,
+          `/api/v1/library/enrichment/${task.id}/approve`,
+          {
+            method: "POST",
+            body: { selections: [] },
+          },
+        );
         appliedCount += 1;
       } catch {
         failedCount += 1;
@@ -696,14 +712,19 @@ export default function LibraryEnrichmentPage() {
     setBulkActionBusy(null);
   };
 
-  const applyCompareFields = useCallback((fields: CoverMetadataCompareField[]) => {
-    setCompareFields(fields);
-    const initial: Record<string, SelectionValue> = {};
-    for (const field of fields) {
-      initial[field.field_key] = field.selected_available ? "selected" : "current";
-    }
-    setCompareSelection(initial);
-  }, []);
+  const applyCompareFields = useCallback(
+    (fields: CoverMetadataCompareField[]) => {
+      setCompareFields(fields);
+      const initial: Record<string, SelectionValue> = {};
+      for (const field of fields) {
+        initial[field.field_key] = field.selected_available
+          ? "selected"
+          : "current";
+      }
+      setCompareSelection(initial);
+    },
+    [],
+  );
 
   const coverMetadataCacheKey = useCallback(
     (
@@ -716,7 +737,10 @@ export default function LibraryEnrichmentPage() {
   );
 
   const loadWorkflowEditions = useCallback(
-    async (workId: string, preferredEditionId?: string | null): Promise<string> => {
+    async (
+      workId: string,
+      preferredEditionId?: string | null,
+    ): Promise<string> => {
       try {
         const payload = await apiRequest<{ items: Edition[] }>(
           supabase,
@@ -832,21 +856,19 @@ export default function LibraryEnrichmentPage() {
       }
       if (!options?.silent) setCompareFieldsLoading(true);
       try {
-        const payload = await apiRequest<{ fields: CoverMetadataCompareField[] }>(
-          supabase,
-          `/api/v1/works/${workId}/cover-metadata/compare`,
-          {
-            query: {
-              provider,
-              source_id: sourceId,
-              openlibrary_work_key:
-                provider === "openlibrary"
-                  ? options?.openlibraryWorkKey?.trim() || undefined
-                  : undefined,
-              edition_id: options?.editionId || workflowEditionId || undefined,
-            },
+        const payload = await apiRequest<{
+          fields: CoverMetadataCompareField[];
+        }>(supabase, `/api/v1/works/${workId}/cover-metadata/compare`, {
+          query: {
+            provider,
+            source_id: sourceId,
+            openlibrary_work_key:
+              provider === "openlibrary"
+                ? options?.openlibraryWorkKey?.trim() || undefined
+                : undefined,
+            edition_id: options?.editionId || workflowEditionId || undefined,
           },
-        );
+        });
         applyCompareFields(payload.fields ?? []);
       } catch (err) {
         setCompareFields([]);
@@ -902,7 +924,10 @@ export default function LibraryEnrichmentPage() {
     const initialLanguages = [defaultSourceLanguage];
     setSourceLanguages(initialLanguages);
     setSourceSearchTitle(task.work_title ?? "");
-    const selectedEditionId = await loadWorkflowEditions(task.work_id, task.edition_id);
+    const selectedEditionId = await loadWorkflowEditions(
+      task.work_id,
+      task.edition_id,
+    );
     await loadCoverMetadataSources(
       task.work_id,
       initialLanguages,
@@ -1429,7 +1454,9 @@ export default function LibraryEnrichmentPage() {
           }))
         }
         onFileChange={setCoverFile}
-        onUploadCover={() => setDialogError("Upload mode is not available here.")}
+        onUploadCover={() =>
+          setDialogError("Upload mode is not available here.")
+        }
         onCoverSourceUrlChange={setCoverSourceUrl}
         onCacheCover={() => setDialogError("URL mode is not available here.")}
       />
