@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { useMemo, useState } from "react";
 import { Button } from "primereact/button";
 import { Dialog } from "primereact/dialog";
 import { InputText } from "primereact/inputtext";
@@ -96,6 +97,107 @@ const toImageUrl = (value: unknown) => {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   return "";
 };
+
+const normalizeIsbn = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  const normalized = value.replace(/[^0-9Xx]/g, "").toUpperCase();
+  if (normalized.length === 10 || normalized.length === 13) {
+    return normalized;
+  }
+  return null;
+};
+
+const buildCoverFallbackCandidates = (
+  primary: string,
+  identifier?: string | null,
+): string[] => {
+  const candidates: string[] = [];
+  const push = (value: string | null | undefined) => {
+    if (!value) return;
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    if (!candidates.includes(trimmed)) {
+      candidates.push(trimmed);
+    }
+  };
+
+  push(primary);
+  if (primary.startsWith("http://")) {
+    push(`https://${primary.slice("http://".length)}`);
+  }
+
+  const idCoverMatch = primary.match(
+    /^(https?:\/\/covers\.openlibrary\.org\/b\/id\/\d+)-([SML])(\.jpg.*)?$/i,
+  );
+  if (idCoverMatch) {
+    const base = idCoverMatch[1];
+    const suffix = idCoverMatch[3] ?? ".jpg";
+    push(`${base}-L${suffix}`);
+    push(`${base}-M${suffix}`);
+  }
+
+  const isbn = normalizeIsbn(identifier);
+  if (isbn) {
+    push(`https://covers.openlibrary.org/b/isbn/${isbn}-L.jpg`);
+    push(`https://covers.openlibrary.org/b/isbn/${isbn}-M.jpg`);
+  }
+
+  return candidates;
+};
+
+function CoverImageWithFallback({
+  primaryUrl,
+  identifier,
+  alt,
+  width,
+  height,
+  className,
+  emptyLabel,
+}: {
+  primaryUrl: string;
+  identifier?: string | null;
+  alt: string;
+  width: number;
+  height: number;
+  className: string;
+  emptyLabel: string;
+}) {
+  const candidates = useMemo(
+    () => buildCoverFallbackCandidates(primaryUrl, identifier),
+    [identifier, primaryUrl],
+  );
+  const [index, setIndex] = useState(0);
+  const [exhausted, setExhausted] = useState(false);
+
+  if (!candidates.length || exhausted) {
+    return (
+      <div className="flex h-36 items-center justify-center bg-[var(--p-surface-100)] text-sm text-[var(--p-text-muted-color)] dark:bg-[var(--p-surface-800)]">
+        {emptyLabel}
+      </div>
+    );
+  }
+
+  const src = candidates[Math.min(index, candidates.length - 1)];
+  return (
+    <Image
+      src={src}
+      alt={alt}
+      width={width}
+      height={height}
+      unoptimized={shouldUseUnoptimizedForUrl(src)}
+      className={className}
+      onError={() => {
+        setIndex((current) => {
+          if (current < candidates.length - 1) {
+            return current + 1;
+          }
+          setExhausted(true);
+          return current;
+        });
+      }}
+    />
+  );
+}
 
 const renderFieldText = (fieldKey: string, value: unknown) => {
   if (
@@ -195,7 +297,7 @@ export function SetCoverAndMetadataDialog({
                 <div className="flex w-[30rem] max-w-full flex-col gap-1">
                   <label
                     htmlFor="cover-metadata-search-title"
-                    className="text-[11px] text-[var(--p-text-muted-color)]"
+                    className="text-xs text-[var(--p-text-muted-color)]"
                   >
                     Search title
                   </label>
@@ -206,14 +308,14 @@ export function SetCoverAndMetadataDialog({
                       onSourceSearchTitleChange(event.target.value)
                     }
                     placeholder="Enter title"
-                    className="h-9 w-full"
+                    className="w-full"
                     data-test="cover-metadata-title-input"
                   />
                 </div>
                 <div className="flex w-[20rem] max-w-full flex-col gap-1">
                   <label
                     htmlFor="cover-metadata-language-select"
-                    className="text-[11px] text-[var(--p-text-muted-color)]"
+                    className="text-xs text-[var(--p-text-muted-color)]"
                   >
                     Languages
                   </label>
@@ -223,7 +325,6 @@ export function SetCoverAndMetadataDialog({
                     options={languageOptions}
                     optionLabel="label"
                     optionValue="value"
-                    appendTo="self"
                     onChange={(event) =>
                       onSourceLanguagesChange(
                         Array.isArray(event.value)
@@ -231,16 +332,10 @@ export function SetCoverAndMetadataDialog({
                           : [],
                       )
                     }
-                    className="h-9 w-full"
+                    className="w-full"
                     panelClassName="max-w-[20rem]"
-                    display="chip"
-                    maxSelectedLabels={3}
+                    maxSelectedLabels={2}
                     selectedItemsLabel="{0} selected"
-                    pt={{
-                      root: { className: "h-9" },
-                      labelContainer: { className: "flex h-full items-center" },
-                      label: { className: "py-0" },
-                    }}
                     data-test="cover-metadata-language-select"
                   />
                 </div>
@@ -250,7 +345,6 @@ export function SetCoverAndMetadataDialog({
                   outlined
                   loading={loadingSources}
                   onClick={onRefreshSources}
-                  className="h-9 px-3"
                 />
               </div>
               {sourceError ? (
@@ -279,15 +373,15 @@ export function SetCoverAndMetadataDialog({
                     >
                       <div className="h-[144px] w-[96px] overflow-hidden rounded border border-[var(--p-content-border-color)] bg-black/5 dark:bg-white/5">
                         {item.cover_url ? (
-                          <Image
-                            src={item.cover_url}
-                            alt=""
+                          <CoverImageWithFallback
+                            key={`${item.cover_url}:${item.identifier ?? ""}`}
+                            primaryUrl={item.cover_url}
+                            identifier={item.identifier}
+                            alt={item.title}
                             width={96}
                             height={144}
-                            unoptimized={shouldUseUnoptimizedForUrl(
-                              item.cover_url,
-                            )}
                             className="mx-auto h-full w-auto max-w-full object-contain"
+                            emptyLabel="No cover"
                           />
                         ) : null}
                       </div>
@@ -385,15 +479,14 @@ export function SetCoverAndMetadataDialog({
                           {fieldIsCover ? (
                             <div className="overflow-hidden rounded border border-[var(--p-content-border-color)]">
                               {toImageUrl(field.current_value) ? (
-                                <Image
-                                  src={toImageUrl(field.current_value)}
-                                  alt=""
+                                <CoverImageWithFallback
+                                  key={toImageUrl(field.current_value)}
+                                  primaryUrl={toImageUrl(field.current_value)}
+                                  alt="Current cover"
                                   width={240}
                                   height={144}
-                                  unoptimized={shouldUseUnoptimizedForUrl(
-                                    toImageUrl(field.current_value),
-                                  )}
                                   className="h-36 w-full bg-black/5 object-contain"
+                                  emptyLabel="No current cover"
                                 />
                               ) : (
                                 <div className="flex h-36 items-center justify-center bg-[var(--p-surface-100)] text-sm text-[var(--p-text-muted-color)] dark:bg-[var(--p-surface-800)]">
@@ -437,15 +530,14 @@ export function SetCoverAndMetadataDialog({
                           {fieldIsCover ? (
                             <div className="overflow-hidden rounded border border-[var(--p-content-border-color)]">
                               {toImageUrl(selectedValue) ? (
-                                <Image
-                                  src={toImageUrl(selectedValue)}
-                                  alt=""
+                                <CoverImageWithFallback
+                                  key={toImageUrl(selectedValue)}
+                                  primaryUrl={toImageUrl(selectedValue)}
+                                  alt="Selected cover"
                                   width={240}
                                   height={144}
-                                  unoptimized={shouldUseUnoptimizedForUrl(
-                                    toImageUrl(selectedValue),
-                                  )}
                                   className="h-36 w-full bg-black/5 object-contain"
+                                  emptyLabel="Not available"
                                 />
                               ) : (
                                 <div className="flex h-36 items-center justify-center bg-[var(--p-surface-100)] text-sm text-[var(--p-text-muted-color)] dark:bg-[var(--p-surface-800)]">

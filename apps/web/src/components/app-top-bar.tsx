@@ -35,6 +35,8 @@ export function AppTopBar() {
     () => false,
   );
   const colorModeForButtons = colorModeHydrated ? mode : "system";
+  const overlayAppendTarget =
+    typeof document !== "undefined" ? document.body : undefined;
 
   useEffect(() => {
     let active = true;
@@ -204,7 +206,12 @@ export function AppTopBar() {
               data-test="color-mode-menu"
               onClick={(event) => colorMenuRef.current?.toggle(event)}
             />
-            <Menu model={colorItems} popup ref={colorMenuRef} />
+            <Menu
+              model={colorItems}
+              popup
+              ref={colorMenuRef}
+              appendTo={overlayAppendTarget}
+            />
 
             {userEmail ? (
               <Button
@@ -224,7 +231,12 @@ export function AppTopBar() {
                 Sign in
               </Button>
             )}
-            <Menu model={accountItems} popup ref={accountMenuRef} />
+            <Menu
+              model={accountItems}
+              popup
+              ref={accountMenuRef}
+              appendTo={overlayAppendTarget}
+            />
           </div>
         }
       />

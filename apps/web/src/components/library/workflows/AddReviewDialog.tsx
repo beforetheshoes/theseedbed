@@ -116,7 +116,7 @@ export function AddReviewDialog({
           onChange={(event) => onBodyChange(event.target.value)}
         />
         <div className="grid items-center gap-2 sm:grid-cols-[auto_auto_12.5rem]">
-          <div className="grid min-h-[3.5rem] grid-rows-[1fr_auto] items-center px-1 py-1">
+          <div className="grid grid-rows-[1fr_auto] items-center px-1 py-1">
             <div className="flex items-center justify-center self-center">
               <HalfStarRating
                 value={Number.parseFloat(rating || "0") || 0}
@@ -136,7 +136,6 @@ export function AddReviewDialog({
               ]}
               optionLabel="label"
               optionValue="value"
-              className="h-[3.5rem] [&_.p-button]:h-full [&_.p-button]:px-4"
               onChange={(event) =>
                 onVisibilityChange(
                   event.value === "public" ? "public" : "private",
@@ -145,7 +144,6 @@ export function AddReviewDialog({
             />
           </div>
           <Button
-            className="h-[3.5rem]"
             label="Save review"
             loading={saving}
             onClick={onSubmit}

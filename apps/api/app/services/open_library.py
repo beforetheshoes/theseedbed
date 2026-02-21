@@ -11,6 +11,8 @@ from typing import Any, Generic, Literal, TypeVar, cast
 
 import httpx
 
+from app.services.provider_budget import get_provider_budget_controller
+
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _YEAR_RE = re.compile(r"(\d{4})")
 _OPENLIBRARY_CANONICAL_LANGUAGE_MAP: dict[str, str] = {
@@ -368,6 +370,21 @@ def _is_audiobook_entry(entry: dict[str, Any]) -> bool:
     return any(token in haystack for token in audio_tokens)
 
 
+def _edition_format_penalty(entry: dict[str, Any]) -> int:
+    physical_format = entry.get("physical_format")
+    if not isinstance(physical_format, str):
+        return 0
+    lowered = physical_format.strip().lower()
+    if not lowered:
+        return 0
+    if any(
+        token in lowered
+        for token in ("audiobook", "audio", "mp3", "cd", "cassette", "sound")
+    ):
+        return -3
+    return 0
+
+
 def _normalize_subject(value: str) -> str:
     return value.strip().replace(" ", "_").lower()
 
@@ -450,13 +467,19 @@ class OpenLibraryClient:
             delay = max(0.0, min(delay, cap))
             return random.uniform(0.0, delay)
 
+        budget = get_provider_budget_controller()
+        enforce_budget = self._transport is None
         async with httpx.AsyncClient(
             timeout=timeout, transport=self._transport
         ) as client:
             for attempt in range(1, self._max_retries + 1):
+                if enforce_budget:
+                    await budget.acquire("openlibrary")
                 try:
                     response = await client.get(url, params=params, headers=headers)
                 except (httpx.TimeoutException, httpx.TransportError):
+                    if enforce_budget:
+                        await budget.record_failure("openlibrary")
                     if attempt >= self._max_retries:
                         raise
                     await asyncio.sleep(
@@ -468,6 +491,8 @@ class OpenLibraryClient:
                     response.status_code in retryable_statuses
                     and attempt < self._max_retries
                 ):
+                    if enforce_budget:
+                        await budget.record_failure("openlibrary")
                     retry_after = parse_retry_after_seconds(
                         response.headers.get("Retry-After")
                     )
@@ -476,7 +501,14 @@ class OpenLibraryClient:
                     )
                     continue
 
-                response.raise_for_status()
+                try:
+                    response.raise_for_status()
+                except httpx.HTTPStatusError:
+                    if enforce_budget:
+                        await budget.record_failure("openlibrary")
+                    raise
+                if enforce_budget:
+                    await budget.record_success("openlibrary")
                 return cast(dict[str, Any], response.json())
 
         raise RuntimeError("open library request failed")
@@ -614,6 +646,7 @@ class OpenLibraryClient:
         *,
         work_key: str,
         edition_key: str | None = None,
+        preferred_language: str | None = None,
     ) -> OpenLibraryWorkBundle:
         normalized_work_key = _normalize_work_key(work_key)
         work_payload = await self._request_json(f"{normalized_work_key}.json")
@@ -639,6 +672,9 @@ class OpenLibraryClient:
             normalized_edition_key = _normalize_edition_key(edition_key)
             raw_edition = await self._request_json(f"{normalized_edition_key}.json")
         else:
+            normalized_preferred_language = _canonical_openlibrary_language(
+                preferred_language
+            )
             editions_payload = await self._request_json(
                 f"{normalized_work_key}/editions.json",
                 params={
@@ -667,6 +703,30 @@ class OpenLibraryClient:
                         isinstance(value, int) and value > 0 for value in covers
                     ):
                         score += 1
+                    edition_languages = _extract_language_codes(
+                        candidate.get("languages")
+                    )
+                    primary_language = (
+                        _canonical_openlibrary_language(edition_languages[0])
+                        if edition_languages
+                        else None
+                    )
+                    if (
+                        normalized_preferred_language is not None
+                        and primary_language is not None
+                    ):
+                        if primary_language == normalized_preferred_language:
+                            score += 4
+                        else:
+                            score -= 2
+                    elif (
+                        normalized_preferred_language is not None
+                        and primary_language is None
+                    ):
+                        score -= 1
+                    if _is_audiobook_entry(candidate):
+                        score -= 4
+                    score += _edition_format_penalty(candidate)
                     publish_year = (
                         _parse_publish_year(candidate.get("publish_date")) or 0
                     )

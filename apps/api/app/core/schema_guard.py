@@ -45,6 +45,11 @@ _REQUIRED_COLUMNS: tuple[tuple[str, str], ...] = (
     ("library_items", "cover_override_storage_path"),
     ("library_items", "cover_override_set_by"),
     ("library_items", "cover_override_set_at"),
+    # Enrichment queue fields used by /api/v1/library/enrichment.
+    ("library_item_enrichment_tasks", "status"),
+    ("library_item_enrichment_tasks", "idempotency_key"),
+    ("enrichment_no_match_cache", "expires_at"),
+    ("enrichment_provider_daily_usage", "request_count"),
 )
 
 

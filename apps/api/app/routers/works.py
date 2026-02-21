@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 import uuid
 from collections.abc import Awaitable, Callable
@@ -22,6 +23,10 @@ from app.db.session import get_db_session
 from app.services.catalog import import_openlibrary_bundle
 from app.services.google_books import GoogleBooksClient, GoogleBooksWorkBundle
 from app.services.open_library import OpenLibraryClient, OpenLibraryWorkBundle
+from app.services.provider_budget import (
+    ProviderBudgetExceededError,
+    ProviderUnavailableError,
+)
 from app.services.storage import StorageNotConfiguredError
 from app.services.user_library import get_or_create_profile
 from app.services.work_covers import (
@@ -42,6 +47,7 @@ from app.services.works import (
 )
 
 router = APIRouter(tags=["works"])
+logger = logging.getLogger(__name__)
 
 
 def get_open_library_client() -> OpenLibraryClient:
@@ -1628,17 +1634,25 @@ async def list_cover_metadata_sources(
         if len(openlibrary_items) >= max_openlibrary_candidates:
             break
 
-    google_items = await _collect_google_source_tiles(
-        work_id=work_id,
-        auth=auth,
-        session=session,
-        google_books=google_books,
-        settings=settings,
-        limit=limit,
-        language=primary_google_language,
-        allowed_google_languages=google_languages,
-        lookup_title=lookup_title,
-    )
+    google_items: list[dict[str, object]] = []
+    try:
+        google_items = await _collect_google_source_tiles(
+            work_id=work_id,
+            auth=auth,
+            session=session,
+            google_books=google_books,
+            settings=settings,
+            limit=limit,
+            language=primary_google_language,
+            allowed_google_languages=google_languages,
+            lookup_title=lookup_title,
+        )
+    except (ProviderBudgetExceededError, ProviderUnavailableError) as exc:
+        logger.info(
+            "Skipping Google Books cover/metadata sources for work %s: %s",
+            work_id,
+            exc,
+        )
 
     deduped: list[dict[str, object]] = []
     seen_keys: set[tuple[str, str]] = set()
@@ -2002,6 +2016,13 @@ async def list_enrichment_candidates(
     google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, object]:
+    profile = get_or_create_profile(session, user_id=auth.user_id)
+    raw_preferred_language = getattr(profile, "default_source_language", None)
+    preferred_language = (
+        raw_preferred_language.strip().lower()
+        if isinstance(raw_preferred_language, str) and raw_preferred_language.strip()
+        else None
+    )
     try:
         result = await get_enrichment_candidates(
             session,
@@ -2012,6 +2033,7 @@ async def list_enrichment_candidates(
             # Enrichment should always attempt Google as a best-effort fallback
             # when Open Library data is sparse.
             google_enabled=True,
+            preferred_language=preferred_language,
         )
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc

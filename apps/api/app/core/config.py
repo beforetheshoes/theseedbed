@@ -21,6 +21,15 @@ class Settings:
     api_version: str
     book_provider_google_enabled: bool = False
     google_books_api_key: str | None = None
+    enrichment_auto_enabled: bool = False
+    enrichment_processing_enabled: bool = False
+    enrichment_auto_apply_covers: bool = True
+    enrichment_auto_apply_metadata: bool = False
+    enrichment_opportunistic_batch_size: int = 1
+    enrichment_max_batch_size: int = 10
+    enrichment_lazy_cooldown_hours: int = 24
+    enrichment_per_user_daily_budget: int = 150
+    enrichment_global_daily_budget: int = 5000
     cors_allowed_origins: tuple[str, ...] = (
         "http://localhost:3000",
         "http://127.0.0.1:3000",
@@ -197,6 +206,31 @@ def get_settings() -> Settings:
         "BOOK_PROVIDER_GOOGLE_ENABLED", default=False
     )
     google_books_api_key = os.getenv("GOOGLE_BOOKS_API_KEY", "").strip() or None
+    enrichment_auto_enabled = _parse_bool_env("ENRICHMENT_AUTO_ENABLED", default=False)
+    enrichment_processing_enabled = _parse_bool_env(
+        "ENRICHMENT_PROCESSING_ENABLED", default=False
+    )
+    enrichment_auto_apply_covers = _parse_bool_env(
+        "ENRICHMENT_AUTO_APPLY_COVERS", default=True
+    )
+    enrichment_auto_apply_metadata = _parse_bool_env(
+        "ENRICHMENT_AUTO_APPLY_METADATA", default=False
+    )
+    enrichment_opportunistic_batch_size = max(
+        1, int(os.getenv("ENRICHMENT_OPPORTUNISTIC_BATCH_SIZE", "1").strip() or "1")
+    )
+    enrichment_max_batch_size = max(
+        1, int(os.getenv("ENRICHMENT_MAX_BATCH_SIZE", "10").strip() or "10")
+    )
+    enrichment_lazy_cooldown_hours = max(
+        1, int(os.getenv("ENRICHMENT_LAZY_COOLDOWN_HOURS", "24").strip() or "24")
+    )
+    enrichment_per_user_daily_budget = max(
+        1, int(os.getenv("ENRICHMENT_PER_USER_DAILY_BUDGET", "150").strip() or "150")
+    )
+    enrichment_global_daily_budget = max(
+        1, int(os.getenv("ENRICHMENT_GLOBAL_DAILY_BUDGET", "5000").strip() or "5000")
+    )
     cors_allowed_origins = _parse_cors_origins()
     api_version = os.getenv("API_VERSION", "0.1.0").strip()
     return Settings(
@@ -209,6 +243,15 @@ def get_settings() -> Settings:
         public_highlight_max_chars=public_highlight_max_chars,
         book_provider_google_enabled=book_provider_google_enabled,
         google_books_api_key=google_books_api_key,
+        enrichment_auto_enabled=enrichment_auto_enabled,
+        enrichment_processing_enabled=enrichment_processing_enabled,
+        enrichment_auto_apply_covers=enrichment_auto_apply_covers,
+        enrichment_auto_apply_metadata=enrichment_auto_apply_metadata,
+        enrichment_opportunistic_batch_size=enrichment_opportunistic_batch_size,
+        enrichment_max_batch_size=enrichment_max_batch_size,
+        enrichment_lazy_cooldown_hours=enrichment_lazy_cooldown_hours,
+        enrichment_per_user_daily_budget=enrichment_per_user_daily_budget,
+        enrichment_global_daily_budget=enrichment_global_daily_budget,
         cors_allowed_origins=cors_allowed_origins,
         api_version=api_version,
     )

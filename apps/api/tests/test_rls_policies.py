@@ -821,6 +821,10 @@ def test_all_public_tables_accounted_for(db_url: str) -> None:
         "source_records",
         "storygraph_import_jobs",
         "storygraph_import_job_rows",
+        "library_item_enrichment_tasks",
+        "library_item_enrichment_audit_log",
+        "enrichment_no_match_cache",
+        "enrichment_provider_daily_usage",
     }
     # Some Supabase images may include extension tables in public.
     ignored = {

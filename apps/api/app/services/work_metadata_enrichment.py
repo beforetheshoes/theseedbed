@@ -762,6 +762,7 @@ async def _resolve_openlibrary_work_key(
     edition_target: Edition | None,
     first_author: str | None,
     open_library: OpenLibraryClient,
+    preferred_language: str | None,
 ) -> str | None:
     existing = _get_openlibrary_work_key(session, work_id=work_id)
     if existing:
@@ -788,6 +789,7 @@ async def _resolve_openlibrary_work_key(
         search = await open_library.search_books(
             query=work.title,
             author=author_query or None,
+            language=preferred_language,
             limit=5,
             sort="relevance",
         )
@@ -928,6 +930,8 @@ async def get_enrichment_candidates(
     open_library: OpenLibraryClient,
     google_books: GoogleBooksClient,
     google_enabled: bool,
+    skip_openlibrary: bool = False,
+    preferred_language: str | None = None,
 ) -> dict[str, Any]:
     work = _get_work(session, work_id=work_id)
     edition_target = _resolve_target_edition(
@@ -938,88 +942,99 @@ async def get_enrichment_candidates(
     candidates_by_field: dict[str, list[dict[str, Any]]] = defaultdict(list)
     seen: set[tuple[str, Provider, str, str]] = set()
     provider_status: dict[str, Any] = {
-        "attempted": ["openlibrary"],
+        "attempted": [] if skip_openlibrary else ["openlibrary"],
         "succeeded": [],
         "failed": [],
     }
     first_author = _first_author_name(session, work_id=work_id)
-    try:
-        work_key = await _resolve_openlibrary_work_key(
-            session=session,
-            work=work,
-            work_id=work_id,
-            edition_target=edition_target,
-            first_author=first_author,
-            open_library=open_library,
-        )
-        if work_key is not None:
-            openlibrary_bundle = await open_library.fetch_work_bundle(work_key=work_key)
-            provider_status["succeeded"].append("openlibrary")
-            _upsert_source_record(
-                session,
-                provider="openlibrary",
-                entity_type="work",
-                provider_id=openlibrary_bundle.work_key,
-                raw=openlibrary_bundle.raw_work,
+    if not skip_openlibrary:
+        try:
+            work_key = await _resolve_openlibrary_work_key(
+                session=session,
+                work=work,
+                work_id=work_id,
+                edition_target=edition_target,
+                first_author=first_author,
+                open_library=open_library,
+                preferred_language=preferred_language,
             )
-            if openlibrary_bundle.edition and openlibrary_bundle.raw_edition:
-                edition_provider_id = str(openlibrary_bundle.edition.get("key") or "")
-                if edition_provider_id:
-                    _upsert_source_record(
-                        session,
+            if work_key is not None:
+                openlibrary_bundle = await open_library.fetch_work_bundle(
+                    work_key=work_key,
+                    preferred_language=preferred_language,
+                )
+                provider_status["succeeded"].append("openlibrary")
+                _upsert_source_record(
+                    session,
+                    provider="openlibrary",
+                    entity_type="work",
+                    provider_id=openlibrary_bundle.work_key,
+                    raw=openlibrary_bundle.raw_work,
+                )
+                if openlibrary_bundle.edition and openlibrary_bundle.raw_edition:
+                    edition_provider_id = str(
+                        openlibrary_bundle.edition.get("key") or ""
+                    )
+                    if edition_provider_id:
+                        _upsert_source_record(
+                            session,
+                            provider="openlibrary",
+                            entity_type="edition",
+                            provider_id=edition_provider_id,
+                            raw=openlibrary_bundle.raw_edition,
+                        )
+
+                for field_key, value in _bundle_values_openlibrary(
+                    openlibrary_bundle
+                ).items():
+                    provider_id = work_key
+                    if field_key.startswith("edition.") and openlibrary_bundle.edition:
+                        provider_id = str(
+                            openlibrary_bundle.edition.get("key") or work_key
+                        )
+                    _add_candidate(
+                        field_key=field_key,
                         provider="openlibrary",
-                        entity_type="edition",
-                        provider_id=edition_provider_id,
-                        raw=openlibrary_bundle.raw_edition,
+                        provider_id=provider_id,
+                        value=value,
+                        candidates_by_field=candidates_by_field,
+                        seen=seen,
                     )
 
-            for field_key, value in _bundle_values_openlibrary(
-                openlibrary_bundle
-            ).items():
-                provider_id = work_key
-                if field_key.startswith("edition.") and openlibrary_bundle.edition:
-                    provider_id = str(openlibrary_bundle.edition.get("key") or work_key)
-                _add_candidate(
-                    field_key=field_key,
-                    provider="openlibrary",
-                    provider_id=provider_id,
-                    value=value,
-                    candidates_by_field=candidates_by_field,
-                    seen=seen,
+                try:
+                    audiobook_durations = (
+                        await open_library.fetch_work_audiobook_durations(
+                            work_key=work_key
+                        )
+                    )
+                except Exception:
+                    audiobook_durations = []
+                for duration_minutes in audiobook_durations:
+                    _add_candidate(
+                        field_key="edition.total_audio_minutes",
+                        provider="openlibrary",
+                        provider_id=work_key,
+                        value=duration_minutes,
+                        candidates_by_field=candidates_by_field,
+                        seen=seen,
+                        source_label="Open Library audiobook edition",
+                    )
+            else:
+                provider_status["failed"].append(
+                    {
+                        "provider": "openlibrary",
+                        "code": "openlibrary_match_not_found",
+                        "message": "No Open Library match found for this work.",
+                    }
                 )
-
-            try:
-                audiobook_durations = await open_library.fetch_work_audiobook_durations(
-                    work_key=work_key
-                )
-            except Exception:
-                audiobook_durations = []
-            for duration_minutes in audiobook_durations:
-                _add_candidate(
-                    field_key="edition.total_audio_minutes",
-                    provider="openlibrary",
-                    provider_id=work_key,
-                    value=duration_minutes,
-                    candidates_by_field=candidates_by_field,
-                    seen=seen,
-                    source_label="Open Library audiobook edition",
-                )
-        else:
+        except Exception as exc:
             provider_status["failed"].append(
                 {
                     "provider": "openlibrary",
-                    "code": "openlibrary_match_not_found",
-                    "message": "No Open Library match found for this work.",
+                    "code": "open_library_unavailable",
+                    "message": str(exc),
                 }
             )
-    except Exception as exc:
-        provider_status["failed"].append(
-            {
-                "provider": "openlibrary",
-                "code": "open_library_unavailable",
-                "message": str(exc),
-            }
-        )
 
     if google_enabled:
         provider_status["attempted"].append("googlebooks")
@@ -1160,6 +1175,7 @@ async def apply_enrichment_selections(
     open_library: OpenLibraryClient,
     google_books: GoogleBooksClient,
     google_enabled: bool,
+    persist_provider_sources: bool = True,
 ) -> dict[str, Any]:
     work = _get_work(session, work_id=work_id)
     edition_target = _resolve_target_edition(
@@ -1229,6 +1245,8 @@ async def apply_enrichment_selections(
         updated.append(field_key)
 
     for provider, provider_id in selected_sources:
+        if not persist_provider_sources:
+            continue
         if provider == "openlibrary":
             selected_work_key = (
                 provider_id if provider_id.startswith("/works/") else work_key

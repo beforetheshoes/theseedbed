@@ -53,6 +53,7 @@ from app.routers.works import (
 from app.routers.works import router as works_router
 from app.services.google_books import GoogleBooksWorkBundle
 from app.services.open_library import OpenLibraryWorkBundle
+from app.services.provider_budget import ProviderBudgetExceededError
 from app.services.storage import StorageNotConfiguredError
 
 
@@ -679,6 +680,59 @@ def test_list_cover_metadata_sources_includes_prefetch_compare_when_requested(
     assert payload["items"][0]["openlibrary_work_key"] == "/works/OL1W"
     assert "openlibrary:/books/OL1M" in payload["prefetch_compare"]
     assert compare_kwargs["openlibrary_work_key"] == "/works/OL1W"
+
+
+def test_list_cover_metadata_sources_handles_google_budget_exhausted(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work_id = uuid.uuid4()
+    fake_session = _FakeSession(
+        scalar_values=[],
+        execute_rows=[[]],
+    )
+
+    async def _fake_fetch_work_editions(*_args: Any, **_kwargs: Any) -> list[Any]:
+        return [
+            SimpleNamespace(
+                key="/books/OL1M",
+                title="The Little Prince",
+                publisher="Gallimard",
+                publish_date="1943",
+                language="eng",
+                isbn10=None,
+                isbn13="9780000000001",
+                cover_url="https://covers.openlibrary.org/b/id/1-M.jpg",
+            )
+        ]
+
+    async def _fake_google_budget_exhausted(
+        *_args: Any, **_kwargs: Any
+    ) -> list[dict[str, Any]]:
+        raise ProviderBudgetExceededError("googlebooks rate budget exhausted")
+
+    def _override_session() -> Generator[object, None, None]:
+        yield fake_session
+
+    app.dependency_overrides[get_db_session] = _override_session
+    app.dependency_overrides[get_open_library_client] = lambda: SimpleNamespace(
+        fetch_work_editions=_fake_fetch_work_editions
+    )
+    monkeypatch.setattr(
+        "app.routers.works._openlibrary_work_key_for_work",
+        lambda *_args, **_kwargs: "/works/OL1W",
+    )
+    monkeypatch.setattr(
+        "app.routers.works._collect_google_source_tiles",
+        _fake_google_budget_exhausted,
+    )
+
+    client = TestClient(app)
+    response = client.get(f"/api/v1/works/{work_id}/cover-metadata/sources")
+
+    assert response.status_code == 200
+    items = response.json()["data"]["items"]
+    assert any(item["provider"] == "openlibrary" for item in items)
+    assert all(item["provider"] != "googlebooks" for item in items)
 
 
 def test_compare_cover_metadata_source_returns_normalized_fields(

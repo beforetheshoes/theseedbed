@@ -10,11 +10,17 @@ from uuid import UUID
 import sqlalchemy as sa
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.models.bibliography import Author, Edition, Work, WorkAuthor
 from app.db.models.external_provider import ExternalId
 from app.db.models.imports import StorygraphImportJob, StorygraphImportJobRow
 from app.db.session import create_db_session
+from app.services.auto_enrichment import (
+    enqueue_import_task,
+    get_import_enrichment_counts,
+)
 from app.services.catalog import import_openlibrary_bundle
+from app.services.google_books import GoogleBooksClient
 from app.services.open_library import OpenLibraryClient
 from app.services.reading_sessions import get_or_create_import_cycle
 from app.services.reviews import upsert_review_for_work
@@ -168,6 +174,13 @@ def serialize_job(
         for row in preview_rows
     ]
 
+    enrichment_counts = get_import_enrichment_counts(
+        session,
+        user_id=user_id,
+        source="storygraph",
+        job_id=job.id,
+    )
+
     return {
         "job_id": str(job.id),
         "status": job.status,
@@ -183,6 +196,7 @@ def serialize_job(
         "skipped_rows": job.skipped_rows,
         "error_summary": job.error_summary,
         "rows_preview": rows_preview,
+        **enrichment_counts,
     }
 
 
@@ -493,6 +507,13 @@ async def process_storygraph_import_job(
                         item_id=library_item.id,
                         updates=updates,
                     )
+                enqueue_import_task(
+                    session,
+                    user_id=user_id,
+                    library_item_id=library_item.id,
+                    source="storygraph",
+                    job_id=job.id,
+                )
 
                 review_id: UUID | None = None
                 if row.review:
@@ -566,6 +587,20 @@ async def process_storygraph_import_job(
         if job.failed_rows > 0 and error_counter:
             top_error, count = error_counter.most_common(1)[0]
             job.error_summary = f"{top_error} ({count} rows)"
+        try:
+            from app.services.auto_enrichment import process_due_tasks
+
+            settings = get_settings()
+            await process_due_tasks(
+                session,
+                user_id=user_id,
+                limit=settings.enrichment_max_batch_size,
+                settings=settings,
+                open_library=open_library,
+                google_books=GoogleBooksClient(api_key=settings.google_books_api_key),
+            )
+        except Exception:
+            pass
         job.status = "completed"
         job.finished_at = dt.datetime.now(tz=dt.UTC)
         job.updated_at = job.finished_at

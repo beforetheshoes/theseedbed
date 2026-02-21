@@ -72,14 +72,12 @@ export function AddNoteDialog({
               ]}
               optionLabel="label"
               optionValue="value"
-              className="h-[3rem] [&_.p-button]:h-full [&_.p-button]:px-4"
               onChange={(event) =>
                 onVisibilityChange(event.value as "private" | "public")
               }
             />
           </div>
           <Button
-            className="h-[3rem]"
             label="Add note"
             loading={saving}
             disabled={!body.trim()}

@@ -24,6 +24,7 @@ from app.core.responses import ok
 from app.core.security import AuthContext, require_auth_context
 from app.db.models.imports import StorygraphImportJob
 from app.db.session import get_db_session
+from app.services.auto_enrichment import process_due_tasks
 from app.services.google_books import GoogleBooksClient
 from app.services.open_library import OpenLibraryClient
 from app.services.storygraph_imports import (
@@ -321,6 +322,9 @@ async def create_import_job(
                     "imported_rows": active_job.imported_rows,
                     "failed_rows": active_job.failed_rows,
                     "skipped_rows": active_job.skipped_rows,
+                    "enrichment_queued": 0,
+                    "enrichment_completed": 0,
+                    "enrichment_needs_review": 0,
                 }
             )
 
@@ -347,6 +351,9 @@ async def create_import_job(
             "imported_rows": job.imported_rows,
             "failed_rows": job.failed_rows,
             "skipped_rows": job.skipped_rows,
+            "enrichment_queued": 0,
+            "enrichment_completed": 0,
+            "enrichment_needs_review": 0,
         }
     )
 
@@ -393,16 +400,27 @@ async def get_missing_authors(
 
 
 @router.get("/{job_id}")
-def get_import_job(
+async def get_import_job(
     job_id: uuid.UUID,
     auth: Annotated[AuthContext, Depends(require_auth_context)],
     session: Annotated[Session, Depends(get_db_session)],
+    settings: Annotated[Settings, Depends(get_settings)],
+    open_library: Annotated[OpenLibraryClient, Depends(get_open_library_client)],
+    google_books: Annotated[GoogleBooksClient, Depends(get_google_books_client)],
 ) -> dict[str, object]:
     try:
         job = get_storygraph_job(session, user_id=auth.user_id, job_id=job_id)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     _mark_job_failed_if_stale(session, job=job)
+    await process_due_tasks(
+        session,
+        user_id=auth.user_id,
+        limit=settings.enrichment_opportunistic_batch_size,
+        settings=settings,
+        open_library=open_library,
+        google_books=google_books,
+    )
     return ok(serialize_job(session, user_id=auth.user_id, job_id=job_id))
 
 
