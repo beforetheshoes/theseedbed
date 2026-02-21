@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from app.db.models.bibliography import Author, Edition, Work, WorkAuthor
 from app.db.models.content import Highlight, Note, Review
+from app.db.models.enrichment import (
+    EnrichmentNoMatchCache,
+    EnrichmentProviderDailyUsage,
+    LibraryItemEnrichmentAuditLog,
+    LibraryItemEnrichmentTask,
+)
 from app.db.models.external_provider import ExternalId, SourceRecord
 from app.db.models.imports import (
     GoodreadsImportJob,
@@ -24,11 +30,15 @@ __all__ = [
     "ApiClient",
     "Author",
     "Edition",
+    "EnrichmentNoMatchCache",
+    "EnrichmentProviderDailyUsage",
     "ExternalId",
     "GoodreadsImportJob",
     "GoodreadsImportJobRow",
     "Highlight",
     "LibraryItem",
+    "LibraryItemEnrichmentAuditLog",
+    "LibraryItemEnrichmentTask",
     "LibraryItemMergeEvent",
     "Note",
     "ReadingProgressLog",

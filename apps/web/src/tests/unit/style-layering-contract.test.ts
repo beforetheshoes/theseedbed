@@ -27,8 +27,19 @@ describe("globals.css layering contract", () => {
 
     expect(appOverrides).toContain(".p-component {");
     expect(appOverrides).toContain(".p-button {");
-    expect(appOverrides).toContain(
-      ".library-table .p-datatable-thead > tr > th",
+    expect(appOverrides).toContain(".p-inputtext {");
+  });
+
+  it("uses compact sizing (~40px) not Lara defaults (~50px)", () => {
+    const css = readGlobalsCss();
+    const match = css.match(/@layer app-overrides\s*\{([\s\S]*)\}\s*$/);
+    const appOverrides = match?.[1] ?? "";
+
+    // Verify font-size is 0.875rem (compact), not 1rem (Lara default)
+    expect(appOverrides).toContain("font-size: 0.875rem;");
+    expect(appOverrides).not.toMatch(/\.p-button\s*\{[^}]*font-size:\s*1rem/);
+    expect(appOverrides).not.toMatch(
+      /\.p-inputtext\s*\{[^}]*font-size:\s*1rem/,
     );
   });
 

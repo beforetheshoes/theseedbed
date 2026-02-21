@@ -7,6 +7,8 @@ from typing import Any
 
 import httpx
 
+from app.services.provider_budget import get_provider_budget_controller
+
 _YEAR_RE = re.compile(r"(\d{4})")
 _ISO_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
@@ -123,16 +125,32 @@ class GoogleBooksClient:
         if self._api_key:
             merged_params["key"] = self._api_key
         timeout = httpx.Timeout(connect=5.0, read=10.0, write=10.0, pool=5.0)
+        budget = get_provider_budget_controller()
+        enforce_budget = self._transport is None
         async with httpx.AsyncClient(
             timeout=timeout,
             follow_redirects=True,
             transport=self._transport,
         ) as client:
-            response = await client.get(
-                f"{self._base_url}{path}",
-                params=merged_params,
-            )
-            response.raise_for_status()
+            if enforce_budget:
+                await budget.acquire("googlebooks")
+            try:
+                response = await client.get(
+                    f"{self._base_url}{path}",
+                    params=merged_params,
+                )
+            except (httpx.TimeoutException, httpx.TransportError):
+                if enforce_budget:
+                    await budget.record_failure("googlebooks")
+                raise
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError:
+                if enforce_budget:
+                    await budget.record_failure("googlebooks")
+                raise
+            if enforce_budget:
+                await budget.record_success("googlebooks")
             payload = response.json()
         if not isinstance(payload, dict):
             raise RuntimeError("google books request returned non-object payload")

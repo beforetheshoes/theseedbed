@@ -246,6 +246,8 @@ def list_library_items(
                 Work.default_cover_url,
             ).label("cover_url"),
             last_read_subquery.c.last_read_at,
+            Edition.isbn10,
+            Edition.isbn13,
         )
         .join(Work, Work.id == LibraryItem.work_id)
         .join(Edition, Edition.id == LibraryItem.preferred_edition_id, isouter=True)
@@ -354,10 +356,7 @@ def list_library_items(
 
     # Avoid N+1: fetch author names for the works in the current page in one query.
     author_names_by_work: dict[uuid.UUID, list[str]] = {}
-    work_ids = [
-        item.work_id
-        for item, _work_title, _work_description, _cover_url, _last_read in selected
-    ]
+    work_ids = [row[0].work_id for row in selected]
     if work_ids:
         author_rows = session.execute(
             sa.select(WorkAuthor.work_id, Author.name)
@@ -371,7 +370,14 @@ def list_library_items(
             author_names_by_work[work_id] = sorted(set(names))
 
     items: list[dict[str, Any]] = []
-    for item, work_title, work_description, cover_url, last_read_at in selected:
+    for row in selected:
+        item = row[0]
+        work_title = row[1]
+        work_description = row[2]
+        cover_url = row[3]
+        last_read_at = row[4]
+        isbn10 = row[5] if len(row) > 5 else None
+        isbn13 = row[6] if len(row) > 6 else None
         items.append(
             {
                 "id": str(item.id),
@@ -384,6 +390,8 @@ def list_library_items(
                 "visibility": item.visibility,
                 "rating": item.rating,
                 "tags": item.tags or [],
+                "isbn10": isbn10,
+                "isbn13": isbn13,
                 "last_read_at": (
                     last_read_at.isoformat()
                     if isinstance(last_read_at, dt.datetime)

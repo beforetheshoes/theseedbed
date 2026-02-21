@@ -75,6 +75,7 @@ type TableColumnKey =
   | "cover"
   | "title"
   | "author"
+  | "isbn"
   | "status"
   | "description"
   | "rating"
@@ -95,6 +96,8 @@ export type LibraryItem = {
   visibility: LibraryItemVisibility;
   rating?: number | null;
   tags?: string[];
+  isbn10?: string | null;
+  isbn13?: string | null;
   last_read_at?: string | null;
   created_at?: string;
 };
@@ -209,6 +212,7 @@ const ALL_TABLE_COLUMNS: readonly TableColumnKey[] = [
   "cover",
   "title",
   "author",
+  "isbn",
   "status",
   "description",
   "rating",
@@ -221,6 +225,7 @@ const DEFAULT_TABLE_COLUMNS: TableColumnKey[] = [
   "cover",
   "title",
   "author",
+  "isbn",
   "status",
   "description",
   "rating",
@@ -247,6 +252,7 @@ const TABLE_COLUMN_OPTIONS = [
   { label: "Cover", value: "cover" },
   { label: "Title", value: "title" },
   { label: "Author", value: "author" },
+  { label: "ISBN", value: "isbn" },
   { label: "Status", value: "status" },
   { label: "Description", value: "description" },
   { label: "Rating", value: "rating" },
@@ -2394,6 +2400,15 @@ export default function LibraryPageClient({
             </p>
           </div>
         </div>
+        <Link href="/library/enrichment" className="no-underline">
+          <Button
+            label="Enrich Library"
+            icon="pi pi-sparkles"
+            severity="secondary"
+            outlined
+            data-test="library-enrichment-link"
+          />
+        </Link>
       </div>
 
       <Card className="mt-4">
@@ -2457,6 +2472,10 @@ export default function LibraryPageClient({
               maxSelectedLabels={1}
               selectedItemsLabel="{0} columns"
               placeholder="Columns"
+              panelClassName="library-columns-panel"
+              appendTo={
+                typeof document !== "undefined" ? document.body : undefined
+              }
               onChange={(event) =>
                 setTableColumns(event.value as TableColumnKey[])
               }
@@ -2650,10 +2669,22 @@ export default function LibraryPageClient({
                       )}
                     />
                   ) : null}
+                  {isColumnVisible("isbn") ? (
+                    <Column
+                      className="min-w-[12rem]"
+                      header={
+                        <span className="library-header-label">ISBN</span>
+                      }
+                      body={(item: LibraryItem) => (
+                        <p className="line-clamp-1 text-sm text-[var(--p-text-muted-color)]">
+                          {item.isbn13 || item.isbn10 || "—"}
+                        </p>
+                      )}
+                    />
+                  ) : null}
                   {isColumnVisible("status") ? (
                     <Column
                       className="min-w-[8rem]"
-                      style={{ paddingLeft: "0.5rem", paddingRight: "0.5rem" }}
                       header={
                         <button
                           type="button"
@@ -2679,7 +2710,6 @@ export default function LibraryPageClient({
                   ) : null}
                   <Column
                     className="min-w-[8rem]"
-                    style={{ paddingLeft: "0.5rem", paddingRight: "0.5rem" }}
                     header={
                       <span className="library-header-label">Visibility</span>
                     }
@@ -3075,7 +3105,6 @@ export default function LibraryPageClient({
                                 text
                                 severity="secondary"
                                 className="opacity-70 transition-opacity hover:opacity-100"
-                                style={{ paddingTop: 0, paddingBottom: 0 }}
                                 aria-label="Open actions menu"
                                 data-test={`library-item-context-trigger-${item.id}`}
                                 onClick={(event) =>
@@ -3088,7 +3117,6 @@ export default function LibraryPageClient({
                                 text
                                 severity="secondary"
                                 className="opacity-70 transition-opacity hover:opacity-100"
-                                style={{ paddingTop: 0, paddingBottom: 0 }}
                                 aria-label="Remove from library"
                                 data-test="library-item-remove"
                                 disabled={isItemUpdating(item.id)}

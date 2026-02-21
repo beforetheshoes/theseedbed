@@ -19,6 +19,7 @@ from app.routers import (
     health,
     highlights,
     library,
+    library_enrichment,
     library_search,
     me,
     notes,
@@ -82,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(goodreads_imports.router)
     app.include_router(me.router)
     app.include_router(library.router)
+    app.include_router(library_enrichment.router)
     app.include_router(library_search.router)
     app.include_router(sessions.router)
     app.include_router(storygraph_imports.router)
